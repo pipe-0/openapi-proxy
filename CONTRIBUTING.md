@@ -54,7 +54,7 @@ pnpm build
 pnpm test:e2e      # needs `pnpm exec playwright install chromium` once
 ```
 
-`E2E_PREVIEW=1 pnpm test:e2e` runs the same journeys against the production build. It is the run that exercises the Content-Security-Policy, which the development server does not send.
+`E2E_PREVIEW=1 pnpm test:e2e` runs the same journeys against the production build. It is the run that exercises the Content-Security-Policy, which the development server does not send. In CI that run is the one that counts; the run against the development server reports without failing the build, because a cold development server on a CI machine has lost clicks while compiling a page.
 
 `pnpm check` runs the first three.
 
@@ -98,7 +98,7 @@ Three rules, because a push to `main` applies migrations to the live database (s
 
 `pnpm run deploy` builds for one deployment, applies the migrations its database does not have yet, and replaces the Worker, in that order. A migration that fails is rolled back by D1, the command stops, and the Worker that is live stays as it is. Secrets set with `wrangler secret put` are kept across deploys.
 
-From your machine it reads `.env.deploy` (see [`vite.config.ts`](vite.config.ts)). From GitHub it runs as the last job of [CI](.github/workflows/ci.yml): on a push to `main`, after the checks and the browser journeys passed, in a repository that has the variable `OPENAPI_PROXY_D1_DATABASE_ID`. Only the newest commit on `main` deploys: a run that is started again after `main` moved on skips the deploy, so older code never replaces newer. The settings and the two secrets it needs are listed on the [Self-hosting](src/web/content/docs/self-hosting.mdx) page of the docs.
+From your machine it reads `.env.deploy` (see [`vite.config.ts`](vite.config.ts)). From GitHub it runs as the last job of [CI](.github/workflows/ci.yml): on a push to `main`, after the checks and the browser journeys against the production build passed, in a repository that has the variable `OPENAPI_PROXY_D1_DATABASE_ID`. Only the newest commit on `main` deploys: a run that is started again after `main` moved on skips the deploy, so older code never replaces newer. The settings and the two secrets it needs are listed on the [Self-hosting](src/web/content/docs/self-hosting.mdx) page of the docs.
 
 If a deploy goes wrong after its migration ran, D1 keeps every minute of the last 30 days (7 on the free plan): `wrangler d1 time-travel restore openapi-proxy --timestamp=<unix time>` puts the database back, and `wrangler rollback` the Worker.
 

@@ -21,5 +21,8 @@ export default defineConfig({
     url: `http://localhost:${APP_PORT}/api/auth-config`,
     reuseExistingServer: false,
     timeout: 120_000,
+    // On CI the server's own output is part of the log: when a journey fails
+    // there, what the server was doing at that moment is the first question.
+    stdout: process.env.CI ? "pipe" : "ignore",
   },
 });

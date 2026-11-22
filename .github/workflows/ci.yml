@@ -58,10 +58,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
-      # Hermetic: the suite serves its own fixture spec and uses a throwaway local database.
-      - run: pnpm test:e2e
-      # The same journeys against the production build, which is where the
-      # Content-Security-Policy is enforced.
+      # The journeys against the production build: what gets deployed, with its
+      # Content-Security-Policy enforced. Hermetic: the suite serves its own
+      # fixture spec and uses a throwaway local database.
       - run: pnpm test:e2e
         env:
           E2E_PREVIEW: "1"
@@ -69,6 +68,33 @@ jobs:
         if: failure()
         with:
           name: playwright-traces
+          path: test-results/
+          retention-days: 7
+
+  e2e-dev:
+    name: End to end, development server
+    runs-on: ubuntu-latest
+    # The same journeys against `vite dev`, for what only exists there (drafts on
+    # the blog) and for the development server itself. This job reports and
+    # does not decide: on a CI machine, which starts cold every time, the
+    # development server compiles a page on its first visit and has left the
+    # browser on the page it was on after a click, in a different journey each
+    # time. Nothing that is deployed runs this way, so it holds up no deploy.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-traces-dev
           path: test-results/
           retention-days: 7
 
