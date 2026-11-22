@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 import { ADMIN_PASSWORD, FIXTURE_PORT } from "./server.ts";
 
 export const fixtureUrl = (path: string) => `http://127.0.0.1:${FIXTURE_PORT}${path}`;
@@ -29,4 +29,18 @@ export async function shot(
     await page.screenshot({ path: join(dir, `${name}-${scheme}.png`), ...options });
   }
   await page.emulateMedia({ colorScheme: "light" });
+}
+
+/**
+ * Follow a link to a page, and make sure of having arrived. The development
+ * server compiles a page the first time it is opened and may reload the
+ * browser while it does; a click that lands in that moment is lost, and the
+ * page stays where it was. So the click is made again until the address is
+ * the one the link leads to. Seen on CI, where every run starts cold.
+ */
+export async function follow(page: Page, link: Locator, path: string): Promise<void> {
+  await expect(async () => {
+    if (new URL(page.url()).pathname !== path) await link.click({ timeout: 3_000 });
+    await expect(page).toHaveURL(path, { timeout: 3_000 });
+  }).toPass({ timeout: 45_000 });
 }

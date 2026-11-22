@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { fixtureUrl, shot, signIn } from "./helpers.ts";
+import { fixtureUrl, follow, shot, signIn } from "./helpers.ts";
 import { ADMIN_PASSWORD, PREVIEW } from "./server.ts";
 
 /**
@@ -108,7 +108,11 @@ test("the blog lists published posts, and drafts only while developing", async (
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Blog");
 
   // Published posts are listed in every build, and are indexable.
-  await page.getByRole("link", { name: "How to merge several OpenAPI documents into one" }).click();
+  await follow(
+    page,
+    page.getByRole("link", { name: "How to merge several OpenAPI documents into one" }),
+    "/blog/merge-multiple-openapi-documents",
+  );
   await expect(page.getByRole("heading", { name: "What collides" })).toBeVisible();
   const published = await (await request.get("/blog/merge-multiple-openapi-documents")).text();
   expect(published).not.toContain('content="noindex"');
@@ -121,8 +125,11 @@ test("the blog lists published posts, and drafts only while developing", async (
   }
 
   await expect(page.getByText("Draft, not published")).toBeVisible();
-  await page.getByRole("link", { name: /stale-while-revalidate is the wrong default/ }).click();
-  await expect(page).toHaveURL(POST);
+  await follow(
+    page,
+    page.getByRole("link", { name: /stale-while-revalidate is the wrong default/ }),
+    POST,
+  );
   await expect(page.getByRole("heading", { level: 1 })).toContainText("stale-while-revalidate");
   await expect(page.getByRole("heading", { name: "Who reads an OpenAPI document" })).toBeVisible();
   expect(problems).toEqual([]);
