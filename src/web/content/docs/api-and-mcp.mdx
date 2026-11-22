@@ -1,0 +1,139 @@
+---
+title: API and MCP
+description: Manage projects and variants from a script, or let an agent do it, with an API token.
+order: 7
+---
+
+Everything the app does goes through an HTTP API, and you can call that API yourself. There are two ways in: plain HTTP requests for scripts, and an MCP endpoint that offers the same operations as tools to an agent. Both use an API token.
+
+## Create a token
+
+In the app, open **Workspace** and find **API tokens**. Give the token a name that says what it is for, and copy it when it is shown. It is shown once; only a fingerprint of it is stored.
+
+A token acts as the person who made it, in their workspace. It can do what that person can do with projects and variants, and nothing in any other workspace. It stops working when it is revoked, or when that person leaves the workspace.
+
+A token cannot manage the workspace itself: inviting or removing people and creating or revoking tokens take a signed-in person. So revoking a token ends everything it could do.
+
+Send it with every request:
+
+```http
+Authorization: Bearer oap_...
+```
+
+## The HTTP API
+
+Requests and responses are JSON.
+
+```sh
+curl https://proxy.example.com/api/variants \
+  -H "Authorization: Bearer $OPENAPI_PROXY_TOKEN"
+```
+
+| Request | What it does |
+| --- | --- |
+| `GET /api/projects` | List the workspace's projects. |
+| `POST /api/projects` | Connect a document: `{ "url": "..." }`, plus `"headers": [{ "name": "Authorization", "value": "..." }]` if it is not public. To merge several at once, send `{ "sources": [{ "url": "..." }, ...] }`; the first is the main one. |
+| `GET /api/projects/{id}` | One project: its sources, and the operations of its document. |
+| `POST /api/projects/{id}/refresh` | Check every source now. Says which operations were added, removed or changed. |
+| `PATCH /api/projects/{id}` | Change `name`, `slug` or `ttlSeconds` (the check interval). |
+| `POST /api/projects/{id}/sources` | Merge another document in: `{ "url" }`, and optionally `"headers"`, `"pathPrefix"`, `"name"`. |
+| `PATCH /api/projects/{id}/sources/{sourceId}` | Change a document's `name`, `pathPrefix`, `headers` or `versionUrl`. |
+| `POST /api/projects/{id}/sources/{sourceId}/main` | Make it the main document. |
+| `DELETE /api/projects/{id}/sources/{sourceId}` | Take a document out of the project. |
+| `DELETE /api/projects/{id}?cascade=true` | Delete a project and its variants. |
+| `GET /api/variants` | List the workspace's variants, each with its public `url`. |
+| `POST /api/variants` | Create one: `{ "projectId", "name", "selection" }`, `"slug"` if you want to choose the URL, and `"outputVersion"` (`"3.0"` or `"3.1"`) to serve it converted. |
+| `GET /api/variants/{id}` | One variant. |
+| `PATCH /api/variants/{id}` | Change `name`, `selection`, `outputVersion` or `slug`. A new selection or version is served at once. |
+| `DELETE /api/variants/{id}` | Delete a variant. Its URL stops working. |
+
+A selection says what a variant serves:
+
+```json
+{
+  "mode": "include",
+  "operations": ["GET /v1/books"],
+  "tags": ["public"]
+}
+```
+
+With `"mode": "include"`, the listed operations and tags are served and operations your API adds later stay hidden. With `"mode": "exclude"`, everything is served except what is listed, including later additions. A tag is a rule: it also covers operations that get the tag in the future. Operation keys are the method and the path, exactly as `GET /api/projects/{id}` returns them.
+
+Errors have one shape, with a status code that fits:
+
+```json
+{ "code": "slug-taken", "error": "\"docs\" is already used by another variant of this project." }
+```
+
+A missing or invalid token is a `401`. A limit of your plan is a `402` with `"code": "plan-limit"`. A request body over 1 MB is a `413`.
+
+A workspace can make 300 requests a minute, across its people, tokens and agents. A request that makes the proxy fetch a document (connecting one, adding one, checking a project) counts as ten. Over that, the answer is a `429` with `"code": "rate-limited"` and a `Retry-After` header.
+
+## The MCP endpoint
+
+The endpoint is `/mcp` on your instance, for example `https://proxy.example.com/mcp`. It speaks the Model Context Protocol over Streamable HTTP and takes the same token.
+
+### Claude Code
+
+```sh
+claude mcp add --transport http openapi-proxy https://proxy.example.com/mcp \
+  --header "Authorization: Bearer oap_..."
+```
+
+### Cursor
+
+In `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "openapi-proxy": {
+      "url": "https://proxy.example.com/mcp",
+      "headers": { "Authorization": "Bearer oap_..." }
+    }
+  }
+}
+```
+
+### VS Code
+
+In `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "openapi-proxy": {
+      "type": "http",
+      "url": "https://proxy.example.com/mcp",
+      "headers": { "Authorization": "Bearer oap_..." }
+    }
+  }
+}
+```
+
+Any other client works the same way, as long as it can send a header with its requests. Clients that can only connect by signing in through OAuth, without a way to set a header, cannot connect yet.
+
+### Tools
+
+| Tool | What it does |
+| --- | --- |
+| `list_projects` | The workspace's projects, with their status and where their variants are served. |
+| `get_project` | One project with the operations of its document. Can be narrowed to a tag or a search text. |
+| `connect_project` | Create a project from the URL of an OpenAPI document. |
+| `add_source` | Merge another document into a project, optionally under a path prefix. |
+| `remove_source` | Take a document out of a project. |
+| `check_project` | Check the sources now and report what changed. |
+| `list_variants` | Variants with their public URL, for the workspace or one project. |
+| `get_variant` | One variant: its URL, its selection, what it serves. |
+| `create_variant` | Create a variant from a selection, optionally in another OpenAPI version. The result contains its URL. |
+| `update_variant` | Change a variant's name, selection, OpenAPI version or slug. |
+| `delete_variant` | Delete a variant. |
+| `delete_project` | Delete a project and all of its variants. |
+
+Each tool is a call to the HTTP API above, made with your token. An agent can do exactly what a script with that token can do, and is told why when a request is refused.
+
+A typical exchange: "Make a variant of our API with only the billing endpoints and give me the URL." The agent calls `list_projects`, then `get_project` to see the operations, then `create_variant`, and answers with the variant's URL.
+
+### What the endpoint supports
+
+Protocol revision `2026-07-28`, and the earlier revisions that open with a handshake (`2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05`). It is stateless: every request is a `POST` answered with one JSON object, and there are no sessions or streams. A request can carry up to 20 messages. It offers tools only.

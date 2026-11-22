@@ -1,0 +1,64 @@
+---
+title: Converting OpenAPI 3.1 to 3.0 for the tools that still need it
+description: Your framework emits 3.1, your gateway or code generator only reads 3.0. What changes between the two, what can be translated, and what is lost on the way down.
+cover: /site/blog/convert-openapi-3-1-to-3-0.jpg
+date: 2026-11-22
+---
+
+OpenAPI 3.1 came out in 2021, and frameworks have moved to it. FastAPI emits 3.1 by default, and springdoc, Hono's zod-openapi and many others can. The tools that read documents have moved more slowly. Some API gateways import only 3.0. Plenty of SDK pipelines run an older version of a generator that chokes on a type array. A docs tool may render 3.1 but lose nullability on the way.
+
+So a common question has become "how do I convert OpenAPI 3.1 to 3.0", usually asked right after an error message nobody expected from a spec that validates fine.
+
+## Why 3.1 is not a superset of 3.0
+
+The minor version suggests a small step. It is not, because 3.1 changed the schema language. OpenAPI 3.0 used its own dialect of JSON Schema, an extended subset of an older draft. OpenAPI 3.1 adopted JSON Schema 2020-12 as it is. Most of the document looks the same, but schemas say several things differently.
+
+The one that breaks most tools is nullability:
+
+```yaml
+# 3.0
+type: string
+nullable: true
+
+# 3.1
+type: [string, "null"]
+```
+
+A 3.0 parser expects `type` to be a single string. Handed an array, some fail loudly, and some quietly ignore it and generate a non-nullable field, which is worse.
+
+## What has a 3.0 equivalent
+
+Most of what 3.1 documents use in practice can be written in 3.0:
+
+| In 3.1 | In 3.0 |
+| --- | --- |
+| `type: [string, "null"]` | `type: string`, `nullable: true` |
+| `anyOf: [X, { type: "null" }]` | `X` with `nullable: true` |
+| `const: x` | `enum: [x]` |
+| `exclusiveMinimum: 5` | `minimum: 5`, `exclusiveMinimum: true` |
+| `examples: [x, y]` on a schema | `example: x` |
+| a `$ref` with other keywords beside it | `allOf: [{ $ref }]` with those keywords |
+| `contentMediaType: application/octet-stream` | `format: binary` |
+| `webhooks` | `x-webhooks`, which Redoc and others read |
+
+The `$ref` case is easy to miss. In 3.0, anything next to a `$ref` is ignored, so a schema that references `Money` and adds a `description` loses the description. Wrapping the reference in `allOf` keeps both.
+
+## What does not
+
+Some of JSON Schema 2020-12 has no counterpart in 3.0 at all: `patternProperties`, tuples with `prefixItems`, `if`, `then` and `else`, `unevaluatedProperties`, `dependentSchemas`. A converter has to drop them, and a 3.0 reader will accept more than your API does.
+
+That is acceptable as long as you know it happened. The failure mode to avoid is a converter that drops things silently, because the first sign is a generated client that does not validate what it should.
+
+## The options
+
+For a one-off conversion there are command line tools. `@apiture/openapi-down-convert` on npm is the best known, and its README is candid that it is not complete. The Python `openapi-downgrade` package moves untranslatable keywords into `x-dropped-` extensions and prints warnings, which is a good habit.
+
+A conversion at build time has the usual problem, though. It runs when someone runs it, and the 3.0 copy is a second file to keep current.
+
+## Converting at the edge
+
+In openapi-proxy, the OpenAPI version is a property of a variant. Your backend keeps generating whatever its framework generates. The variant your gateway imports is served as 3.0, the one your docs read stays 3.1, both from the same source and both current.
+
+The conversion is a list of small named steps, one per row of the table above, each a pure function. It only converts what the variant serves, and the editor tells you exactly what was left out of that variant and how often, before anything is published. Going the other way, from 3.0 to 3.1, loses nothing, which is also how a 3.0 service and a 3.1 service can be [merged](/blog/merge-multiple-openapi-documents) into one document.
+
+The engine is open source under the MIT license as `@openapi-proxy/core`, so the same conversion can run in your own build too. The full table is in [OpenAPI versions](/docs/versions).

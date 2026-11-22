@@ -1,0 +1,79 @@
+---
+title: Sending an ETag
+description: One header on your OpenAPI document turns a check that finds nothing new into a quick 304.
+order: 5
+---
+
+An `ETag` is a label for one version of a response. Your API sends it with the document, the proxy stores it, and on the next check it asks "do you still have this one?". If so, your API answers `304 Not Modified` with no body, and the check is over.
+
+## What your API has to do
+
+1. Send an `ETag` header with the OpenAPI document. Its value has to change whenever the document does. A hash of the document's bytes is the easy choice.
+2. When a request carries `If-None-Match` with the current value, answer `304` and no body.
+
+```http
+GET /openapi.json
+
+HTTP/1.1 200 OK
+ETag: "9f86d081884c7d65"
+Content-Type: application/json
+```
+
+```http
+GET /openapi.json
+If-None-Match: "9f86d081884c7d65"
+
+HTTP/1.1 304 Not Modified
+ETag: "9f86d081884c7d65"
+```
+
+Weak ETags (`W/"..."`) are fine. `Last-Modified` with `If-Modified-Since` works too, but a date is easier to get wrong than a hash.
+
+## Hono
+
+The built-in middleware hashes the response and answers `If-None-Match` for you.
+
+```ts
+import { etag } from "hono/etag";
+
+app.use("/openapi.json", etag());
+```
+
+## Express
+
+Express already does this for responses sent with `res.json` or `res.send`, unless your app turned it off with `app.set("etag", false)`.
+
+## FastAPI
+
+FastAPI serves its document without an ETag. A small middleware adds one:
+
+```py
+import hashlib
+from fastapi import Request, Response
+
+@app.middleware("http")
+async def openapi_etag(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path != "/openapi.json":
+        return response
+    body = b"".join([chunk async for chunk in response.body_iterator])
+    tag = '"' + hashlib.sha256(body).hexdigest()[:32] + '"'
+    if request.headers.get("if-none-match") == tag:
+        return Response(status_code=304, headers={"ETag": tag})
+    return Response(body, media_type="application/json", headers={"ETag": tag})
+```
+
+## Anything else
+
+Hash the document's bytes, send the hash as `ETag`, and compare it with `If-None-Match` before sending the body. If your framework builds the document on every request, build it once and keep it: it does not change until your next deploy.
+
+## Checking that it works
+
+```sh
+curl -sI https://api.example.com/openapi.json | grep -i etag
+curl -s -o /dev/null -w "%{http_code}\n" \
+  -H 'If-None-Match: "<the value from above>"' \
+  https://api.example.com/openapi.json
+```
+
+The second command should print `304`. The project's Sources page in the app also says which kind of check your API allows, after its next check.

@@ -1,0 +1,20 @@
+{
+  // The web app (TanStack Start): DOM, JSX. Its pages render in the browser,
+  // the landing page and blog also on the server.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["vite/client"],
+    "jsx": "react-jsx",
+    // Start strips server-only code out of the browser bundle by removing
+    // imports that end up unused. This option would keep them.
+    "verbatimModuleSyntax": false,
+    "paths": {
+      "@/*": ["./src/web/*"],
+      "collections/*": ["./.source/*"]
+    }
+  },
+  "include": ["src/web"],
+  // The Worker entry runs in workerd, not in a page: tsconfig.worker.json checks it.
+  "exclude": ["src/web/server.ts"]
+}

@@ -1,0 +1,35 @@
+---
+title: Keeping in sync
+description: How the proxy notices that your API changed, what a check costs, and how to make checks cheap.
+order: 4
+---
+
+Variants are served from a stored copy of your document. Each project has a **check interval**, five minutes by default. While the copy is younger than that, requests are answered from it without asking your API.
+
+Once the copy is older, the next request checks your API first and is answered with the result. So a build that runs once a day gets today's document, not the one from the day before.
+
+- Exactly one request does the checking, however many arrive at once. The others wait for its result, or get the previous copy if it only just crossed the interval.
+- No request waits longer than 5 seconds. If your API is slower, the check carries on in the background and the request gets the previous copy.
+- A failing API is never waited on. Requests get the last good copy, and the proxy retries every 30 seconds until it is back.
+- Once an hour the proxy also checks every project that has variants and that nobody has requested lately, so you hear about changes before your next build does.
+
+## What a check does
+
+A check stops at the first step that answers "has the document changed?":
+
+1. **Version endpoint**, if you set one. The proxy asks it for the current version. The same answer as last time means nothing is downloaded. See [A version endpoint](/docs/version-endpoint).
+2. **Conditional request**, if your API sent an `ETag` or `Last-Modified` with the document. The proxy asks "anything newer than this?", and a `304` answer carries no body. See [Sending an ETag](/docs/etag).
+3. **Download**, otherwise. The proxy fetches the whole document and compares it with the stored one. If the bytes are the same, nothing else happens.
+
+## What it costs to do nothing
+
+Without an ETag or a version endpoint everything still works. The difference is step 3 on every check:
+
+- **One request per interval is slower.** The request that triggers the check waits for a full download instead of a `304`. For a document of a few megabytes from a fast server that is usually under a second. If your server needs more than 5 seconds (some frameworks build the document on the first request after a deploy), that request gets the previous copy and the new one is served from the next request on.
+- **Your API sends the whole document** each time, at most once per interval plus once an hour.
+
+Nobody ever gets an error because of it, and the document a reader gets is never older than the interval. An ETag takes the waiting and the transfer away, usually with one line of code.
+
+## Choosing an interval
+
+The interval is how old a served document may be. Five minutes suits most APIs. "Every request" checks your API before every single answer, which is only worth it with an ETag or a version endpoint. A day is enough for an API that deploys rarely, especially since `Cache-Control: no-cache` lets a build ask for the current document whenever it needs to.

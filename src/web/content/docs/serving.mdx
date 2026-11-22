@@ -1,0 +1,40 @@
+---
+title: Serving a variant
+description: The URLs, formats and response headers your consumers get.
+order: 1
+---
+
+Every variant has a public URL. Docs renderers, SDK generators and contract tests fetch it like any other OpenAPI document.
+
+```
+GET /v/<project>/<variant>         JSON, or YAML if the Accept header asks for it
+GET /v/<project>/<variant>.json
+GET /v/<project>/<variant>.yaml
+```
+
+JSON output keeps the formatting of your source: a minified source is served minified, an indented one indented.
+
+## Response headers
+
+| Header | Value |
+| --- | --- |
+| `ETag` | Changes exactly when the served bytes do: a new source document, a new selection, or the other format. |
+| `Cache-Control` | `public, max-age=60, stale-while-revalidate=300`, shortened to the project's check interval. With an interval of "Every request" it is `no-cache`. |
+| `X-Proxy-Source-Status` | `fresh` when the document reflects the latest check. `stale` when a check is still running and the previous copy was served. `stale-error` when your API is failing and the last good copy was served. |
+| `Access-Control-Allow-Origin` | `*`, because documentation tools fetch from other origins. |
+
+Conditional requests (`If-None-Match`) get a `304` when nothing changed, and `HEAD` is answered without a body.
+
+## When you need the current document
+
+A build that runs right after a deploy may want the document as it is this second, not as it was a few minutes ago. Ask for it the way HTTP already allows:
+
+```sh
+curl -H "Cache-Control: no-cache" https://proxy.example.com/v/acme/sdk.json
+```
+
+The proxy then checks your API before it answers, whatever the project's interval says. `Cache-Control: max-age=<seconds>` works the same way for a looser bound. Either is honored down to once every 10 seconds, so nobody can use it to flood your API.
+
+## Delivery does not fail
+
+Once a project has been fetched, its variants are always answered. If your API is down or returns something invalid, consumers get the last good document and `X-Proxy-Source-Status: stale-error`. If an operation you selected disappears from the source, the variant is served without it, and you are told in the app and by email.

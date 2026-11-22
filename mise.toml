@@ -1,0 +1,9 @@
+# Tool versions for mise (https://mise.jdx.dev):  mise trust && mise install
+#
+# pnpm comes from the npm backend on purpose. The default (aqua) backend looks for
+# release assets named pnpm-macos-*, which pnpm 11 no longer publishes, so
+# `pnpm = "11"` fails to install on macOS.
+# Keep the version in sync with `packageManager` in package.json (CI reads that).
+[tools]
+node = "24"
+"npm:pnpm" = "11.28.13"

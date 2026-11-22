@@ -1,0 +1,45 @@
+---
+title: OpenAPI versions
+description: Serve a variant as OpenAPI 3.0 or 3.1, whichever its reader needs, whatever your API generates.
+order: 3
+---
+
+Your framework generates one version of OpenAPI. The tools that read it do not all agree: a documentation site may want 3.1, an API gateway or an older generator may only take 3.0. A variant can be served in either, converted from what your source has.
+
+## Choosing a version
+
+In the editor, the result pane shows the version next to the format, for example "OpenAPI 3.1". Open it and choose the other one, marked "converted". The preview shows the converted document before anything is published.
+
+Left alone, a variant is served in the version of its source, and a single source served in its own version is not rewritten at all.
+
+## From 3.0 to 3.1
+
+Nothing is lost. The few things 3.0 says its own way are said the way JSON Schema does:
+
+| In 3.0 | In 3.1 |
+| --- | --- |
+| `type: string`, `nullable: true` | `type: [string, "null"]` |
+| `minimum: 5`, `exclusiveMinimum: true` | `exclusiveMinimum: 5` |
+| `example: x` on a schema | `examples: [x]` |
+
+## From 3.1 to 3.0
+
+3.0 schemas are an older, smaller language. What has an equivalent is translated:
+
+| In 3.1 | In 3.0 |
+| --- | --- |
+| `type: [string, "null"]` | `type: string`, `nullable: true` |
+| `anyOf: [X, { type: "null" }]` | `X` with `nullable: true` |
+| `const: x` | `enum: [x]` |
+| `exclusiveMinimum: 5` | `minimum: 5`, `exclusiveMinimum: true` |
+| `examples: [x, y]` on a schema | `example: x` |
+| a `$ref` with other keywords next to it | `allOf: [{ $ref }]` with those keywords |
+| `contentMediaType: application/octet-stream` | `format: binary` |
+| `webhooks` | `x-webhooks`, which Redoc and others read |
+
+What has no equivalent is removed: `patternProperties`, tuples (`prefixItems`), conditions (`if`, `then`, `else`), `unevaluatedProperties` and a few more. The editor says exactly what was left out of this variant and how often, so you know what a 3.0 reader will not see. Only what the variant serves is converted, so only that is reported.
+
+## What is not converted
+
+- Swagger 2.0 documents cannot be connected.
+- A 3.2 document is served as it is.

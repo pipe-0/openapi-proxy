@@ -1,0 +1,45 @@
+---
+title: A public OpenAPI document without your internal endpoints
+description: Your framework generates one document for every route, admin and internal ones included. The common ways to publish only the public part, and the leak most of them leave behind.
+cover: /site/blog/public-openapi-document-without-internal-endpoints.jpg
+date: 2026-11-22
+featured: true
+---
+
+Most backends generate their OpenAPI document from the code. That is the right way to keep it honest, and it comes with a catch: the document describes every route the code has. Admin endpoints, internal tools, the webhook your billing provider calls, the half-finished feature behind a flag. Your public docs should show none of that.
+
+The question comes up in every framework, phrased a little differently each time. "How do I hide endpoints from Swagger in Spring Boot." "ASP.NET Core public and private Swagger pages." "Exclude routes from the OpenAPI spec in NestJS." Underneath, it is always the same problem: one source of truth, several audiences.
+
+## The usual answers
+
+**Annotate in code.** Springdoc has `@Hidden`, Swashbuckle has `[ApiExplorerSettings(IgnoreApi = true)]`, FastAPI has `include_in_schema=False`. It works for one audience. The moment you need two, say public docs and a partner who sees a little more, a hidden route is hidden from everyone, and you are back to maintaining a second configuration.
+
+**Generate several documents.** Most frameworks can group routes into separate documents, by path prefix or by a predicate. That works when your URLs already separate public from internal. When they do not, the groups turn into a list of rules in your backend that changes every time the public surface does, and each change is a deploy.
+
+**Mark and strip.** Put `x-internal: true` on what should not be published and run a tool such as Redocly's `remove-x-internal` decorator before publishing. This keeps the decision next to the code, which is nice, but it still needs a build step, and it is one more convention every engineer has to remember on every new route.
+
+**A filter in the backend.** Take the generated document, loop over `paths`, keep the tags you want, serve the result at `/openapi.json`. It is twenty lines and it is what most teams end up with. It is also where the leak is.
+
+## The leak: components
+
+Dropping paths is the easy half. An OpenAPI document keeps its schemas in `components`, separately from the paths that use them. Remove `/admin/impersonate` and the `StaffImpersonation` schema it referenced is still there. So are `InternalBillingRun`, `AdminAuditEntry` and everything else your internal routes use.
+
+Docs renderers show those schemas in their models section. SDK generators turn them into types. Anyone curious enough to scroll can read the shape of your internal API, including field names that say more than the endpoint names would have.
+
+Pruning properly means walking every reference from the operations you kept, following references inside schemas to any depth, and keeping exactly that set. Then the same for parameters, responses, request bodies, headers, examples and security schemes. Then removing tags that no kept operation uses. Redocly's CLI has a `--remove-unused-components` flag for this reason. A hand-written loop almost never does it, because the document looks fine at a glance.
+
+## Selecting instead of hiding
+
+There is a different way to think about it. Instead of marking what to hide in the backend, leave the backend alone: let it generate the full document, which is the most accurate description you have, and select the public part outside of it.
+
+That is what openapi-proxy does. You point it at the full document and check the tags or single operations each audience should see. Each selection is a variant, served at its own URL, and holds the operations you kept and exactly what they reference. Nothing else from the source ends up in it.
+
+Two properties matter for a public document.
+
+**New routes stay hidden.** A variant built by including tags or operations only ever serves what you chose. When the backend gains `/admin/new-thing`, it does not appear anywhere until someone selects it, or gives it a tag the variant includes. A filter that excludes things fails the other way: everything new is published by default.
+
+**Tags are rules, not snapshots.** Check the `Books` tag and an endpoint that gets the tag next month is served too. So the public docs keep up with the public API, without anyone touching the selection.
+
+Changing what the public sees becomes an edit in a browser, not a pull request to the backend. And because the source document is the full one, the same project also serves the variant for your SDK, the one for a partner, and an internal one with everything.
+
+If your backend already has a hand-written filter, it is worth one experiment: fetch your public document and count the schemas in `components` that no remaining operation references. For pipe0's API, the filter we had written by hand left 16 of them in.

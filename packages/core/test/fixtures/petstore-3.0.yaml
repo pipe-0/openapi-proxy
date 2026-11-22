@@ -1,0 +1,152 @@
+openapi: 3.0.3
+info:
+  title: Petstore
+  version: 1.0.0
+tags:
+  - name: pets
+    description: Pet operations
+  - name: stores
+    description: Store operations
+  - name: unused
+    description: Declared but never used
+paths:
+  /pets:
+    summary: Pet collection
+    parameters:
+      - $ref: "#/components/parameters/TraceId"
+    get:
+      operationId: listPets
+      summary: List all pets
+      tags: [pets]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A list of pets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Pet"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      operationId: createPet
+      summary: Create a pet
+      tags: [pets]
+      requestBody:
+        $ref: "#/components/requestBodies/PetBody"
+      responses:
+        "201":
+          description: Created
+          headers:
+            X-Rate-Limit:
+              $ref: "#/components/headers/RateLimit"
+  /pets/{petId}:
+    get:
+      operationId: getPet
+      summary: Get a pet
+      tags: [pets]
+      deprecated: true
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A pet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+              examples:
+                sample:
+                  $ref: "#/components/examples/PetExample"
+  /stores:
+    get:
+      operationId: listStores
+      summary: List stores
+      tags: [stores]
+      security:
+        - storeAuth: []
+      responses:
+        "200":
+          description: Stores
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Store"
+          links:
+            inventory:
+              $ref: "#/components/links/StoreInventory"
+components:
+  schemas:
+    Pet:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        category:
+          $ref: "#/components/schemas/Category"
+    Category:
+      type: object
+      properties:
+        name:
+          type: string
+    Store:
+      type: object
+      properties:
+        id:
+          type: integer
+    Orphan:
+      type: object
+      description: Never referenced by anything
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+    TraceId:
+      name: x-trace-id
+      in: header
+      schema:
+        type: string
+  responses:
+    Error:
+      description: Unexpected error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Category"
+  requestBodies:
+    PetBody:
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Pet"
+  headers:
+    RateLimit:
+      schema:
+        type: integer
+  examples:
+    PetExample:
+      value:
+        id: 1
+        name: Rex
+  links:
+    StoreInventory:
+      operationId: listStores
+  securitySchemes:
+    storeAuth:
+      type: http
+      scheme: bearer
+    unusedAuth:
+      type: apiKey
+      in: header
+      name: X-Api-Key

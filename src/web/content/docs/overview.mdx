@@ -1,0 +1,24 @@
+---
+title: Overview
+description: What openapi-proxy does, and the three things it is made of.
+order: 0
+---
+
+Your backend generates one OpenAPI document for everything it does. openapi-proxy fetches that document, keeps the parts each audience should see, and serves each selection at a URL of its own. When your API changes, the served documents change with it.
+
+## Three things
+
+- A **workspace** is the people who share the projects. Signing in gives you one, and you invite colleagues into it.
+- A **project** is one API as its readers know it: one OpenAPI document fetched from a URL, or several merged into one. A document can be public, or behind credentials that the proxy sends for you.
+- A **variant** is a selection of that document's operations, served at `/v/<project>/<variant>`. Your public docs read one, your SDK generator another.
+
+A variant keeps the operations you chose and exactly what they reference: schemas, parameters, responses, security schemes. Nothing else from the source ends up in it. It can be served as OpenAPI 3.0 or 3.1, whichever its reader needs.
+
+## Where to go next
+
+- [Serving a variant](/docs/serving): the URLs, formats and response headers your consumers see.
+- [Merging documents](/docs/merging): one project from the documents of several services.
+- [OpenAPI versions](/docs/versions): serving a variant as 3.0 or 3.1.
+- [Keeping in sync](/docs/keeping-in-sync): how the proxy notices that your API changed, and what that costs.
+- [Sending an ETag](/docs/etag) and [A version endpoint](/docs/version-endpoint): two ways to make those checks nearly free.
+- [API and MCP](/docs/api-and-mcp): doing all of it from a script or an agent.

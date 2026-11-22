@@ -1,0 +1,58 @@
+---
+title: How to merge several OpenAPI documents into one
+description: Your API is made of several services, each with its own OpenAPI document, and your docs and SDK want one. What goes wrong when you combine them, and rules that hold up.
+cover: /site/blog/merge-multiple-openapi-documents.jpg
+date: 2026-11-22
+---
+
+An API that grows usually stops being one service. Billing moves out, search moves out, an acquisition brings its own backend. Each service generates its own OpenAPI document, and each document is correct. Your customers, though, see one API. Your docs site wants one document, and so does the SDK generator.
+
+So you need to merge them. "How do I combine multiple OpenAPI files into one" is one of the oldest questions in the OpenAPI corner of Stack Overflow, and the answers are mostly the names of tools. Before picking one, it helps to know what actually goes wrong.
+
+## Two kinds of "multiple files"
+
+There are two different problems that share the name.
+
+**One document split across files.** A single API described in `openapi.yaml` plus `schemas/user.yaml` and friends, connected with `$ref`. Joining these is called bundling, and it is solved: `redocly bundle` or `swagger-cli bundle` resolve the references into one file. Nothing can conflict, because it was one document all along.
+
+**Several independent documents.** Each service has its own `info`, its own `servers`, its own `components`, written by different people who never coordinated names. This is merging, and this post is about it.
+
+## What collides
+
+Concatenating `paths` and `components` works until it does not. Four things go wrong, roughly in the order you discover them.
+
+**Component names.** Every service has a schema called `Error`. Sometimes they are the same shape. Often they are not: one has `code` and `message`, the other `type` and `detail`. Whichever wins, half your operations now describe the wrong error. The same happens to parameters (`limit`, `cursor`), responses and security schemes.
+
+**Operations.** Two documents may both describe `GET /health`, or the same route with differently named parameters: `/users/{id}` in one and `/users/{userId}` in the other. That is the same endpoint to any HTTP client, and two entries for it make an invalid document.
+
+**Servers and info.** Each document says where its service lives. An internal address like `http://billing.internal:8080` has no business in a public document, and the merged `info.title` should be the product, not the last service that happened to be read.
+
+**Mount points.** A service mounted under `/billing` by your gateway usually describes its own paths without that prefix: `/invoices`, not `/billing/invoices`. Merged as is, the document lies about every one of its URLs.
+
+## The tools, and where they stop
+
+There are good options for merging at build time. `redocly join` combines several documents and can prefix component names with a value from each document's `info`. The `openapi-merge` package on npm takes a config file with one entry per input, a prefix for clashing components, and a path modification for mount points.
+
+Both are command line tools, and that is where the trouble is. A merge at build time needs a pipeline that has all the documents. If the services deploy independently, which is usually the reason they are separate, the merged document is out of date the moment one of them ships without the pipeline running. Somebody ends up owning a cron job.
+
+## Rules that can run unattended
+
+A merge that runs every time any source changes cannot stop and ask a person what to do. It needs rules that are predictable, and it needs to say what it did. These are the ones openapi-proxy follows, and the reasoning behind each.
+
+**The first document is the main one.** Its `info` and `servers` describe the merged API. The servers of the others are dropped, so internal addresses do not leak. Security is the exception to "one document speaks for all": every operation keeps the security its own document gave it, so a service that asks for an API key does not become public by being merged into one that does not. Picking one document to speak for the whole is simpler to reason about than merging `info` objects field by field.
+
+**The same operation twice: the earlier one wins.** Method and path decide what "the same" means, and paths that differ only in a parameter's name count as equal. The losing operation is listed, so it does not vanish silently.
+
+**Same name, different meaning: rename the later one.** If both documents have an identical `Error`, including everything it references, they become one. If they differ, the later one is renamed after its document, `BillingError`, and every reference to it is rewritten. Each operation keeps exactly the schema it had. Prefixing everything up front, as some tools do, also works, but it renames hundreds of schemas that never clashed and makes the merged document harder to read.
+
+**Tags are combined by name.** `Users` from one service and `Users` from another end up together, which is almost always what the docs should show.
+
+**A path prefix per document.** That fixes the mount point problem in one field.
+
+One more detail matters in practice: a 3.0 document and a 3.1 document describe schemas in different dialects. The 3.0 one is upgraded to 3.1 first, which loses nothing, and then they are merged.
+
+## Merging without a pipeline
+
+In openapi-proxy a project can be built from up to ten documents. You give it the URLs, it fetches each one, merges them with the rules above, and serves the result at a stable URL. When any service deploys, the next check notices and the merged document is assembled again. If one service is down, its last good copy stays in the merge and the others keep updating.
+
+Because the merged document is a project like any other, you can then select from it: one variant for public docs, another for a partner, each served as OpenAPI 3.0 or 3.1. The details are in [Merging documents](/docs/merging).
