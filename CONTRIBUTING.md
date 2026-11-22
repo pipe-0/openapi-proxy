@@ -18,17 +18,17 @@ To try Google sign-in locally, put a client ID and secret into `.env` and regist
 
 ## Layout
 
-| Path             | What lives there                                                                                                                                   |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/core`  | The engine: merge, select and convert OpenAPI documents. Pure functions, no I/O, one dependency (`yaml`). MIT. Not published to npm: it is used from this repository.                   |
-| `src/server`     | Everything that is not a page (Hono): sign-in (better-auth), workspaces, fetching sources, the admin API, public serving, the hourly check, email. |
-| `src/web`        | The Worker's entry (`server.ts`) and every page (React on TanStack Start).                                                                         |
-| `src/web/routes` | The route tree: `_site` is rendered on the server, `_client` in the browser. Files here are thin.                                                  |
-| `src/web/pages`  | The screens of the app. `src/web/site` is the landing page and blog, `src/web/content` the posts.                                                  |
-| `src/shared`     | What server and web must agree on: the plans and their limits.                                                                                     |
-| `migrations`     | D1 schema, generated from `src/server/db/schema.ts` with `pnpm db:generate`.                                                                       |
-| `test`           | Worker integration tests. They run inside workerd against a real local D1.                                                                         |
-| `e2e`            | The product journeys in a browser, plus the local fixture server they run against.                                                                 |
+| Path             | What lives there                                                                                                                                                      |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/core`  | The engine: merge, select and convert OpenAPI documents. Pure functions, no I/O, one dependency (`yaml`). MIT. Not published to npm: it is used from this repository. |
+| `src/server`     | Everything that is not a page (Hono): sign-in (better-auth), workspaces, fetching sources, the admin API, public serving, the hourly check, email.                    |
+| `src/web`        | The Worker's entry (`server.ts`) and every page (React on TanStack Start).                                                                                            |
+| `src/web/routes` | The route tree: `_site` is rendered on the server, `_client` in the browser. Files here are thin.                                                                     |
+| `src/web/pages`  | The screens of the app. `src/web/site` is the landing page and blog, `src/web/content` the posts.                                                                     |
+| `src/shared`     | What server and web must agree on: the plans and their limits.                                                                                                        |
+| `migrations`     | D1 schema, generated from `src/server/db/schema.ts` with `pnpm db:generate`.                                                                                          |
+| `test`           | Worker integration tests. They run inside workerd against a real local D1.                                                                                            |
+| `e2e`            | The product journeys in a browser, plus the local fixture server they run against.                                                                                    |
 
 The app imports `@openapi-proxy/core` straight from its TypeScript source, so there is no build step between editing the engine and seeing the result in the app.
 
