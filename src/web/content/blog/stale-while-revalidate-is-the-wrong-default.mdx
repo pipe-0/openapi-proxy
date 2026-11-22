@@ -1,0 +1,47 @@
+---
+title: Why stale-while-revalidate is the wrong default for OpenAPI documents
+description: A proxy that answers from its cache and refreshes afterwards hands every daily build yesterday's document. What openapi-proxy does instead.
+cover: /site/blog/stale-while-revalidate-is-the-wrong-default.jpg
+date: 2026-11-22
+draft: true
+---
+
+The obvious way to build a proxy for a slow or expensive upstream is stale-while-revalidate. Answer at once from the copy you have, and if that copy is past its interval, refresh it in the background for whoever asks next. It is the right design for a product page or an avatar. For OpenAPI documents it quietly defeats the purpose.
+
+## Who reads an OpenAPI document
+
+Mostly not people. A docs site fetches it when it builds. An SDK generator fetches it in a pipeline. A contract test fetches it before a run. These readers have something in common: they arrive rarely, and when they arrive they want the truth.
+
+Now follow one of them through a stale-while-revalidate cache. Your API deploys at ten in the morning with a new endpoint. At eleven the SDK pipeline runs and asks the proxy for the document. Nobody has asked since last night, so the copy is fourteen hours old. The cache does what it was told: it answers with the old copy and starts a refresh. The pipeline generates an SDK without the new endpoint. The refresh finishes a second later, and the next reader will benefit from it. The next reader is tomorrow's pipeline.
+
+Every reader gets the document as of the previous reader. For a busy page that means a few seconds of staleness. For a build that runs once a day it means a day.
+
+## What a reader should get instead
+
+The rule in openapi-proxy is short: a copy older than the check interval is not handed out on trust. The request that notices checks the source first and answers with the result.
+
+That one request waits for the check. Most checks are cheap. If your API answers with an `ETag`, the proxy asks "anything new since this one?" and gets a 304 with no body. If you configured a version endpoint, it compares a build id and skips the download entirely. Only when something did change is the document fetched and parsed again.
+
+Three details keep this from turning into a different problem.
+
+**Exactly one request checks.** If twenty requests arrive together after a quiet weekend, one of them claims the check with a single conditional write to the database and the others wait for its result. Your API sees one request, not twenty.
+
+**A busy variant does not stall.** Waiting only makes sense when the copy is really old. If a copy crossed its interval a few seconds ago and someone is already checking, it is as good as it was a moment earlier, so everyone else is answered from it immediately. A docs page with steady traffic never notices the interval passing.
+
+**Nobody waits on a broken source.** A check has five seconds. If your API is slower than that, the check carries on in the background and the reader gets the copy. If your API is down, readers get the last good document right away and the proxy retries on its own every thirty seconds. A consumer never receives an error because your API had a bad minute.
+
+## When you need it now
+
+Intervals still exist, so a pipeline that runs seconds after a deploy can land inside one. For that case the proxy honors what HTTP already offers. Send `Cache-Control: no-cache` with the request and the source is checked before the answer, whatever the interval says.
+
+```sh
+curl -H "Cache-Control: no-cache" https://proxy.example.com/v/acme/sdk.json
+```
+
+This is honored down to once every ten seconds, so the header cannot be used by a stranger to hammer your API through the proxy.
+
+## One more thing an answer owes its reader
+
+A response from the proxy carries a strong `ETag`, derived from the source document, the selection and the output format. A refresh can land between the moment a request looks up the variant and the moment it reads the document. If that happens, the response is labelled with the validator of what was actually rendered, never with the one that was current a millisecond earlier. A validator that describes different bytes than it travels with is worse than none, because the next conditional request would be told that nothing changed.
+
+None of this is exotic. It is what you would ask for if you wrote down who the readers are before choosing the cache.

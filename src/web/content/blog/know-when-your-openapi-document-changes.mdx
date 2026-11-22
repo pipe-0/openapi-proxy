@@ -1,0 +1,42 @@
+---
+title: Knowing when your OpenAPI document changes
+description: Diff tools catch breaking changes in a pull request. Nothing tells you when the deployed document gained an endpoint your public docs do not show yet. How to watch the document itself.
+cover: /site/blog/know-when-your-openapi-document-changes.jpg
+date: 2026-11-22
+---
+
+There is good tooling for comparing two OpenAPI documents. `oasdiff` reports every difference between two versions and flags the breaking ones, and teams run it in CI to fail a pull request that removes a field or tightens a parameter. If you have not set it up, it is worth an afternoon.
+
+But it answers one question, "is this change safe?", at one moment, review time. There is a second question it does not answer: "what changed in the document we actually deployed, and does anyone downstream need to know?"
+
+## Changes that slip past review
+
+A diff in CI compares the document in the branch with the document in main. Several kinds of change never show up there.
+
+**Generated documents.** If the document is generated from the code at runtime, there may be no document in the repository to diff. The change is in a handler signature or a validation schema, and the document that results is only visible after deploy.
+
+**Other people's services.** An API made from several services deploys each on its own schedule. No single pull request sees the combined document.
+
+**Additions.** A diff tool treats a new endpoint as safe, which it is. But a new endpoint under the `Billing` tag is something the docs team, the SDK owner and the partner manager each want to hear about, for different reasons.
+
+**Changes that are not breaking but matter.** A new optional field on a response. A description rewritten. An enum that gained a value your partner's code switches over.
+
+## Watching the deployed document
+
+The alternative is to watch the document where it lives, at its URL, and compare each new version with the last one. That sounds like a cron job and a diff, and it is, with a few details that decide whether anyone reads the result.
+
+**Compare operations, not text.** A document regenerated with keys in a different order, or reformatted, is not a change. Comparing each operation's meaning, including everything it references, separates a real change from noise. If a shared `Address` schema gains a field, every operation that uses it changed, and only those.
+
+**Say what it touches.** "The document changed" is not actionable. "`POST /v1/invoices` was added; it is under `Billing`, which the public docs serve" is.
+
+**Let people choose how much.** The person who owns the public docs wants to know about anything that touches what is published. The person who owns the API might want every change. Nobody wants both lists in one email.
+
+**Do not make checks expensive.** Fetching a large generated document every few minutes costs the API real work. A conditional request with an `ETag`, or a tiny version endpoint that returns a build id, makes "has anything changed?" nearly free.
+
+## How openapi-proxy does it
+
+openapi-proxy already fetches your document to serve its variants, so it compares each new version with the previous one as part of every check. Each operation gets a fingerprint of its definition and everything it references. A check knows which operations were added, which were removed, and which changed, and which variants serve each of them.
+
+Everyone in the workspace chooses what they hear about: nothing, new operations plus changes to anything a variant serves, or every change in the source. The email lists the operations and the variants they affect. A new operation is only served where a variant asked for it, for example because it carries a tag the variant includes, and the email says which variants those are. Everything else waits until someone decides.
+
+Projects nobody has requested lately are checked once an hour, so you hear about a change before your next build does. How checks work, and how to make them cheap, is in [Keeping in sync](/docs/keeping-in-sync).

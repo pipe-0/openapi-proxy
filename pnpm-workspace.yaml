@@ -1,0 +1,9 @@
+# The repository root is the deployable app; the filter engine is the one nested package.
+packages:
+  - packages/*
+
+# Dependencies allowed to run install scripts (pnpm blocks them by default).
+allowBuilds:
+  esbuild: true
+  sharp: true
+  workerd: true

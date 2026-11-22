@@ -1,0 +1,61 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Cycles", "version": "1.0.0" },
+  "paths": {
+    "/nodes": {
+      "get": {
+        "tags": ["nodes"],
+        "responses": {
+          "200": {
+            "description": "A tree",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Node" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/other": {
+      "get": {
+        "tags": ["other"],
+        "responses": {
+          "200": {
+            "description": "Other",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Standalone" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Node": {
+        "type": "object",
+        "properties": {
+          "value": { "type": "string" },
+          "children": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Node" }
+          },
+          "parent": { "$ref": "#/components/schemas/NodeRef" }
+        }
+      },
+      "NodeRef": {
+        "type": "object",
+        "properties": {
+          "node": { "$ref": "#/components/schemas/Node" }
+        }
+      },
+      "Standalone": {
+        "type": "object",
+        "properties": { "id": { "type": "string" } }
+      }
+    }
+  }
+}

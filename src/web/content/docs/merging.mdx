@@ -1,0 +1,47 @@
+---
+title: Merging documents
+description: One project from several OpenAPI documents, for an API that is made of more than one service.
+---
+
+A project can be assembled from several OpenAPI documents. Their operations are combined into one document, and variants select from the whole. Use it when the API your readers see is built from more than one service, each with a document of its own.
+
+This is for independent documents. One API that is split across files with `$ref` is a different thing: bundle those into one file first, with a tool such as `redocly bundle`.
+
+## Adding a document
+
+- **When you connect:** choose "Merge several documents into one" and add the other URLs under the first.
+- **Later:** open **Sources** in the project and choose "Add a document".
+
+Each document has its own URL, its own credentials if it needs them, and its own checks. When any of them changes, the project's document is assembled again.
+
+## The rules
+
+A merge runs by itself every time a source changes, so it cannot stop and ask. It follows fixed rules instead, and tells you what it did.
+
+**The first document is the main one.** Its `info` and its `servers` describe the merged API. The servers of the other documents are not carried over, so the address of an internal service does not end up in a public document. You can make any document the main one.
+
+**Every operation keeps its security.** If a document sets a default `security` for all of its operations and the main document has a different one, that default is written onto each of its operations. A service that asks for an API key keeps asking for it, and a public one stays public.
+
+**The same operation in two documents: the earlier one is kept.** "The same" means the same method and path, where paths that differ only in a parameter's name count as the same (`/users/{id}` and `/users/{userId}`). The other operation is left out, and the Documents page lists it. Two documents can each add methods to one path, as long as they describe the path itself the same way: the same spelling and the same path-level parameters.
+
+**The same name for two different things: the later one is renamed.** If two documents both have a schema called `Error` and they are identical, including everything they reference, they become one. If they differ, the later document's becomes `BillingError`, named after that document, and every reference to it follows. Each operation keeps exactly the schema it had. The same goes for parameters, responses, security schemes and operation ids.
+
+**Tags are combined by name.** An operation tagged `Users` in either document appears under `Users`.
+
+## A path prefix
+
+A service that is mounted under the main API usually describes its paths without the mount point: `/invoices`, not `/billing/invoices`. Give its document a **path prefix** and the prefix is put in front of every one of its paths.
+
+## Documents in different OpenAPI versions
+
+A 3.0 document can be merged with a 3.1 one. The two describe schemas in different dialects, so the 3.0 document is converted to 3.1 first, which loses nothing. The Documents page says when that happened. See [OpenAPI versions](/docs/versions).
+
+## What you see
+
+- On **Sources**: each document with its status, and under them "What merging changed": operations left out, things renamed, servers not carried over.
+- In the editor: operations that came from a document other than the main one are marked with its name, and typing that name in the filter finds them.
+- If one document cannot be fetched, its last good copy stays in the merge and the others keep updating. The project shows which one failed and why.
+
+## Limits
+
+Up to 10 documents per project, and 5 MB for all of them together.

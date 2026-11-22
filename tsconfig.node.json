@@ -1,0 +1,11 @@
+{
+  // Tooling that runs in Node: build/test configs and the Playwright suite.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["node"],
+    // Node runs these files directly, which needs real `.ts` import paths.
+    "allowImportingTsExtensions": true
+  },
+  "include": ["*.config.ts", "e2e", "scripts"]
+}

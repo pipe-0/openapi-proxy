@@ -1,0 +1,17 @@
+node_modules/
+dist/
+coverage/
+.wrangler/
+.dev.vars
+.env
+.env.*
+!.env.example
+*.local
+.DS_Store
+*.tsbuildinfo
+worker-configuration.d.ts
+test-results/
+playwright-report/
+# Generated from src/web/content by fumadocs-mdx (pnpm dev, build and typecheck write it).
+.source/
+.tanstack/
