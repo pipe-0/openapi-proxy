@@ -427,14 +427,21 @@ function subjectOf(shape: Shape): Subject | undefined {
  * busy beside it. On an ordinary one a step is a tenth of that. And what a
  * job may take before it has counted anything: starting up, and the first
  * run of code that has not been run before.
+ *
+ * A machine that CI shares with others gets four times as long. What this
+ * test is after is work out of all proportion to its steps, which shows as a
+ * factor of hundreds, and a slow runner must not look like one: it once took
+ * 2.3 microseconds a step reading YAML and failed a build that had nothing
+ * wrong with it.
  */
-const MS_PER_STEP = 0.002;
-const MS_TO_START = 150;
+const SLOWER = process.env.CI ? 4 : 1;
+const MS_PER_STEP = 0.002 * SLOWER;
+const MS_TO_START = 150 * SLOWER;
 /**
  * And how long a job may run before it is refused for running out: the whole
  * budget, at a quarter of a microsecond a step. Most work is cheaper than that.
  */
-const MS_TO_REFUSE = WORK_BUDGET * 0.00025;
+const MS_TO_REFUSE = WORK_BUDGET * 0.00025 * SLOWER;
 
 const SEEDS = Number(process.env.COST_SEEDS ?? 60);
 

@@ -4,6 +4,9 @@ import { APP_PORT } from "./e2e/server.ts";
 export default defineConfig({
   testDir: "./e2e",
   timeout: 60_000,
+  // The development server compiles a page on its first visit. On a CI machine
+  // that can take longer than the five seconds an expectation waits by default.
+  expect: { timeout: process.env.CI ? 20_000 : 5_000 },
   // One local database, one story at a time.
   workers: 1,
   forbidOnly: Boolean(process.env.CI),

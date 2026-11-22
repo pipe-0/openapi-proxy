@@ -482,7 +482,8 @@ describe("the work a document may cause", () => {
     const exhausting = refusedShapes.find(([shape]) => shape.includes("one path item of 10,000"));
     expect(exhausting?.[1]).toThrow(DocumentTooComplexError);
     expect(fingerprintOperations(doc({ "/a": { get: { responses: ok } } })).size).toBe(1);
-  });
+    // Running a whole budget out takes seconds, and more on a machine shared with others.
+  }, 60_000);
 
   it("does not depend on a pattern that backtracks: a path prefix of 200,000 slashes", () => {
     expect(normalizePathPrefix(`billing${"/".repeat(200_000)}`)).toBe("/billing");
