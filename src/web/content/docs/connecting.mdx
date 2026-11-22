@@ -1,0 +1,24 @@
+---
+title: Connecting a document
+description: What the proxy needs from your OpenAPI document, and how it reads one that is not public.
+---
+
+A project starts with the URL of an OpenAPI document. The proxy fetches it, lists its operations, and keeps a copy that it checks against your API from then on.
+
+## What it reads
+
+- **OpenAPI 3.0, 3.1 and 3.2**, as JSON or YAML.
+- **One file.** References have to point inside the document. If yours is split across files, bundle it first, for example with `redocly bundle`. When a document points elsewhere, the proxy tells you which references do.
+- **Up to 5 MB** for a project's documents together.
+
+The project gets its name and a short URL prefix from the document's title. Both can be changed in the project's settings.
+
+## Private documents
+
+The full document describes everything your backend does, so it often should not be public. Add request headers to a document, typically `Authorization`, and the proxy sends them with every fetch.
+
+The headers are encrypted before they are stored and are never shown again, in the app or through the API. They are sent to your document's own origin only, also when that origin redirects somewhere else.
+
+## Several documents
+
+A project can be built from up to 10 documents, merged into one. See [Merging documents](/docs/merging).

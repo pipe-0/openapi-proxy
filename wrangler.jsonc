@@ -1,0 +1,36 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "openapi-proxy",
+  // The Worker's entry: the admin API and public documents (Hono), the cron
+  // handler, and TanStack Start for every page.
+  "main": "src/web/server.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    // Built files are served straight from the edge. Everything else reaches
+    // the Worker; these must never be answered by a file of the same name.
+    "run_worker_first": ["/v/*", "/api/*", "/mcp"]
+  },
+  // Each workspace's budget of API requests per minute, counted by Cloudflare.
+  // What a request costs is in src/server/rate-limit.ts: one, or ten if it
+  // makes the instance fetch a source. The namespace id only has to differ
+  // from other rate limiters in the same Cloudflare account.
+  "ratelimits": [
+    { "name": "API_RATE_LIMIT", "namespace_id": "7732", "simple": { "limit": 300, "period": 60 } }
+  ],
+  // Hourly: check the sources nobody has asked about lately (src/server/scheduled.ts).
+  "triggers": { "crons": ["0 * * * *"] },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "openapi-proxy",
+      // Replaced by "Deploy to Cloudflare", or by `wrangler d1 create` when deploying by hand.
+      // Any value works for local development.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

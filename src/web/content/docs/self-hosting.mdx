@@ -1,0 +1,110 @@
+---
+title: Self-hosting
+description: Run openapi-proxy on your own Cloudflare account, on the free plan or a paid one.
+---
+
+openapi-proxy is one Cloudflare Worker and one D1 database. You can run it on your own account, for your team or as a service for others.
+
+## Deploy to Cloudflare
+
+The **Deploy to Cloudflare** button in the [repository](https://github.com/pipe-0/openapi-proxy) copies it into your account, creates the database, asks for the secrets below, runs the migrations and deploys the Worker. Then open the Worker's URL and sign in.
+
+| Secret | What it is |
+| --- | --- |
+| `AUTH_SECRET` | Required. A random string (`openssl rand -hex 32`). Signs sessions and encrypts the credentials of private documents. |
+| `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` | Sign in with Google. |
+| `ADMIN_PASSWORD` | One built-in admin account with this password. Make it long. |
+
+You need Google, the admin password, or both.
+
+From the command line:
+
+```sh
+git clone https://github.com/pipe-0/openapi-proxy && cd openapi-proxy
+pnpm install
+pnpm exec wrangler d1 create openapi-proxy
+printf 'OPENAPI_PROXY_D1_DATABASE_ID=<the printed id>\n' > .env.deploy
+pnpm run deploy
+pnpm exec wrangler secret put AUTH_SECRET
+```
+
+`pnpm run deploy` builds, migrates the database and deploys. Add `OPENAPI_PROXY_DOMAIN=proxy.example.com` to `.env.deploy` to serve on a domain of yours. It has to be a zone in the same Cloudflare account.
+
+### Deploy from GitHub Actions
+
+The repository's CI deploys every push to `main`, after its checks passed: it applies new database migrations, then replaces the Worker. It does so in a repository that has these settings (**Settings**, then **Secrets and variables**, then **Actions**):
+
+| Name | Kind | What it is |
+| --- | --- | --- |
+| `OPENAPI_PROXY_D1_DATABASE_ID` | Variable | The id `wrangler d1 create` printed. Setting it is what turns deploying on. |
+| `CLOUDFLARE_API_TOKEN` | Secret | A Cloudflare API token from the template **Edit Cloudflare Workers**, with **D1: Edit** added. |
+| `CLOUDFLARE_ACCOUNT_ID` | Secret | The id of the Cloudflare account. |
+| `OPENAPI_PROXY_DOMAIN` | Variable | Optional. A domain of yours to serve on. |
+
+Every other `OPENAPI_PROXY_` setting from this page (`CONTACT_EMAIL`, `EMAIL_FROM`, `PUBLIC_SITE`, `ALLOWED_EMAILS`) is a variable of the same name, or a secret if it should not show in the log. `AUTH_SECRET` and the other secrets of the Worker are not needed there: they are set once with `wrangler secret put` and kept across deploys.
+
+## Run it locally
+
+```sh
+git clone https://github.com/pipe-0/openapi-proxy && cd openapi-proxy
+pnpm install
+cp .env.example .env
+pnpm dev
+```
+
+It runs on `http://localhost:7732` and needs no Cloudflare account. Sign in with the admin password, which is `admin` in the example file. The example secrets work on localhost only.
+
+## Signing in
+
+**Google.** Create an OAuth client of type "Web application" in the [Google Cloud console](https://console.cloud.google.com/apis/credentials). Register the redirect URI `https://<your origin>/api/auth/callback/google` and set the client's ID and secret. Everyone who signs in gets a workspace of their own.
+
+**Who may sign in.** With Google configured, anyone with a Google account can sign in. To keep an instance to yourselves, set `ALLOWED_EMAILS` to a comma-separated list of addresses and domains, such as `ada@example.com, example.org`.
+
+**The admin password.** `ADMIN_PASSWORD` adds one built-in admin account, for local development and for running an instance without a Google client. Five wrong attempts lock it for 30 seconds.
+
+**Colleagues.** Anyone in a workspace can invite others by email address, from the Workspace page. An invitation also lets that person in past `ALLOWED_EMAILS`.
+
+## Email
+
+Invitations and emails about changes go out through [Cloudflare Email Sending](https://developers.cloudflare.com/email-service/), from the account the Worker runs in. Set up a sending domain there, then set `CLOUDFLARE_EMAIL_TOKEN` (an API token that may send email), `CLOUDFLARE_EMAIL_ACCOUNT_ID`, `EMAIL_FROM`, and `APP_URL` so that emails can link back.
+
+Without them nothing is sent, and everything else works the same. An invitation is then a link you pass on yourself.
+
+## Limits
+
+On your own instance every workspace can use everything: 100 projects, and as many variants as it needs. These hold for every workspace, to keep it within what a Worker and D1 handle well:
+
+- 10 documents in a project, 5 MB together.
+- 100 variants in a project, 50 people and 100 API keys in a workspace.
+- 300 API requests a minute for a workspace. Change the number in `wrangler.jsonc`, under `ratelimits`. Reading served documents is not counted.
+
+The hourly check of documents that nobody read lately does as much as one Worker invocation may: a handful of projects an hour on Cloudflare's free plan, 40 on a paid one. A request for a variant always checks for itself.
+
+## Selling plans
+
+Set `CONTACT_EMAIL` and the instance has plans, the way the hosted service does. Every workspace then starts on Free (3 projects and 15 variants), your own included, and its owner can ask for Pro on the Workspace page. The request reaches `CONTACT_EMAIL` as an email. The limits of each plan are in `src/shared/plans.ts`, and they apply when something is created, never to serving.
+
+You give a workspace Pro, and take it away, with a statement in the D1 console or through `wrangler d1 execute`. Both name the workspace by the email address of anyone in it, and both are in the emails that requests send.
+
+Give Pro, until you remove it:
+
+```sql
+INSERT OR REPLACE INTO subscription (reference_id, plan, status)
+SELECT organization_id, 'pro', 'active' FROM member JOIN user ON user.id = member.user_id
+WHERE user.email = 'ada@example.com';
+```
+
+Remove it:
+
+```sql
+DELETE FROM subscription WHERE reference_id IN (
+  SELECT organization_id FROM member JOIN user ON user.id = member.user_id
+  WHERE user.email = 'ada@example.com'
+);
+```
+
+The built-in admin's address is `admin@openapi-proxy.local`. To let Pro end by itself on a day, set `period_end` on the row to that day in milliseconds.
+
+`PUBLIC_SITE=true` serves a landing page, a blog, and about, terms and privacy pages. The texts in `src/web/content/legal` and the landing page describe the hosted service at openapi-proxy.app, so replace them first.
+
+When you deploy from the command line, these settings go into `.env.deploy` with the prefix `OPENAPI_PROXY_`, such as `OPENAPI_PROXY_CONTACT_EMAIL=you@example.com`. Secrets such as `CLOUDFLARE_EMAIL_TOKEN` are set with `wrangler secret put`.

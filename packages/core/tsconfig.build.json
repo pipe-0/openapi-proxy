@@ -1,0 +1,15 @@
+{
+  // Emits the published artifact: plain ESM plus declarations, one file per module.
+  // No bundler needed; the only runtime dependency (`yaml`) stays external.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "src",
+    "outDir": "dist",
+    "declaration": true,
+    "sourceMap": true,
+    "inlineSources": true,
+    "types": []
+  },
+  "include": ["src"]
+}

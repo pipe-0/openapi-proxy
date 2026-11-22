@@ -1,0 +1,128 @@
+name: CI
+
+# Every pull request is checked. A push to main is checked the same way and,
+# where the repository says where to deploy to, deployed after it passed.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # To deploy main again without a new commit, for example after changing a setting.
+  workflow_dispatch:
+
+# A newer push to a pull request replaces the run before it. Runs on main are
+# never cut short: one of them may be migrating the database.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint, types, tests, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      # A deploy applies the files in migrations/ to the live database. A change
+      # to the schema that has no file there would deploy code the database
+      # does not fit.
+      - name: Every schema change has a migration
+        run: |
+          pnpm db:generate --name missing
+          if [ -n "$(git status --porcelain migrations)" ]; then
+            echo "::error::src/server/db/schema.ts changed without a migration. Run pnpm db:generate and commit the new file in migrations/."
+            git status --porcelain migrations
+            exit 1
+          fi
+      - run: pnpm test
+      - run: pnpm build
+
+  e2e:
+    name: End to end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      # Hermetic: the suite serves its own fixture spec and uses a throwaway local database.
+      - run: pnpm test:e2e
+      # The same journeys against the production build, which is where the
+      # Content-Security-Policy is enforced.
+      - run: pnpm test:e2e
+        env:
+          E2E_PREVIEW: "1"
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7
+
+  deploy:
+    name: Deploy
+    needs: [check, e2e]
+    # From main only, after everything above passed, and only where the
+    # repository says which database to deploy to: a fork without that
+    # variable skips this job.
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request' &&
+      vars.OPENAPI_PROXY_D1_DATABASE_ID != ''
+    runs-on: ubuntu-latest
+    # One deploy at a time, in the order of the pushes.
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: The Cloudflare credentials are set
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Add the repository secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID. See the Self-hosting page of the docs."
+            exit 1
+          fi
+      # Builds for this deployment, applies the migrations the database does not
+      # have yet, then replaces the Worker. In that order: a migration that
+      # fails is rolled back by D1, the step fails, and the Worker that is live
+      # stays as it is. Secrets set with `wrangler secret put` are kept.
+      - name: Migrate the database, then deploy the Worker
+        run: pnpm run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Where this deployment lives (see vite.config.ts). Each is a repository
+          # variable, or a secret of the same name where it should not show in
+          # the log, which is public for a public repository.
+          OPENAPI_PROXY_D1_DATABASE_ID: ${{ vars.OPENAPI_PROXY_D1_DATABASE_ID }}
+          OPENAPI_PROXY_DOMAIN: ${{ secrets.OPENAPI_PROXY_DOMAIN || vars.OPENAPI_PROXY_DOMAIN }}
+          OPENAPI_PROXY_APP_URL: ${{ secrets.OPENAPI_PROXY_APP_URL || vars.OPENAPI_PROXY_APP_URL }}
+          OPENAPI_PROXY_ALLOWED_EMAILS: ${{ secrets.OPENAPI_PROXY_ALLOWED_EMAILS || vars.OPENAPI_PROXY_ALLOWED_EMAILS }}
+          OPENAPI_PROXY_PUBLIC_SITE: ${{ secrets.OPENAPI_PROXY_PUBLIC_SITE || vars.OPENAPI_PROXY_PUBLIC_SITE }}
+          OPENAPI_PROXY_CONTACT_EMAIL: ${{ secrets.OPENAPI_PROXY_CONTACT_EMAIL || vars.OPENAPI_PROXY_CONTACT_EMAIL }}
+          OPENAPI_PROXY_EMAIL_FROM: ${{ secrets.OPENAPI_PROXY_EMAIL_FROM || vars.OPENAPI_PROXY_EMAIL_FROM }}
+          # Email is sent from the account the Worker runs in, unless another is named.
+          OPENAPI_PROXY_CLOUDFLARE_EMAIL_ACCOUNT_ID: ${{ secrets.OPENAPI_PROXY_CLOUDFLARE_EMAIL_ACCOUNT_ID || vars.OPENAPI_PROXY_CLOUDFLARE_EMAIL_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}

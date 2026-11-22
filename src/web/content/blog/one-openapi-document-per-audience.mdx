@@ -1,0 +1,48 @@
+---
+title: One OpenAPI document per audience, each at a stable URL
+description: Public docs, the SDK, a partner and an internal tool each need a different part of the same API. Why a hosted URL per audience beats files in a repository.
+cover: /site/blog/one-openapi-document-per-audience.jpg
+date: 2026-11-22
+---
+
+The first OpenAPI document an API publishes is for its docs. The second one is usually for someone else: an SDK that should not include beta endpoints, a partner who integrates against three resources and should not see the other forty, an internal tool that needs everything, an LLM agent that works better with ten operations than with two hundred.
+
+Each of these readers wants a document of its own. And each wants it at a URL, because that is how documentation sites, SDK generators, gateways and contract tests take their input.
+
+## What usually happens
+
+The first version is a copy. Someone exports the document, deletes what the partner should not see, and sends the file. It is correct for about a week.
+
+The second version is a script in the repository that writes `openapi.public.json`, `openapi.partner-acme.json` and so on, committed to Git or uploaded to a bucket. Now the files are generated, which is better, but they are only as current as the last time the script ran, and each new audience is a code change.
+
+The third version moves into the backend: one route per audience, each with its own filter. The backend now carries a list of who sees what, and changing it means a deploy.
+
+All three have the same shape. The decision of what an audience sees lives in the build or in the backend, and the document someone reads is a snapshot of whenever that last ran.
+
+## What a hosted URL gives you
+
+A stable URL per audience, served from the current source, removes both problems at once.
+
+**It is always current.** The document behind the URL is derived from your API's own document when it is read, not when someone last ran a script. A partner's integration test that runs nightly tests against what you deployed today.
+
+**The selection is data, not code.** Who sees what is a setting you change in a browser, by API or through an agent, without a pull request to the backend. A new audience is a new URL, not a new route.
+
+**The URL does not move.** You hand it out once. Docs, SDK pipelines and partners keep reading the same address while the content behind it changes with your API.
+
+**It behaves like a good HTTP resource.** A strong `ETag` that changes exactly when the bytes do, so a pipeline can ask "anything new?" and get a `304`. JSON or YAML, whichever the reader asks for. CORS headers, so a browser based docs tool can fetch it.
+
+## What to watch out for
+
+Hosting a derived document puts something between your API and its readers, so it has to earn that position.
+
+It must not be slower or less reliable than the source. openapi-proxy runs on Cloudflare's network and answers from a stored copy, checking your API once per interval. If your API is down, readers get the last good document rather than an error.
+
+It must not be staler than you expect. A copy older than the check interval is not handed out on trust: the request that notices checks the source first. A build that runs right after a deploy can send `Cache-Control: no-cache` and get the document as of this second.
+
+It must not leak. Each document holds the operations its audience was given and exactly the schemas they reference, nothing else. Operations your API gains later stay out, unless they carry a tag that audience was given. The [post on internal endpoints](/blog/public-openapi-document-without-internal-endpoints) covers why that matters more than it seems.
+
+## In practice
+
+In openapi-proxy, you connect your API's full document once. Each audience is a variant: a name, a selection of tags or operations, and optionally the OpenAPI version it is served in. Each variant has its own URL under `/v/<project>/<variant>`, and when the source changes, every variant changes with it.
+
+If your source is private, the proxy fetches it with headers you give it, stored encrypted and only ever sent to that document's own origin. The variants you choose to share are what is public. See [Serving a variant](/docs/serving) for the URLs and headers your readers get.

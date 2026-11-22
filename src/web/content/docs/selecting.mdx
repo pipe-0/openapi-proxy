@@ -1,0 +1,27 @@
+---
+title: Selecting operations
+description: How a variant decides which operations it serves, today and when your API grows.
+---
+
+A variant is a selection of your document's operations. In the editor, a checked operation is served and an unchecked one is not. The document on the right is what will be served, and it updates as you check.
+
+Nothing reaches the variant's URL until you publish.
+
+## Operations your API adds later
+
+Your API will grow, and a selection has to say what happens then. Two controls decide it.
+
+- **A whole tag.** Check a tag and it shows **Serve operations added later**. With that checked, the variant serves everything in the tag, now and later. Uncheck it to serve only what the tag has today.
+- **Everything else.** Under the list, **Operations your API adds later are** Hidden or Served. Hidden is the default, so nothing reaches your public docs by accident. The line below names the tags that are the exception.
+
+## What ends up in the document
+
+The variant keeps the operations you chose and exactly what they reference: schemas, parameters, responses, request bodies, headers, examples, links, callbacks and security schemes. A schema that only an unselected operation used is left out.
+
+Operations are told apart by method and path, so your document needs no `operationId`s. Webhooks are operations too and are selected the same way.
+
+Descriptions, examples and names are served as your document has them.
+
+## One variant per audience
+
+A project has as many variants as it has audiences: public docs, an SDK, a partner, an agent. Give each one an icon next to its name to tell them apart in the navigation. **Duplicate**, in a variant's menu, starts a new one from an existing selection.

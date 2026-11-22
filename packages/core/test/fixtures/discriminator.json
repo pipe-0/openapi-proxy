@@ -1,0 +1,62 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Discriminator", "version": "1.0.0" },
+  "paths": {
+    "/animals": {
+      "get": {
+        "tags": ["animals"],
+        "responses": {
+          "200": {
+            "description": "An animal",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Animal" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/plants": {
+      "get": {
+        "tags": ["plants"],
+        "responses": {
+          "200": {
+            "description": "A plant",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Plant" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Animal": {
+        "oneOf": [
+          { "$ref": "#/components/schemas/Cat" },
+          { "$ref": "#/components/schemas/Dog" }
+        ],
+        "discriminator": {
+          "propertyName": "kind",
+          "mapping": {
+            "cat": "#/components/schemas/Cat",
+            "dog": "#/components/schemas/Dog",
+            "lizard": "#/components/schemas/Lizard"
+          }
+        }
+      },
+      "Cat": { "type": "object", "properties": { "kind": { "type": "string" } } },
+      "Dog": { "type": "object", "properties": { "kind": { "type": "string" } } },
+      "Lizard": {
+        "type": "object",
+        "properties": { "kind": { "type": "string" } },
+        "description": "Only reachable via discriminator.mapping, not $ref"
+      },
+      "Plant": { "type": "object", "properties": { "species": { "type": "string" } } }
+    }
+  }
+}

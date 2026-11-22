@@ -1,0 +1,16 @@
+{
+  // Editor entry point. `pnpm typecheck` checks each project below in turn.
+  "files": [],
+  "compilerOptions": {
+    // Read by the shadcn CLI to resolve the `@/` alias (see components.json).
+    "paths": {
+      "@/*": ["./src/web/*"],
+      "collections/*": ["./.source/*"]
+    }
+  },
+  "references": [
+    { "path": "./tsconfig.worker.json" },
+    { "path": "./tsconfig.web.json" },
+    { "path": "./tsconfig.node.json" }
+  ]
+}

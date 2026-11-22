@@ -1,0 +1,17 @@
+// Wrangler config used only by the Worker tests (@cloudflare/vitest-plugin). Mirrors ../wrangler.jsonc
+// minus the assets block (static assets are managed by the Vite plugin and are
+// irrelevant to worker tests; the pool requires assets.directory if present).
+{
+  "name": "openapi-proxy-test",
+  "main": "../src/server/index.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "openapi-proxy",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "../migrations"
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+---
+title: A version endpoint
+description: A small URL that says which build of your API is live, so a check does not have to touch the document at all.
+---
+
+A version endpoint answers one question: which build of your API is running right now? If the answer is the same as at the last check, the proxy does not ask for the document at all. With one, the proxy looks every 5 minutes; without one or an ETag, once an hour.
+
+Use one when even asking for the document is expensive, for example when your framework builds it on request and you cannot add an [ETag](/docs/etag) to that route. Otherwise an ETag is simpler and just as cheap.
+
+## What it has to return
+
+The proxy asks with `HEAD` first, then with `GET` if `HEAD` did not give it a version. Any of these is understood:
+
+| Answer | Example |
+| --- | --- |
+| A header | `X-API-Version`, `API-Version`, `X-Version`, `X-Revision`, `ETag` or `Last-Modified` |
+| A JSON object | `{ "version": "4f2a9c1" }`, or the key `apiVersion`, `api_version`, `revision`, `sha`, `commit` or `build` |
+| An OpenAPI-like object | `{ "info": { "version": "4f2a9c1" } }` |
+| A JSON string or number | `"4f2a9c1"` |
+| Plain text | `4f2a9c1`, on one line, up to 200 characters |
+
+The response has to be successful (`2xx`) and, for a body, smaller than 16 KB. Saving the endpoint in the app asks it once, and is refused if no version can be read.
+
+## The one rule: it changes with every deploy
+
+The value has to be different whenever the document could be. A build id or a commit hash is right. A version number from `package.json` is usually wrong, because it stays the same across many deploys that change the API.
+
+```ts
+// Hono, with the commit your build was made from
+app.get("/version", (c) => c.json({ version: process.env.GIT_SHA }));
+```
+
+On Cloudflare Workers, the version metadata binding gives every deployment its own id. On Vercel, `VERCEL_GIT_COMMIT_SHA` is set for you.
+
+## The proxy does not take it on trust
+
+- The document itself is still compared at least once a day.
+- If that comparison finds a different document behind the same version, the endpoint has shown that it does not change with every deploy. From then on the proxy ignores it and checks the document directly. The Documents page says so, and saving the endpoint again puts it back in use.
+- If the endpoint lives on the same origin as your document, it gets the same credentials. Otherwise it is asked without them.

@@ -1,0 +1,59 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Webhooks", "version": "1.0.0" },
+  "paths": {
+    "/subscriptions": {
+      "post": {
+        "tags": ["subscriptions"],
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+    "/events": {
+      "get": {
+        "tags": ["events"],
+        "responses": {
+          "200": {
+            "description": "Events",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Event" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {
+    "newEvent": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/WebhookPayload" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Acknowledged" } }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Event": {
+        "type": "object",
+        "properties": { "id": { "type": "string" } }
+      },
+      "WebhookPayload": {
+        "type": "object",
+        "properties": {
+          "event": { "$ref": "#/components/schemas/Event" }
+        }
+      },
+      "Unrelated": {
+        "type": "object",
+        "properties": { "x": { "type": "number" } }
+      }
+    }
+  }
+}

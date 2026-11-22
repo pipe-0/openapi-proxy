@@ -1,0 +1,22 @@
+{
+  "title": "Documentation",
+  "pages": [
+    "index",
+    "---Shaping the document---",
+    "connecting",
+    "selecting",
+    "serving",
+    "merging",
+    "environments",
+    "versions",
+    "---Staying current---",
+    "changes",
+    "keeping-in-sync",
+    "etag",
+    "version-endpoint",
+    "---Automating---",
+    "api-and-mcp",
+    "---Running it yourself---",
+    "self-hosting"
+  ]
+}
