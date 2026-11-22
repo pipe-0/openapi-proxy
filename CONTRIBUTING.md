@@ -20,7 +20,7 @@ To try Google sign-in locally, put a client ID and secret into `.env` and regist
 
 | Path             | What lives there                                                                                                                                   |
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/core`  | The engine: merge, select and convert OpenAPI documents. Pure functions, no I/O, one dependency (`yaml`). MIT, published to npm.                   |
+| `packages/core`  | The engine: merge, select and convert OpenAPI documents. Pure functions, no I/O, one dependency (`yaml`). MIT. Not published to npm: it is used from this repository.                   |
 | `src/server`     | Everything that is not a page (Hono): sign-in (better-auth), workspaces, fetching sources, the admin API, public serving, the hourly check, email. |
 | `src/web`        | The Worker's entry (`server.ts`) and every page (React on TanStack Start).                                                                         |
 | `src/web/routes` | The route tree: `_site` is rendered on the server, `_client` in the browser. Files here are thin.                                                  |
@@ -107,16 +107,6 @@ If a deploy goes wrong after its migration ran, D1 keeps every minute of the las
 ## Changing the engine's output
 
 If a change alters the bytes `applyVariant` or `serialize` produce for the same input, bump `TRANSFORM_VERSION` in `packages/core/src/types.ts`. It is part of every served ETag, so deployments drop their stored output and re-render after upgrading.
-
-## Releasing `@openapi-proxy/core`
-
-User-facing changes to the engine need a changeset:
-
-```sh
-pnpm changeset
-```
-
-Merging to `main` opens (or updates) a release pull request; merging that publishes to npm. The app is not published and is ignored by changesets.
 
 ## Style
 

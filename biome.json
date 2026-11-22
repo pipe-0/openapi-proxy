@@ -15,8 +15,7 @@
       "!**/test-results",
       "!migrations/meta",
       "!**/routeTree.gen.ts",
-      "!.source",
-      "!.changeset/*.md"
+      "!.source"
     ]
   },
   "formatter": {

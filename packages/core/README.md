@@ -2,9 +2,7 @@
 
 Work with OpenAPI documents as data: merge several into one, keep only some operations, and convert between OpenAPI 3.0 and 3.1. What comes out is a valid document that stands on its own.
 
-```sh
-npm install @openapi-proxy/core
-```
+It is not published to npm. It lives in this repository, where the app uses it as a workspace package, and can be copied from here.
 
 ```ts
 import { assembleDocument, buildVariant, parseSpec, serialize } from "@openapi-proxy/core";

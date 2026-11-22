@@ -77,7 +77,7 @@ Every instance serves the same pages under `/docs`. Their source is in [`src/web
 
 ## The engine: @openapi-proxy/core
 
-The filter engine is a separate MIT-licensed package with one dependency (`yaml`) and no I/O. The Worker and the browser preview run the same code, and you can use it in your own pipelines to filter, merge and convert OpenAPI documents:
+The filter engine is a separate MIT-licensed package in [`packages/core`](packages/core), with one dependency (`yaml`) and no I/O. The Worker and the browser preview run the same code. It is not published to npm; to filter, merge and convert OpenAPI documents in a pipeline of your own, take it from this repository:
 
 ```ts
 import { assembleDocument, buildVariant, parseSpec, serialize } from "@openapi-proxy/core";

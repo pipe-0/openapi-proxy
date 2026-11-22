@@ -20,9 +20,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "check": "pnpm lint && pnpm typecheck && pnpm test",
-    "db:generate": "drizzle-kit generate",
-    "changeset": "changeset",
-    "release": "pnpm --filter @openapi-proxy/core build && changeset publish"
+    "db:generate": "drizzle-kit generate"
   },
   "cloudflare": {
     "bindings": {
@@ -71,7 +69,6 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.8",
-    "@changesets/cli": "^3.0.3",
     "@cloudflare/vite-plugin": "^1.70.1",
     "@cloudflare/vitest-plugin": "^1.9.0",
     "@cloudflare/workers-types": "^5.20261120.1",
