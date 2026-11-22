@@ -85,6 +85,18 @@ export default defineConfig(({ mode, command }) => {
       // Has to come after Start.
       react(),
     ],
+    // The development server finds these two only when the first blog or docs
+    // page is asked for, then optimizes them and reloads itself, which loses
+    // whatever the browser was doing at that moment (a click, in the journeys
+    // on CI, where the cache is cold every time). Named here, they are
+    // optimized when the server starts.
+    environments: {
+      ssr: {
+        optimizeDeps: {
+          include: ["fumadocs-mdx/runtime/browser", "fumadocs-mdx/runtime/server"],
+        },
+      },
+    },
     // Google sign-in needs the port in the registered redirect URI
     // (http://localhost:7732/api/auth/callback/google). Password sign-in works
     // on any port: PORT=3000 pnpm dev

@@ -214,7 +214,9 @@ function PostFaq({ items }: { items: Post["faq"] }) {
       </h2>
       <div className="mt-5 border-t">
         {items.map((item) => (
-          <details key={item.q} className="group border-b">
+          // A reader can open one before the page has taken over, and the browser
+          // then holds an `open` that React did not render: that is not a fault.
+          <details key={item.q} className="group border-b" suppressHydrationWarning>
             <summary className="flex cursor-pointer list-none items-center gap-4 rounded-sm py-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
               <span className="flex-1 text-[16px] leading-snug font-medium">{item.q}</span>
               <PlusIcon
