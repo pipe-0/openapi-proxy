@@ -4,6 +4,14 @@ description: Your framework generates one document for every route, admin and in
 cover: /site/blog/public-openapi-document-without-internal-endpoints.jpg
 date: 2026-11-22
 featured: true
+tldr: "Hiding routes in the framework, or dropping paths with a script, takes the endpoints out of a public OpenAPI document but usually leaves their schemas in components, where anyone can read them. Build the public document by selecting the operations to keep and keeping exactly what they reference. Then new routes stay hidden until someone chooses them."
+faq:
+  - q: "How do I hide internal endpoints from Swagger or OpenAPI docs?"
+    a: "Frameworks have annotations for it, such as @Hidden in springdoc, IgnoreApi in Swashbuckle and include_in_schema=False in FastAPI, and they hide a route from every reader. For several audiences, generate the full document and select the public operations outside the backend, with a tool that also removes the schemas only internal operations used."
+  - q: "What does x-internal do in OpenAPI?"
+    a: "x-internal: true is a convention, not part of the specification. Tools such as Redocly's remove-x-internal decorator strip whatever carries it before publishing. It keeps the decision next to the code, and it depends on every engineer remembering it on every new route."
+  - q: "Why are internal schemas still in my public OpenAPI document?"
+    a: "Because schemas live under components, apart from the paths. Removing a path does not remove what it referenced. A filter has to follow every reference from the remaining operations and drop everything else."
 ---
 
 Most backends generate their OpenAPI document from the code. That is the right way to keep it honest, and it comes with a catch: the document describes every route the code has. Admin endpoints, internal tools, the webhook your billing provider calls, the half-finished feature behind a flag. Your public docs should show none of that.

@@ -3,6 +3,14 @@ title: How to merge several OpenAPI documents into one
 description: Your API is made of several services, each with its own OpenAPI document, and your docs and SDK want one. What goes wrong when you combine them, and rules that hold up.
 cover: /site/blog/merge-multiple-openapi-documents.jpg
 date: 2026-11-22
+tldr: "Merging independent OpenAPI documents goes wrong in four places: component names that clash, the same operation described twice, servers and info that disagree, and paths missing their mount point. Build-time tools handle these with configuration, but the result is out of date as soon as one service deploys. A merge that runs unattended needs fixed rules, and has to say what it did."
+faq:
+  - q: "How do I combine multiple OpenAPI files into one?"
+    a: "If one API is split across files with $ref, bundle it with redocly bundle or swagger-cli bundle. If the files are independent documents from different services, merge them with redocly join or openapi-merge at build time, or with openapi-proxy, which merges up to ten documents from their URLs and keeps the result current."
+  - q: "What happens when two OpenAPI documents use the same schema name?"
+    a: "If the schemas are identical they can be shared. If they differ, one has to be renamed and every reference to it rewritten, or half the operations end up describing the wrong shape. openapi-proxy renames the later one after its document, for example BillingError."
+  - q: "What is the difference between bundling and merging OpenAPI documents?"
+    a: "Bundling resolves the $ref links of one document that was split across files, so nothing can conflict. Merging combines documents that were written independently, each with its own info, servers and components, so names and paths can collide."
 ---
 
 An API that grows usually stops being one service. Billing moves out, search moves out, an acquisition brings its own backend. Each service generates its own OpenAPI document, and each document is correct. Your customers, though, see one API. Your docs site wants one document, and so does the SDK generator.

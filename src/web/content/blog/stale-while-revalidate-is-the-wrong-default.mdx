@@ -28,17 +28,19 @@ Three details keep this from turning into a different problem.
 
 **A busy variant does not stall.** Waiting only makes sense when the copy is really old. If a copy crossed its interval a few seconds ago and someone is already checking, it is as good as it was a moment earlier, so everyone else is answered from it immediately. A docs page with steady traffic never notices the interval passing.
 
-**Nobody waits on a broken source.** A check has five seconds. If your API is slower than that, the check carries on in the background and the reader gets the copy. If your API is down, readers get the last good document right away and the proxy retries on its own every thirty seconds. A consumer never receives an error because your API had a bad minute.
+**Nobody waits on a broken source.** A check has five seconds. If your API is slower than that, the check carries on in the background and the reader gets the copy. If your API is down, readers get the last good document right away and the proxy retries on its own every five minutes. A consumer never receives an error because your API had a bad minute.
 
 ## When you need it now
 
-Intervals still exist, so a pipeline that runs seconds after a deploy can land inside one. For that case the proxy honors what HTTP already offers. Send `Cache-Control: no-cache` with the request and the source is checked before the answer, whatever the interval says.
+Intervals still exist, so a pipeline that runs seconds after a deploy can land inside one. For that case you tell the proxy to check now, and then read as usual:
 
 ```sh
-curl -H "Cache-Control: no-cache" https://proxy.example.com/v/acme/sdk.json
+curl -X POST https://proxy.example.com/api/projects/$PROJECT_ID/check \
+  -H "Authorization: Bearer $OPENAPI_PROXY_API_KEY"
+curl https://proxy.example.com/v/acme/sdk.json
 ```
 
-This is honored down to once every ten seconds, so the header cannot be used by a stranger to hammer your API through the proxy.
+The check takes an API key. A reader of the public URL cannot ask for one, so a stranger cannot hammer your API through the proxy.
 
 ## One more thing an answer owes its reader
 

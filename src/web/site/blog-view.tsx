@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowLeftIcon } from "lucide-react";
+import { ArrowLeftIcon, PlusIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Mark } from "@/components/brand";
 import { cn } from "@/lib/utils";
@@ -165,7 +165,22 @@ export function PostView({
             <Cover post={post} eager className="h-auto w-full rounded-xl ring-1 ring-border" />
           </figure>
         )}
+        {/* The post in a few sentences, set apart so it reads as an aside and not as its first paragraph. */}
+        {post.tldr && (
+          <aside
+            aria-label="TL;DR"
+            className="mx-auto mt-10 max-w-2xl rounded-2xl bg-subtle px-6 py-5 ring-1 ring-border ring-inset sm:mt-12 sm:px-7 sm:py-6"
+          >
+            <p className="text-[13px] font-medium text-muted-foreground">TL;DR</p>
+            <p className="mt-2 text-[17px] leading-[1.55] text-pretty sm:text-[18px]">
+              {post.tldr}
+            </p>
+          </aside>
+        )}
+
         <div className="prose-site mx-auto mt-12 max-w-2xl sm:mt-14">{children}</div>
+
+        <PostFaq items={post.faq} />
 
         {related.length > 0 && (
           <footer className="mx-auto mt-20 max-w-2xl border-t pt-10">
@@ -182,6 +197,36 @@ export function PostView({
       </article>
       <BlogCta />
     </>
+  );
+}
+
+/**
+ * The questions a post answers, closed until asked. Native `details`, so it
+ * needs no script and every answer is in the page for a crawler while it is
+ * closed. The matching structured data is in the page's head.
+ */
+function PostFaq({ items }: { items: Post["faq"] }) {
+  if (items.length === 0) return null;
+  return (
+    <section aria-labelledby="post-faq" className="mx-auto mt-16 max-w-2xl">
+      <h2 id="post-faq" className="font-display text-[23px] font-semibold tracking-[-0.02em]">
+        Frequently asked questions
+      </h2>
+      <div className="mt-5 border-t">
+        {items.map((item) => (
+          <details key={item.q} className="group border-b">
+            <summary className="flex cursor-pointer list-none items-center gap-4 rounded-sm py-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
+              <span className="flex-1 text-[16px] leading-snug font-medium">{item.q}</span>
+              <PlusIcon
+                aria-hidden="true"
+                className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-open:rotate-45"
+              />
+            </summary>
+            <p className="pr-8 pb-5 text-[15.5px] leading-[1.65] text-muted-foreground">{item.a}</p>
+          </details>
+        ))}
+      </div>
+    </section>
   );
 }
 

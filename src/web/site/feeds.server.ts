@@ -1,5 +1,5 @@
 import { listPosts } from "./blog";
-import { docsPaths } from "./docs.server";
+import { docsPaths, source } from "./docs.server";
 import { SITE_DESCRIPTION, SITE_NAME } from "./site";
 
 /**
@@ -78,4 +78,43 @@ export function rssXml(origin: string): Response {
     `<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0">\n  <channel>\n    <title>${SITE_NAME} blog</title>\n    <link>${escapeXml(new URL("/blog", origin).href)}</link>\n    <description>${escapeXml(SITE_DESCRIPTION)}</description>\n    <language>en</language>\n${items.join("\n")}\n  </channel>\n</rss>\n`,
     "application/rss+xml",
   );
+}
+
+/**
+ * llms.txt: what this is and where its pages are, as a language model wants
+ * it (https://llmstxt.org). Posts are linked as their Markdown, which is the
+ * same text without the page around it.
+ */
+export function llmsTxt(origin: string): Response {
+  const at = (path: string) => new URL(path, origin).href;
+  const posts = listPosts().filter((post) => !post.draft);
+  const lines = [
+    `# ${SITE_NAME}`,
+    "",
+    `> ${SITE_DESCRIPTION}`,
+    "",
+    "openapi-proxy fetches the OpenAPI document a backend generates, keeps the operations each audience should see (a variant), and serves each variant at a URL of its own as JSON or YAML, in OpenAPI 3.0 or 3.1. A variant is public, or private and read with an API key. Several documents can be merged into one. It is open source and runs on Cloudflare Workers; a hosted version is at openapi-proxy.app.",
+    "",
+    "## Product",
+    "",
+    `- [${SITE_NAME}](${at("/")}): what it does and how to start`,
+    `- [Pricing](${at("/pricing")}): the free plan and Pro`,
+    "",
+    "## Documentation",
+    "",
+    ...source
+      .getPages()
+      .map((page) => `- [${page.data.title}](${at(page.url)}): ${page.data.description}`),
+    "",
+    "## Blog",
+    "",
+    ...posts.map((post) => `- [${post.title}](${at(`${post.url}.md`)}): ${post.description}`),
+    "",
+  ];
+  return new Response(lines.join("\n"), {
+    headers: {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "public, max-age=3600",
+    },
+  });
 }

@@ -1,0 +1,60 @@
+---
+title: "Keeping an OpenAPI document private, and still building from it"
+description: "The description of an internal API should not sit at a public URL. But docs builds, SDK generators and partners all want a URL. What breaks when a document needs a credential, and what a private URL should look like."
+cover: /site/blog/private-openapi-document.jpg
+date: 2026-11-22
+tldr: "Many tools fetch an OpenAPI URL without credentials, so a private document usually ends up as a copy committed to a repository, which goes stale. A better setup is a URL that answers only to a key, with one read-only key per consumer, fetched in CI and handed to the tool as a file. openapi-proxy serves any variant that way."
+faq:
+  - q: "How do I protect my openapi.json from public access?"
+    a: "Serve it only to requests that carry a credential, for example an Authorization: Bearer header checked by the server or by a proxy in front of it. Give each consumer its own read-only key, so one can be revoked without breaking the others."
+  - q: "My docs tool cannot send a token when it fetches the OpenAPI URL. What now?"
+    a: "Fetch the document yourself in CI with the token, write it to a file, and point the tool at the file. Mintlify, for example, states that its build fetches are unauthenticated and recommends a file in the repository when the URL needs authentication."
+  - q: "Is an unguessable URL enough to keep a document private?"
+    a: "It keeps casual readers out, but the URL is the secret: it ends up in logs, CI output and chat messages, and it cannot be revoked without changing the address for everyone. A key in a header can be rotated and can differ per reader."
+  - q: "Can a partner read a private document without seeing my other documents?"
+    a: "Yes, if the key is limited to that one document. In openapi-proxy a read-only key can be made for a single variant and opens nothing else."
+---
+
+An OpenAPI document is a map of a backend: every route, every field, every error. For a public API that is the point. For an internal one, or for the part a single partner integrates against, it is exactly what should not be readable by anyone who finds the URL.
+
+So the document goes behind authentication, and the tools that used to read it stop working.
+
+## What breaks
+
+Most tools that consume OpenAPI take a URL and fetch it with a plain request. Mintlify's documentation [says so directly](https://www.mintlify.com/docs/help-center/openapi-url-fetch-fails-during-build): "Build fetches are unauthenticated and cannot send a token, cookie, or come from an allowlisted IP." Its advice for a document that needs authentication is to commit the file to the docs repository.
+
+That is the usual outcome. The private document becomes a file in a repository, copied there by a person, and from then on the docs describe the API as it was on the day of the copy.
+
+## Three ways to do it
+
+**Commit a copy.** Simple, and stale by design. It works when someone owns the job of updating it and the API changes rarely.
+
+**A URL nobody can guess.** A long random path instead of a credential. Any tool can read it, which is the appeal. The weakness is that the address is now the secret. It appears in CI logs, build configs and messages between colleagues, and the only way to take access away from one reader is to change it for all of them.
+
+**A key, fetched in CI.** The document answers only to a credential. The pipeline that builds the docs or the SDK fetches it first and hands the tool a file:
+
+```sh
+curl -fsS https://proxy.example.com/v/acme/internal.json \
+  -H "Authorization: Bearer $OPENAPI_PROXY_API_KEY" \
+  -o openapi.json
+```
+
+This is the one that keeps both properties: the document stays private, and what gets built is the document as it is now. Some tools can send the header themselves; OpenAPI Generator, for one, has an `--auth` option for the fetch.
+
+## What a private URL should do
+
+If you put a credential in front of a document, a few details decide whether it stays pleasant to use.
+
+- **One key per reader.** The docs build, the SDK pipeline and each partner get their own, so revoking one does not break the others.
+- **Keys that only read.** A key that fetches a document should not be able to change anything.
+- **Keys limited to one document.** A partner's key should open the partner's document and nothing else.
+- **A clear answer without a key.** A `401` that says how to authenticate saves an afternoon of guessing.
+- **Private caching.** `Cache-Control: private`, so no shared cache between you and the reader keeps a copy, and an `ETag` so a pipeline can still ask "anything new?" cheaply.
+
+## In practice
+
+In [openapi-proxy](/), every variant is public or private, and a workspace can make private the default for new ones. A private variant is read with an API key sent as `Authorization: Bearer`.
+
+Next to a private variant's URL there is a button that creates a key for that variant alone. It is read-only and opens no other document, which makes it the key to hand to a partner or to store as a CI secret. A key can also read all of a workspace's private variants, for a pipeline that builds several.
+
+The source can be private as well. The proxy fetches your backend's full document with request headers you give it, stored encrypted and sent only to that document's own origin. So the whole chain can be closed: a private source, and private variants of it for each reader. The URLs and status codes are in [Serving a variant](/docs/serving).

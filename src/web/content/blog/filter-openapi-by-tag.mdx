@@ -1,0 +1,94 @@
+---
+title: "How to filter an OpenAPI document by tag"
+description: "You want a document with only the operations tagged public, or everything except admin. The tools that do it, what a tag filter leaves behind, and how to keep the result current."
+cover: /site/blog/filter-openapi-by-tag.jpg
+date: 2026-11-22
+tldr: "Decide first whether you keep tags or drop them. Keeping is the safe one, because an operation your API gains later stays out until someone lets it in. Redocly CLI and openapi-format both filter by tag at build time, and both need a second step to remove the schemas that only the dropped operations used. A filter that runs where the document is served stays current without a pipeline."
+faq:
+  - q: "How do I keep only the operations with a certain tag in an OpenAPI document?"
+    a: "With Redocly CLI, add the filter-in decorator with property tags and the tags to keep, then run redocly bundle. With openapi-format, list the tags under inverseTags in a filter file and pass it with --filterFile. In both cases also remove unused components, or the schemas of the dropped operations stay in the document."
+  - q: "What is the difference between filtering in and filtering out?"
+    a: "Filtering in keeps what you list and drops the rest, so an operation your API gains later is not published until you list it or give it a listed tag. Filtering out drops what you list and keeps the rest, so everything new is published by default. For a public document, filtering in is the safer choice."
+  - q: "Does removing operations also remove their schemas?"
+    a: "Not by itself. Schemas, parameters and responses live under components, apart from the paths that use them. Redocly CLI has a separate remove-unused-components decorator and openapi-format has an unusedComponents filter option for this."
+  - q: "Can I filter an OpenAPI document by tag without a build step?"
+    a: "Yes, if the filter runs where the document is served. openapi-proxy fetches your document, serves the tags you checked at a URL of its own, and applies the same selection again whenever the source changes."
+---
+
+Tags are the handle an OpenAPI document gives you for groups of operations. Frameworks set them from controllers or routers, docs tools turn them into the navigation, and sooner or later someone asks for a document that contains only some of them: the operations tagged `public`, everything except `admin`, just `Billing` for the team that integrates billing.
+
+It sounds like a five-line script, and the first version usually is one. This post covers the decision to make before writing it, the tools that already do it, and the two things a tag filter tends to get wrong.
+
+## Keep or drop
+
+There are two ways to say what you want, and they behave differently the day your API changes.
+
+**Keep these tags.** The result contains what you listed and nothing else. An operation added next month under a new tag is not in it until someone adds that tag.
+
+**Drop these tags.** The result contains everything except what you listed. An operation added next month under a new tag is in it straight away.
+
+For an internal document, dropping is convenient. For anything public, keeping is the one that fails safely: forgetting to update the filter hides an endpoint for a while, where the other way publishes one.
+
+## The tools
+
+**Redocly CLI** has two decorators, `filter-in` and `filter-out`. Both match a property of an operation against a list of values, and tags are the common case:
+
+```yaml
+# redocly.yaml
+apis:
+  public:
+    root: openapi.yaml
+    decorators:
+      filter-in:
+        property: tags
+        value: [Books, Authors]
+      remove-unused-components: on
+```
+
+```sh
+redocly bundle public -o public.yaml
+```
+
+An operation with several tags matches when any of them is listed; `matchStrategy: all` asks for all of them. The same decorators work on any property, so `x-audience: [Public, Partner]` can take the place of tags if you would rather not overload them.
+
+**openapi-format** filters with a file. `tags` drops the operations that carry a tag, `inverseTags` keeps only those:
+
+```yaml
+# filter.yaml
+inverseTags:
+  - Books
+  - Authors
+unusedComponents:
+  - schemas
+  - parameters
+  - responses
+  - requestBodies
+```
+
+```sh
+npx openapi-format openapi.yaml --filterFile filter.yaml --output public.yaml
+```
+
+**openapi-filter** works the other way around: instead of selecting by tag, you mark what should go with a flag such as `x-internal: true` in the source, and it removes whatever carries the flag.
+
+## What a tag filter leaves behind
+
+Dropping operations is the easy half. Three things stay unless the tool is told to deal with them.
+
+**Components.** Schemas, parameters and responses live in `components`, apart from the paths. Remove the `Admin` operations and `AdminAuditEntry` is still in the document for anyone to read. That is why both examples above have a second setting: `remove-unused-components` in Redocly, `unusedComponents` in openapi-format. Without it, a filtered public document describes your internal data model.
+
+**The tag list.** The top-level `tags` array, with its descriptions, is separate too. A docs site may show an empty "Admin" section, with the description someone wrote for it.
+
+**Untagged operations.** A filter that drops tags keeps everything without one. A filter that keeps tags drops them. Either may surprise you; it is worth checking how many operations in your document have no tag at all.
+
+## Keeping the result current
+
+All three tools run at build time. That fits when the document is a file in a repository. It fits less well when the document is generated by a running backend, which is the usual case: the filtered copy is then as old as the last pipeline run, and the pipeline needs to know when the API was deployed.
+
+The alternative is to filter where the document is served. That is what [openapi-proxy](/) does. It fetches your full document from its URL, you check the tags or single operations a reader should get, and the result is served at a URL of its own:
+
+- Checking a whole tag keeps it as a rule: an operation that gets the tag later is served too.
+- Everything else your API adds later stays hidden until you select it.
+- The result holds the operations you kept and exactly what they reference, so there is no second step for components, tags or security schemes.
+
+When your API changes, the filtered document changes with it, and you get an email saying what moved. The details of the selection are in [Selecting operations](/docs/selecting).

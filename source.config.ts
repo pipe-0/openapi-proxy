@@ -37,6 +37,18 @@ export const blog = defineCollections({
        * build. Remove the flag to publish.
        */
       draft: z.boolean().optional(),
+      /**
+       * The post in two or three sentences, shown above the text. It is what a
+       * reader in a hurry takes away, and what an answer engine quotes.
+       */
+      tldr: z.string().optional(),
+      /**
+       * Questions the post answers, each with an answer that stands on its
+       * own. Shown at the end of the post and marked up as a FAQ.
+       */
+      faq: z.array(z.object({ q: z.string(), a: z.string() })).optional(),
+      /** The day the post was last revised, if it was. */
+      updated: z.iso.date().or(z.date()).optional(),
     }),
   // Compiled posts load on demand, not all with the first request.
   async: true,

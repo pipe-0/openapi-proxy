@@ -1,0 +1,58 @@
+---
+title: "A smaller OpenAPI document for AI agents and MCP servers"
+description: "Turning an OpenAPI document into tools for an agent takes one command, and gives the agent a tool for every endpoint. Why that works badly, and how to hand each agent only the operations its job needs."
+cover: /site/blog/openapi-for-ai-agents-and-mcp.jpg
+date: 2026-11-22
+tldr: "An agent that gets one tool per endpoint chooses worse and pays for every schema in its context. The teams that generate MCP servers from OpenAPI documents say the same thing: expose a small, curated set. The simplest place to curate is the document itself: a variant with the dozen operations one job needs, at its own URL, pruned to the schemas those operations use."
+faq:
+  - q: "How many tools should an MCP server expose?"
+    a: "As few as the job needs. Speakeasy reports that in its own test a server with 107 tools failed, 20 tools got 19 of 20 calls right and 10 tools worked, and it cites research that puts the point where tool descriptions start to blur at around thirty for large models. Stainless found that people mostly use up to a dozen tools at a time."
+  - q: "Why is a large OpenAPI document a problem for an agent?"
+    a: "Each operation becomes a tool whose name, description and schema are loaded into the model's context. A document with 200 endpoints becomes about 200 tools, which costs tokens on every request and makes the model pick the wrong tool more often."
+  - q: "How do I give an agent only part of my API?"
+    a: "Filter the document before you generate tools from it. Keep the operations the agent's job needs, remove the schemas nothing references any more, and generate from that. With openapi-proxy that is a variant with its own URL."
+  - q: "Should an agent's document include write operations?"
+    a: "Only the ones its job needs. An agent that looks things up needs read operations. Keeping new operations hidden by default also means an agent does not gain a new write endpoint just because the API did."
+---
+
+If your API has an OpenAPI document, giving an agent access to it has become a one-command job. Generators turn every operation into a tool, wrap them in an MCP server, and the agent can call your API.
+
+The trouble starts at "every operation".
+
+## One tool per endpoint does not work
+
+An MCP client loads the description and input schema of every tool a server offers into the model's context. Stainless, which generates MCP servers from OpenAPI documents, [puts it plainly](https://www.stainless.com/blog/lessons-from-openapi-to-mcp-server-conversion): "MCP currently works by loading all of the tool schemas for an MCP Server at once into its context." A document with 200 endpoints becomes about 200 tools, all of them in front of the model on every request.
+
+That costs tokens, and it costs accuracy. Speakeasy [ran the experiment](https://www.speakeasy.com/mcp/tool-design/less-is-more) on a small public API: with 107 tools the agent failed, with 20 it got 19 of 20 calls right, with 10 it worked. The research it cites puts the point where tool descriptions start to overlap at around thirty for large models, and lower for small ones. Some clients set a hard limit too.
+
+Both companies arrive at the same advice: a small, curated set of tools per job. Stainless adds that people mostly use up to a dozen tools at a time anyway.
+
+## Where to cut
+
+There are two places to reduce the set.
+
+**In the generator.** MCP generators have flags for it: include these tags, exclude those operations, or offer a few "search the API, then call it" tools instead of all of them. That works, for that generator. The list of what the agent may do then lives in a command line.
+
+**In the document.** Give the generator a document that only contains what this agent should have. Then it does not matter which generator reads it, or whether the reader is an MCP server at all: a custom GPT action, an agent framework that loads OpenAPI documents, and a plain HTTP tool all take the same input.
+
+Cutting the document has a second effect. A document pruned to what its operations reference has no leftover schemas, so the tools that are generated carry smaller definitions. An agent that can look up an order does not need the shape of your invoice run in its context.
+
+## A document per job
+
+Think of the document an agent reads the way you think of the one a partner reads: it describes what this reader is allowed and expected to do.
+
+- A **support agent** that looks things up gets the read operations of orders, customers and shipments.
+- A **billing agent** gets invoices and refunds, including the two write operations its job needs.
+- An **internal coding agent** may get everything.
+
+Each of these is a different selection from the same API. And each should be decided by a person, which matters most for writes. If the agent's document is "everything except what we excluded", then the day your API gains `DELETE /v1/customers/{id}`, the agent gains it too. A selection that only ever contains what was chosen fails the safe way.
+
+## In practice
+
+In [openapi-proxy](/), each of those selections is a variant: you check the operations, and it is served at its own URL, as JSON or YAML, in OpenAPI 3.0 or 3.1. Point the generator at that URL.
+
+- **New operations stay out** until you select them, unless they carry a tag you chose to follow.
+- **The document can be private.** A variant can require an API key, and a key can be made for that one variant, so an agent's credentials open nothing else. See [Serving a variant](/docs/serving).
+- **You hear when the API moves.** When the source gains or loses operations, you get an email saying which, so the agent's surface is reviewed when it could change.
+
+The selection itself can be managed by an agent as well: everything the app does is available over an MCP endpoint, described in [API and MCP](/docs/api-and-mcp). The agent that reads your API and the one that curates what agents may read do not have to be the same.

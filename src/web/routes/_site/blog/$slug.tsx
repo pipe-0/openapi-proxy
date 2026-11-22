@@ -44,26 +44,56 @@ export const Route = createFileRoute("/_site/blog/$slug")({
       type: "article",
       ...(post.socialImage ? { image: post.socialImage } : {}),
     });
-    // What search engines read to show the post as an article.
-    const article = {
-      "@context": "https://schema.org",
+    const structured = (data: object) => ({
+      type: "application/ld+json",
+      children: JSON.stringify({ "@context": "https://schema.org", ...data }),
+    });
+    // What search and answer engines read: the post as an article, where it
+    // sits on the site, and the questions it answers.
+    const article = structured({
       "@type": "BlogPosting",
       headline: post.title,
       description: post.description,
+      ...(post.tldr ? { abstract: post.tldr } : {}),
       datePublished: post.date,
+      dateModified: post.updated,
+      url,
       mainEntityOfPage: url,
+      inLanguage: "en",
       ...(post.cover ? { image: new URL(post.cover, origin).href } : {}),
       author: { "@type": "Organization", name: SITE_NAME, url: `${origin}/` },
       publisher: { "@type": "Organization", name: SITE_NAME, url: `${origin}/` },
-    };
+    });
+    const trail = structured({
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { name: SITE_NAME, item: `${origin}/` },
+        { name: "Blog", item: `${origin}/blog` },
+        { name: post.title, item: url },
+      ].map((crumb, index) => ({ "@type": "ListItem", position: index + 1, ...crumb })),
+    });
+    const questions = structured({
+      "@type": "FAQPage",
+      mainEntity: post.faq.map(({ q, a }) => ({
+        "@type": "Question",
+        name: q,
+        acceptedAnswer: { "@type": "Answer", text: a },
+      })),
+    });
     return {
       ...head,
       meta: [
         ...head.meta,
         { property: "article:published_time", content: post.date },
+        { property: "article:modified_time", content: post.updated },
         ...(post.draft ? [{ name: "robots", content: "noindex" }] : []),
       ],
-      scripts: [{ type: "application/ld+json", children: JSON.stringify(article) }],
+      links: [
+        ...head.links,
+        // The same post as plain Markdown, for answer engines and agents.
+        { rel: "alternate", type: "text/markdown", href: `${url}.md` },
+      ],
+      scripts: [article, trail, ...(post.faq.length > 0 ? [questions] : [])],
     };
   },
   component: BlogPost,

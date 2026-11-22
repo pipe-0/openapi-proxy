@@ -21,6 +21,12 @@ export interface Post {
   socialImage: string | null;
   featured: boolean;
   draft: boolean;
+  /** The post in two or three sentences, if it has that. */
+  tldr: string | null;
+  /** The questions it answers, each with an answer that stands on its own. */
+  faq: Array<{ q: string; a: string }>;
+  /** ISO date of its last revision; the day it was published if it never was revised. */
+  updated: string;
 }
 
 /** Drafts are for writing: visible while developing, absent from a production build. */
@@ -50,6 +56,9 @@ const posts: Post[] = Object.entries(files)
       socialImage: data.cover ? data.cover.replace(/\.jpg$/, "-og.jpg") : null,
       featured: data.featured === true,
       draft: data.draft === true,
+      tldr: data.tldr ?? null,
+      faq: data.faq ?? [],
+      updated: new Date(data.updated ?? data.date).toISOString().slice(0, 10),
     };
   })
   .filter((post) => SHOW_DRAFTS || !post.draft)

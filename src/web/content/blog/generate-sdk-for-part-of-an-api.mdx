@@ -1,0 +1,86 @@
+---
+title: "Generating an SDK for part of your API"
+description: "Your public SDK should not contain admin or beta endpoints, and a partner's SDK should contain even less. What code generators offer for that, and why a smaller document works better than a generator flag."
+cover: /site/blog/generate-sdk-for-part-of-an-api.jpg
+date: 2026-11-22
+tldr: "Most generators build a client for the whole document they are given. OpenAPI Generator can skip operations with its FILTER rule, but the dependable way to a smaller SDK is a smaller document: one that holds only the operations you want and the schemas they use. Serve that document at a URL and every generator, hosted or local, produces the same surface."
+faq:
+  - q: "How do I generate a client for only some endpoints with OpenAPI Generator?"
+    a: "Use the FILTER rule of the --openapi-normalizer option, for example --openapi-normalizer FILTER=\"tag:store\". It accepts operationId, method, tag and path. Operations that do not match are marked x-internal and are not generated. Check the output for models that only those operations used."
+  - q: "Why not delete the methods I do not want from the generated SDK?"
+    a: "Because the next generation run brings them back, and the types they used stay in the package either way. Changing the input document makes every run produce the same result."
+  - q: "Can a hosted SDK generator build from a filtered document?"
+    a: "Yes. Hosted generators take a URL or an uploaded file. Point them at a document that contains only the public operations, and the SDK matches your public docs."
+  - q: "How do I generate from an OpenAPI URL that needs a key?"
+    a: "OpenAPI Generator sends a header when it fetches the document if you pass --auth with a URL-encoded name:value pair, for example --auth \"Authorization:Bearer%20<key>\"."
+---
+
+A generated SDK is a promise. Every method in it is something you now support, document and keep working. So the SDK you publish should cover the API you publish, and not the admin routes, the endpoints behind a feature flag, or the internal ones that happen to live in the same backend.
+
+Code generators, though, start from a document, and the document your framework produces describes everything. This post is about closing that gap.
+
+## What generators offer
+
+Most generators have no notion of "part of the API". They read a document and emit a client for all of it.
+
+OpenAPI Generator is the exception people usually find first. Its `--global-property` option limits which API classes and models are written (`--global-property apis=Store`). That selects by the class a tag turned into, which is easy to get wrong: "How to generate code for specific tag/path?" is an open question in its issue tracker.
+
+The better tool in the same generator is the `FILTER` rule of the normalizer:
+
+```sh
+openapi-generator-cli generate -i openapi.json -g typescript-fetch -o ./sdk \
+  --openapi-normalizer FILTER="tag:store"
+```
+
+It accepts `operationId`, `method`, `tag` and `path`, and several filters separated by semicolons. Operations that do not match are marked `x-internal: true` and are not generated. The documentation says nothing about the models that only those operations used, so look at what the run produced: a type named after an internal resource is as much a leak in an SDK as it is in the docs.
+
+Other generators have their own switches, or none. And every switch is one more place where "what is public" is written down.
+
+## A smaller document instead
+
+The alternative is to leave the generator alone and give it a document that is already right: only the operations the SDK should have, and only the schemas those operations reference.
+
+That has three advantages over a flag.
+
+**It works with every generator.** Local command line tools take a file or a URL. Hosted generators take a URL. None of them needs to know that a larger document exists.
+
+**The SDK and the docs agree.** If the same filtered document feeds your public docs, the SDK cannot contain a method the docs do not explain.
+
+**Nothing leaks into types.** A document pruned to what its operations reference has no `AdminAuditEntry` in it, so no generator can turn it into a class.
+
+## What the document needs
+
+A document that an SDK is generated from has a few requirements of its own.
+
+- **It stands on its own.** Every `$ref` resolves inside it. Removing an operation must never leave a reference pointing at nothing.
+- **It is in a version the generator reads.** Many generators still expect OpenAPI 3.0, while frameworks emit 3.1. See [converting 3.1 to 3.0](/blog/convert-openapi-3-1-to-3-0) for what that involves.
+- **It is current when the generator runs.** An SDK built in the morning from last week's export misses what shipped since.
+
+## In practice
+
+In [openapi-proxy](/), the SDK's surface is a variant: you check the tags or operations it should have, and it is served at a URL. The generator reads the URL.
+
+```sh
+openapi-generator-cli generate \
+  -i https://proxy.example.com/v/acme/sdk.json \
+  -g typescript-fetch -o ./sdk
+```
+
+A generator that needs 3.0 asks for it in the URL, whatever your API emits:
+
+```sh
+openapi-generator-cli generate \
+  -i https://proxy.example.com/v/acme/sdk/3.0.json \
+  -g java -o ./sdk
+```
+
+And if the variant is private, the generator sends a key when it fetches:
+
+```sh
+openapi-generator-cli generate \
+  -i https://proxy.example.com/v/acme/partner.json \
+  --auth "Authorization:Bearer%20$OPENAPI_PROXY_API_KEY" \
+  -g python -o ./sdk
+```
+
+A partner who should integrate against three resources gets a variant with those three, and an SDK generated from it that contains nothing else. When your API adds an operation, it reaches the SDK only if it is part of that selection, which is the point: what you promise in an SDK stays a decision.

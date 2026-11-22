@@ -1,0 +1,69 @@
+---
+title: "OpenAPI Overlays or a filter for public, partner and internal documents"
+description: "The Overlay Specification describes changes to an OpenAPI document as data, including removing what an audience should not see. What it does well, what a remove action leaves behind, and when a filter fits better."
+cover: /site/blog/openapi-overlays-vs-filtering.jpg
+date: 2026-11-22
+tldr: "An overlay is a list of edits applied to an OpenAPI document: update this, remove that. It is a good way to keep a public view as something you generate. But a remove action deletes the node it targets and nothing else, so schemas that only the removed operations used stay in the document, and anything new in the API is published unless an action removes it. To decide what an audience sees, select what to keep and prune the rest. Use overlays for edits."
+faq:
+  - q: "What is an OpenAPI Overlay?"
+    a: "A separate document, defined by the Overlay Specification 1.0.0 from October 2024, that lists actions to apply to an OpenAPI document. Each action selects nodes with a JSONPath expression and either merges an update into them or removes them."
+  - q: "Can an overlay remove internal endpoints from an OpenAPI document?"
+    a: "Yes. An action whose target selects the operations marked x-internal, with remove set to true, deletes them. It does not delete the schemas, parameters or responses that only those operations referenced. That takes a separate step that removes unused components."
+  - q: "What is the difference between an overlay and a filter?"
+    a: "An overlay says what to change in a document. A filter says which operations to keep and derives the rest: it keeps the components they reference and drops everything else. An overlay that removes things publishes whatever it does not mention, including operations added later."
+  - q: "Should I use overlays or a filter for a public API document?"
+    a: "Use a filter to decide what an audience sees, because it leaves new operations out by default and prunes unused schemas. Use an overlay, or a tool with the same effect, for edits to what remains: descriptions, examples, servers."
+---
+
+The [Overlay Specification](https://spec.openapis.org/overlay/v1.0.0) reached version 1.0.0 in October 2024, and it has become a common answer to a common problem: one OpenAPI document as the source of truth, and several versions of it for different readers.
+
+An overlay is a small document of its own. It lists actions, and each action points at part of an OpenAPI document with a JSONPath expression and either merges something into it or removes it:
+
+```yaml
+overlay: 1.0.0
+info:
+  title: Public view
+  version: 1.0.0
+actions:
+  - target: $.paths.*[?@['x-internal'] == true]
+    remove: true
+  - target: $.info
+    update:
+      title: Acme API
+```
+
+Apply that to the full document and you get one without the operations marked `x-internal`, under a public title.
+
+## What overlays do well
+
+The idea behind them is sound, and worth keeping whatever tool you use. In the words of a [recent piece on overlays for several audiences](https://apievangelist.com/2026/07/06/openapi-overlays-for-filtering-multiple-audiences/): "The public copy should be an artifact you generate, not a file you edit."
+
+Overlays are good at edits. Better descriptions than the framework generated, examples added by the docs team, a different `servers` list for a sandbox. These are changes someone wants to make on top of the source, and an overlay keeps them in a file that can be reviewed and applied again.
+
+## What remove leaves behind
+
+For deciding what an audience sees, there are two things to know.
+
+**Remove deletes the node, and nothing else.** The specification defines `remove` as removing the target. It does not say anything about what the target referenced. Take out `POST /admin/impersonate` and the `StaffImpersonation` schema it used is still in `components`, with every field name. Redocly made this point when it [argued against overlays](https://redocly.com/blog/openapi-overlays): an overlay "would not remove any components that were referenced from the internal operations" and by nothing else. The other direction can go wrong too: remove a shared component and whatever still refers to it is left with a reference to nothing.
+
+So an overlay that removes operations needs a second step that drops unused components, done by a tool, after the overlay ran.
+
+**Removing is opt-out.** An overlay that removes internal operations publishes everything it does not mention. When the API gains an endpoint and nobody marks it, it is in the public document on the next run. For edits that default is harmless. For "what may the public see" it is the wrong way round.
+
+## Selecting is a different operation
+
+A filter starts from the other end. It says which operations a reader gets, and the rest follows:
+
+- the components those operations reference are kept, to any depth, and all others are dropped
+- tags and security schemes that nothing uses any more go with them
+- an operation that appears later is not part of the selection until someone adds it
+
+The two are not rivals. Deciding what an audience sees is a selection. Changing what the selected part says is an edit. A setup that uses each for its job is easier to reason about than an overlay that tries to do both.
+
+## How openapi-proxy divides it
+
+[openapi-proxy](/) does the selection. You check the tags or operations an audience gets, and the result is served at a URL, pruned to what those operations reference. Checking a whole tag keeps it as a rule, so the selection follows the API where you want it to and nowhere else.
+
+For the edits people most often reach for an overlay to make, a variant has its own title, description and servers, which is how the same selection becomes a production and a sandbox document. See [Environments and servers](/docs/environments).
+
+It does not apply overlay files. If you rewrite descriptions and examples with one, run it in the build that produces your source document, and let the proxy select from the result. Either way, the test from [the post on internal endpoints](/blog/public-openapi-document-without-internal-endpoints) applies: fetch your public document and count the schemas no remaining operation references. That number should be zero.

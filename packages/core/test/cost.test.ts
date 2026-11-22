@@ -428,13 +428,14 @@ function subjectOf(shape: Shape): Subject | undefined {
  * job may take before it has counted anything: starting up, and the first
  * run of code that has not been run before.
  *
- * A machine that CI shares with others gets four times as long. What this
- * test is after is work out of all proportion to its steps, which shows as a
- * factor of hundreds, and a slow runner must not look like one: it once took
- * 2.3 microseconds a step reading YAML and failed a build that had nothing
- * wrong with it.
+ * A machine that CI shares with others gets four times as long, and any other
+ * machine twice, for when it is busy with something else. What this test is
+ * after is work out of all proportion to its steps, which shows as a factor
+ * of hundreds, and a slow or busy machine must not look like one: a CI runner
+ * once took 2.3 microseconds a step reading YAML, and a laptop running other
+ * suites 3.1, and both failed a build that had nothing wrong with it.
  */
-const SLOWER = process.env.CI ? 4 : 1;
+const SLOWER = process.env.CI ? 4 : 2;
 const MS_PER_STEP = 0.002 * SLOWER;
 const MS_TO_START = 150 * SLOWER;
 /**

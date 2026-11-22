@@ -13,6 +13,7 @@ import { Route as ClientRouteImport } from './routes/_client'
 import { Route as SiteRouteImport } from './routes/_site'
 import { Route as DocsRouteImport } from './routes/docs'
 import { Route as DocsSearchDotjsonRouteImport } from './routes/docs-search[.]json'
+import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as ClientAppRouteImport } from './routes/_client/_app'
@@ -23,6 +24,7 @@ import { Route as SitePricingRouteImport } from './routes/_site/pricing'
 import { Route as SitePrivacyRouteImport } from './routes/_site/privacy'
 import { Route as SiteTermsRouteImport } from './routes/_site/terms'
 import { Route as BlogRssDotxmlRouteImport } from './routes/blog.rss[.]xml'
+import { Route as BlogChar123slugChar125DotmdRouteImport } from './routes/blog.{$slug}[.]md'
 import { Route as DocsIndexRouteImport } from './routes/docs/index'
 import { Route as DocsSlugRouteImport } from './routes/docs/$slug'
 import { Route as ClientAppAppRouteImport } from './routes/_client/_app/app'
@@ -52,6 +54,11 @@ const DocsRoute = DocsRouteImport.update({
 const DocsSearchDotjsonRoute = DocsSearchDotjsonRouteImport.update({
   id: '/docs-search.json',
   path: '/docs-search.json',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LlmsDottxtRoute = LlmsDottxtRouteImport.update({
+  id: '/llms.txt',
+  path: '/llms.txt',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
@@ -103,6 +110,12 @@ const BlogRssDotxmlRoute = BlogRssDotxmlRouteImport.update({
   path: '/blog/rss.xml',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BlogChar123slugChar125DotmdRoute =
+  BlogChar123slugChar125DotmdRouteImport.update({
+    id: '/blog/{$slug}.md',
+    path: '/blog/{$slug}.md',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const DocsIndexRoute = DocsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -172,6 +185,7 @@ export interface FileRoutesByFullPath {
   '/': typeof SiteIndexRoute
   '/docs': typeof DocsRouteWithChildren
   '/docs-search.json': typeof DocsSearchDotjsonRoute
+  '/llms.txt': typeof LlmsDottxtRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/login': typeof ClientLoginRoute
@@ -180,6 +194,7 @@ export interface FileRoutesByFullPath {
   '/privacy': typeof SitePrivacyRoute
   '/terms': typeof SiteTermsRoute
   '/blog/rss.xml': typeof BlogRssDotxmlRoute
+  '/blog/{$slug}.md': typeof BlogChar123slugChar125DotmdRoute
   '/docs/$slug': typeof DocsSlugRoute
   '/docs/': typeof DocsIndexRoute
   '/app': typeof ClientAppAppRoute
@@ -196,6 +211,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof SiteIndexRoute
   '/docs-search.json': typeof DocsSearchDotjsonRoute
+  '/llms.txt': typeof LlmsDottxtRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/login': typeof ClientLoginRoute
@@ -204,6 +220,7 @@ export interface FileRoutesByTo {
   '/privacy': typeof SitePrivacyRoute
   '/terms': typeof SiteTermsRoute
   '/blog/rss.xml': typeof BlogRssDotxmlRoute
+  '/blog/{$slug}.md': typeof BlogChar123slugChar125DotmdRoute
   '/docs/$slug': typeof DocsSlugRoute
   '/docs': typeof DocsIndexRoute
   '/app': typeof ClientAppAppRoute
@@ -223,6 +240,7 @@ export interface FileRoutesById {
   '/_site': typeof SiteRouteWithChildren
   '/docs': typeof DocsRouteWithChildren
   '/docs-search.json': typeof DocsSearchDotjsonRoute
+  '/llms.txt': typeof LlmsDottxtRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_client/_app': typeof ClientAppRouteWithChildren
@@ -232,6 +250,7 @@ export interface FileRoutesById {
   '/_site/privacy': typeof SitePrivacyRoute
   '/_site/terms': typeof SiteTermsRoute
   '/blog/rss.xml': typeof BlogRssDotxmlRoute
+  '/blog/{$slug}.md': typeof BlogChar123slugChar125DotmdRoute
   '/docs/$slug': typeof DocsSlugRoute
   '/_site/': typeof SiteIndexRoute
   '/docs/': typeof DocsIndexRoute
@@ -252,6 +271,7 @@ export interface FileRouteTypes {
     | '/'
     | '/docs'
     | '/docs-search.json'
+    | '/llms.txt'
     | '/robots.txt'
     | '/sitemap.xml'
     | '/login'
@@ -260,6 +280,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/terms'
     | '/blog/rss.xml'
+    | '/blog/{$slug}.md'
     | '/docs/$slug'
     | '/docs/'
     | '/app'
@@ -276,6 +297,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/docs-search.json'
+    | '/llms.txt'
     | '/robots.txt'
     | '/sitemap.xml'
     | '/login'
@@ -284,6 +306,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/terms'
     | '/blog/rss.xml'
+    | '/blog/{$slug}.md'
     | '/docs/$slug'
     | '/docs'
     | '/app'
@@ -302,6 +325,7 @@ export interface FileRouteTypes {
     | '/_site'
     | '/docs'
     | '/docs-search.json'
+    | '/llms.txt'
     | '/robots.txt'
     | '/sitemap.xml'
     | '/_client/_app'
@@ -311,6 +335,7 @@ export interface FileRouteTypes {
     | '/_site/privacy'
     | '/_site/terms'
     | '/blog/rss.xml'
+    | '/blog/{$slug}.md'
     | '/docs/$slug'
     | '/_site/'
     | '/docs/'
@@ -331,9 +356,11 @@ export interface RootRouteChildren {
   SiteRoute: typeof SiteRouteWithChildren
   DocsRoute: typeof DocsRouteWithChildren
   DocsSearchDotjsonRoute: typeof DocsSearchDotjsonRoute
+  LlmsDottxtRoute: typeof LlmsDottxtRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   BlogRssDotxmlRoute: typeof BlogRssDotxmlRoute
+  BlogChar123slugChar125DotmdRoute: typeof BlogChar123slugChar125DotmdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -364,6 +391,13 @@ declare module '@tanstack/react-router' {
       path: '/docs-search.json'
       fullPath: '/docs-search.json'
       preLoaderRoute: typeof DocsSearchDotjsonRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/llms.txt': {
+      id: '/llms.txt'
+      path: '/llms.txt'
+      fullPath: '/llms.txt'
+      preLoaderRoute: typeof LlmsDottxtRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/robots.txt': {
@@ -434,6 +468,13 @@ declare module '@tanstack/react-router' {
       path: '/blog/rss.xml'
       fullPath: '/blog/rss.xml'
       preLoaderRoute: typeof BlogRssDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/blog/{$slug}.md': {
+      id: '/blog/{$slug}.md'
+      path: '/blog/{$slug}.md'
+      fullPath: '/blog/{$slug}.md'
+      preLoaderRoute: typeof BlogChar123slugChar125DotmdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/docs/': {
@@ -601,9 +642,11 @@ const rootRouteChildren: RootRouteChildren = {
   SiteRoute: SiteRouteWithChildren,
   DocsRoute: DocsRouteWithChildren,
   DocsSearchDotjsonRoute: DocsSearchDotjsonRoute,
+  LlmsDottxtRoute: LlmsDottxtRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   BlogRssDotxmlRoute: BlogRssDotxmlRoute,
+  BlogChar123slugChar125DotmdRoute: BlogChar123slugChar125DotmdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

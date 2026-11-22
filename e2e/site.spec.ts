@@ -106,6 +106,7 @@ test("the blog lists published posts, and drafts only while developing", async (
   const problems = problemsOf(page);
   await page.goto("/blog");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Blog");
+  await shot(page, "site-08-blog-index", { fullPage: true });
 
   // Published posts are listed in every build, and are indexable.
   await follow(
@@ -116,6 +117,57 @@ test("the blog lists published posts, and drafts only while developing", async (
   await expect(page.getByRole("heading", { name: "What collides" })).toBeVisible();
   const published = await (await request.get("/blog/merge-multiple-openapi-documents")).text();
   expect(published).not.toContain('content="noindex"');
+
+  // What a reader in a hurry, and an answer engine, take from a post: the
+  // post in a few sentences above the text, and the questions it answers.
+  await expect(page.getByRole("complementary", { name: "TL;DR" })).toContainText(
+    "Merging independent OpenAPI documents goes wrong in four places",
+  );
+  await expect(page.getByRole("heading", { name: "Frequently asked questions" })).toBeVisible();
+  const question = page.getByText("How do I combine multiple OpenAPI files into one?");
+  const answer = page.getByText(/bundle it with redocly bundle or swagger-cli bundle/);
+  await expect(answer).toBeHidden();
+  await question.click();
+  await expect(answer).toBeVisible();
+  await shot(page, "site-07-post-with-tldr-and-faq", { fullPage: true });
+  // The same, marked up for machines: the article, where it sits, its questions.
+  const marked = (await page.locator('script[type="application/ld+json"]').allTextContents()).map(
+    (text) => JSON.parse(text) as { "@type": string; abstract?: string; mainEntity?: unknown[] },
+  );
+  expect(marked.map((item) => item["@type"]).sort()).toEqual([
+    "BlogPosting",
+    "BreadcrumbList",
+    "FAQPage",
+  ]);
+  expect(marked.find((item) => item["@type"] === "BlogPosting")?.abstract).toContain("four places");
+  expect(marked.find((item) => item["@type"] === "FAQPage")?.mainEntity).toHaveLength(3);
+  // And as plain Markdown, which the page points to.
+  await expect(page.locator('link[rel="alternate"][type="text/markdown"]')).toHaveAttribute(
+    "href",
+    /\/blog\/merge-multiple-openapi-documents\.md$/,
+  );
+  const markdown = await request.get("/blog/merge-multiple-openapi-documents.md");
+  expect(markdown.status()).toBe(200);
+  expect(markdown.headers()["content-type"]).toContain("text/markdown");
+  const text = await markdown.text();
+  expect(text).toMatch(/^# How to merge several OpenAPI documents into one\n/);
+  expect(text).toContain("**TL;DR:** Merging independent OpenAPI documents");
+  expect(text).toContain("## What collides");
+  expect(text).toContain(
+    "### What is the difference between bundling and merging OpenAPI documents?",
+  );
+  expect(text).not.toMatch(/^---$/m);
+  // A draft has no Markdown to hand out, in any build.
+  expect((await request.get(`${POST}.md`)).status()).toBe(404);
+  // llms.txt lists the docs and the posts, each post as its Markdown.
+  const llms = await request.get("/llms.txt");
+  expect(llms.status()).toBe(200);
+  const index = await llms.text();
+  expect(index).toMatch(/^# openapi-proxy\n/);
+  expect(index).toContain("## Documentation");
+  expect(index).toMatch(/\/docs\/selecting\): /);
+  expect(index).toMatch(/\/blog\/filter-openapi-by-tag\.md\): /);
+  expect(index).not.toContain("stale-while-revalidate");
   await page.goto("/blog");
 
   if (PREVIEW) {
