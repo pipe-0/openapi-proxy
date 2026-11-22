@@ -90,13 +90,30 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@v7
+      # A run that is started again later (a re-run of an old run, or one that
+      # waited behind another) must not put older code back over newer code, or
+      # run against a database that newer migrations have already changed.
+      - name: This is still the newest commit on main
+        id: newest
+        run: |
+          head=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [ "$head" = "$GITHUB_SHA" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::main has moved on to ${head:0:7}. The run of that commit deploys; this one does not."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: pnpm/action-setup@v6
+        if: steps.newest.outputs.deploy == 'true'
       - uses: actions/setup-node@v7
+        if: steps.newest.outputs.deploy == 'true'
         with:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        if: steps.newest.outputs.deploy == 'true'
       - name: The Cloudflare credentials are set
+        if: steps.newest.outputs.deploy == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -110,6 +127,7 @@ jobs:
       # fails is rolled back by D1, the step fails, and the Worker that is live
       # stays as it is. Secrets set with `wrangler secret put` are kept.
       - name: Migrate the database, then deploy the Worker
+        if: steps.newest.outputs.deploy == 'true'
         run: pnpm run deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
