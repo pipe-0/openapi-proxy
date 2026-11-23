@@ -1,6 +1,6 @@
+import { cn } from "@editor/lib/utils";
+import { Button } from "@editor/ui/button";
 import { ArrowRightIcon } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
 /**
  * The one thing to do on the landing page: say where your document is. A plain

@@ -17,3 +17,6 @@ playwright-report/
 .tanstack/
 # Copied from public/schema when the command line tool is built.
 packages/cli/schema.json
+
+# Working copies that coding agents make for themselves
+.claude/worktrees/

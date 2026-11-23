@@ -1,20 +1,24 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronRightIcon, KeyRoundIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
-import { useState } from "react";
-import { toast } from "sonner";
-import { CopyButton } from "@/components/copy-button";
-import { DocsLink } from "@/components/docs-link";
+import { CopyButton } from "@editor/components/copy-button";
+import { DocsLink } from "@editor/components/docs-link";
+import { Field, Notice, Section } from "@editor/components/page";
+import { StatusChip } from "@editor/components/status-chip";
 import {
-  type HeaderDraft,
-  HeaderEditor,
-  headersComplete,
-  newHeader,
-  toHeaderInput,
-} from "@/components/header-editor";
-import { Field, Notice, Section } from "@/components/page";
-import { StatusChip } from "@/components/status-chip";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+  mainSourceName,
+  projectName,
+  projectSlug,
+  type SourceView,
+  sourcesOf,
+} from "@editor/lib/project";
+import {
+  bareUrl,
+  formatBytes,
+  formatInterval,
+  formatRelativeTime,
+  looksLikeUrl,
+  plural,
+} from "@editor/lib/utils";
+import { Button } from "@editor/ui/button";
+import { Input } from "@editor/ui/input";
 import {
   Sheet,
   SheetContent,
@@ -22,7 +26,18 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
-} from "@/components/ui/sheet";
+} from "@editor/ui/sheet";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { ChevronRightIcon, KeyRoundIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
+import {
+  type HeaderDraft,
+  HeaderEditor,
+  headersComplete,
+  newHeader,
+  toHeaderInput,
+} from "@/components/header-editor";
 import {
   Table,
   TableBody,
@@ -33,7 +48,6 @@ import {
 } from "@/components/ui/table";
 import {
   api,
-  bareUrl,
   errorMessage,
   type Project,
   type ProjectNote,
@@ -41,15 +55,7 @@ import {
   RequestError,
 } from "@/lib/api";
 import { checkStatus, useCheckProject } from "@/lib/hooks";
-import {
-  mainSourceName,
-  projectName,
-  projectSlug,
-  type SourceView,
-  sourcesOf,
-  useApply,
-} from "@/lib/project";
-import { formatBytes, formatInterval, formatRelativeTime, looksLikeUrl, plural } from "@/lib/utils";
+import { useApply } from "@/lib/use-apply";
 
 const sheet = "w-full gap-0 data-[side=right]:sm:max-w-lg";
 

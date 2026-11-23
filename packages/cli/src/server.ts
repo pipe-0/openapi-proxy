@@ -1,17 +1,31 @@
 import { createHash } from "node:crypto";
 import {
+  existsSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { extname, join, normalize, sep } from "node:path";
+import {
   CONTENT_TYPES,
   describeProblem,
+  documentText,
   etagMatches,
   isLoopback,
   noSuchVersion,
+  readDefinition,
   readRepresentation,
   versionFor,
+  warningsOf,
 } from "@openapi-proxy/core";
 import { type Context, Hono } from "hono";
-import { ConfigError, NoConfigError } from "./config.js";
+import { ConfigError, loadConfig, NoConfigError, parseConfig } from "./config.js";
 import { describe, loadProject, render } from "./project.js";
+import { patchDefinition } from "./save.js";
 import { SourceError } from "./sources.js";
+import { resultOf, revisionOf, viewOf } from "./view.js";
 
 export interface ServerOptions {
   /** The definition file to serve. */
@@ -20,7 +34,23 @@ export interface ServerOptions {
   sources: string[];
   /** Hosts, besides this machine's own names, that requests may be addressed to. */
   allowedHosts: string[];
+  /**
+   * The folder the editor's page was built into. Given, the server also
+   * answers what the page asks (the project, its document, a save into the
+   * file). Left out, it serves variants and nothing else.
+   */
+  editor?: string | undefined;
 }
+
+/** The types of the files the editor's page is made of. */
+const PAGE_TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".woff2": "font/woff2",
+  ".json": "application/json; charset=utf-8",
+};
 
 /** The host a request is addressed to, without its port. */
 function hostOf(header: string | undefined): string {
@@ -38,6 +68,14 @@ function hostOf(header: string | undefined): string {
  *
  *   GET /v/<project>/<variant>[.json|.yaml]
  *   GET /v/<project>/<variant>/<3.0|3.1>[.json|.yaml]
+ *
+ * and, with the editor, the page at `/` and the three calls it makes, which
+ * are the ones the service answers for a project of its own
+ * (packages/core/src/definition/api.ts):
+ *
+ *   GET /api/projects/<slug>             the file as a project
+ *   GET /api/projects/<slug>/document    its documents assembled into one
+ *   PUT /api/projects/<slug>             write a changed definition into the file
  *
  * Nothing is kept between requests. The file and the sources are read each
  * time, so what is served is what is on disk and running right now, and a
@@ -66,6 +104,24 @@ export function createServer(options: ServerOptions): Hono {
         },
         403,
       );
+    }
+    // A save comes from the page this server served, and from nowhere else.
+    // A browser says where a request that changes something comes from, so a
+    // page on another site cannot write the file even where it can reach it.
+    if (c.req.method !== "GET" && c.req.method !== "HEAD") {
+      const origin = c.req.header("origin");
+      const here = c.req.header("host") ?? new URL(c.req.url).host;
+      const sameSite = origin !== undefined && origin.replace(/^https?:\/\//, "") === here;
+      const json = (c.req.header("content-type") ?? "").startsWith("application/json");
+      if (!sameSite || !json) {
+        return c.json(
+          {
+            code: "forbidden",
+            error: "Only the page this server serves changes the file.",
+          },
+          403,
+        );
+      }
     }
     await next();
     c.header("x-content-type-options", "nosniff");
@@ -126,6 +182,8 @@ export function createServer(options: ServerOptions): Hono {
     serve(c, c.req.param("project"), c.req.param("variant"), c.req.param("version")),
   );
 
+  if (options.editor !== undefined) editorRoutes(app, options, options.editor);
+
   app.notFound((c) => c.json({ code: "not-found", error: "Not found." }, 404));
   app.onError((error, c) => {
     c.header("cache-control", "no-store");
@@ -153,4 +211,151 @@ export function createServer(options: ServerOptions): Hono {
   });
 
   return app;
+}
+
+/** The address the server is reached at, as the request says it. */
+const originOf = (c: Context): string => {
+  const url = new URL(c.req.url);
+  return `${url.protocol}//${c.req.header("host") ?? url.host}`;
+};
+
+/** What the editor's page asks of the server, and the page itself. */
+function editorRoutes(app: Hono, options: ServerOptions, pageDir: string): void {
+  const noProject = (c: Context, slug: string, actual: string) =>
+    c.json(
+      {
+        code: "not-found",
+        error: `This server serves the project "${actual}", not "${slug}".`,
+      },
+      404,
+    );
+
+  app.get("/api/projects", async (c) => {
+    c.header("cache-control", "no-store");
+    return c.json([viewOf(await loadProject(options.config, options.sources), originOf(c))]);
+  });
+
+  app.get("/api/projects/:slug", async (c) => {
+    c.header("cache-control", "no-store");
+    const project = await loadProject(options.config, options.sources);
+    const { project: slug } = project.config.definition;
+    if (slug !== c.req.param("slug")) return noProject(c, c.req.param("slug"), slug);
+    return c.json(viewOf(project, originOf(c)));
+  });
+
+  app.get("/api/projects/:slug/document", async (c) => {
+    const project = await loadProject(options.config, options.sources);
+    const { project: slug } = project.config.definition;
+    if (slug !== c.req.param("slug")) return noProject(c, c.req.param("slug"), slug);
+    const body = documentText(project.sources);
+    return new Response(body, {
+      headers: {
+        "content-type": body.trimStart().startsWith("{") ? CONTENT_TYPES.json : CONTENT_TYPES.yaml,
+        "cache-control": "no-store",
+      },
+    });
+  });
+
+  // A save. The file is changed where the definition changed and nowhere
+  // else: its comments and its layout are its author's (save.ts).
+  app.put("/api/projects/:slug", async (c) => {
+    c.header("cache-control", "no-store");
+    const payload = (await c.req.json().catch(() => ({}))) as {
+      definition?: unknown;
+      ifRevision?: unknown;
+    };
+    const config = loadConfig(options.config);
+    const slug = c.req.param("slug");
+    if (config.definition.project !== slug) return noProject(c, slug, config.definition.project);
+
+    const read = readDefinition(payload.definition);
+    if ("problems" in read) {
+      return c.json(
+        {
+          code: "invalid-definition",
+          error: read.problems.map(describeProblem).join(" "),
+          problems: read.problems,
+        },
+        400,
+      );
+    }
+    if (read.definition.project !== slug) {
+      return c.json(
+        {
+          code: "bad-request",
+          error:
+            "The project slug is what the file is deployed as. It is changed in the file itself.",
+        },
+        400,
+      );
+    }
+    if (payload.ifRevision !== undefined && payload.ifRevision !== revisionOf(config.text)) {
+      return c.json(
+        {
+          code: "conflict",
+          error: `${options.config} was changed in the meantime. It has been read again: make the change once more.`,
+        },
+        409,
+      );
+    }
+
+    const text = patchDefinition(config.text, config.definition, read.definition);
+    // What is written has to read back as what was asked for. Anything else is a fault here, and the file is left alone.
+    const written = parseConfig(text);
+    const readBack = "problems" in written ? undefined : readDefinition(written.doc.toJS());
+    if (
+      !readBack ||
+      "problems" in readBack ||
+      JSON.stringify(readBack.definition) !== JSON.stringify(read.definition)
+    ) {
+      console.error("The save would not have written what was asked for.");
+      return c.json({ code: "internal", error: "The file could not be written as asked." }, 500);
+    }
+    // The documents are read before anything is written: a source that is
+    // down is said now, and not as the failure of a save that went through.
+    const loaded = await loadProject(options.config, options.sources);
+    const dryRun = c.req.query("dryRun") === "true";
+    if (!dryRun && text !== config.text) {
+      // Whole or not at all: a file that is half written is worse than one
+      // that is not. A file that is a link stays one, with the rights it had.
+      const target = realpathSync(config.path);
+      const draft = `${target}.${process.pid}.tmp`;
+      writeFileSync(draft, text, { mode: statSync(target).mode });
+      renameSync(draft, target);
+    }
+    // What it came to. Sources are read again only if the save changed which they are.
+    const saved = { ...config, text, definition: read.definition };
+    const project =
+      dryRun ||
+      JSON.stringify(config.definition.sources) === JSON.stringify(read.definition.sources)
+        ? { ...loaded, config: saved }
+        : await loadProject(options.config, options.sources);
+    const result = resultOf(config.definition, viewOf(project, originOf(c)), dryRun);
+    return c.json({ ...result, warnings: warningsOf(read.definition) });
+  });
+
+  // The page: one document and the files it loads, as they were built.
+  const root = normalize(pageDir);
+  const file = (c: Context, name: string) => {
+    const path = normalize(join(root, name));
+    if (!path.startsWith(root + sep) || !existsSync(path)) {
+      return c.json({ code: "not-found", error: "Not found." }, 404);
+    }
+    return new Response(c.req.method === "HEAD" ? null : readFileSync(path), {
+      headers: {
+        "content-type": PAGE_TYPES[extname(path)] ?? "application/octet-stream",
+        // The page is small and changes with the tool: asked for again each time.
+        "cache-control": name === "index.html" ? "no-store" : "public, max-age=31536000, immutable",
+        // It talks to this server and to nothing else.
+        ...(name === "index.html"
+          ? {
+              "content-security-policy":
+                "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'",
+            }
+          : {}),
+      },
+    });
+  };
+  app.on(["GET", "HEAD"], "/", (c) => file(c, "index.html"));
+  app.on(["GET", "HEAD"], "/assets/:name", (c) => file(c, join("assets", c.req.param("name"))));
 }

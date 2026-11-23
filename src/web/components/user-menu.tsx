@@ -1,5 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { ChevronsUpDownIcon, LogOutIcon, MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
+import { cn, initials } from "@editor/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,11 +9,12 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "@editor/ui/dropdown-menu";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { ChevronsUpDownIcon, LogOutIcon, MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import { api, queries } from "@/lib/api";
 import { queryClient } from "@/lib/query-client";
 import { setTheme, type ThemeChoice, useTheme } from "@/lib/theme";
-import { cn, initials } from "@/lib/utils";
 
 export function Avatar({
   name,

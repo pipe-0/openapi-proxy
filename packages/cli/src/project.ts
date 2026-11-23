@@ -7,6 +7,7 @@ import {
   MergeError,
   type OperationEntry,
   type OperationIndex,
+  type ProjectNote,
   renderVariantText,
   resolveSelection,
   type Selection,
@@ -56,16 +57,26 @@ export function describe(project: Project): {
   index: OperationIndex;
   entries: OperationEntry[];
   specVersion: string;
+  /** What putting several documents together did. */
+  notes: ProjectNote[];
 } {
   try {
     return withBudget(() => {
-      const { doc, origins } = assembleTexts(project.sources);
+      const { doc, origins, notes, converted } = assembleTexts(project.sources);
       const index = indexOperations(doc);
       const several = project.sources.length > 1;
       const entries = index.entries.map((entry) =>
         several ? { ...entry, source: origins.get(entry.key) } : entry,
       );
-      return { index: { ...index, entries }, entries, specVersion: versionFamily(doc) };
+      return {
+        index: { ...index, entries },
+        entries,
+        specVersion: versionFamily(doc),
+        notes: [
+          ...converted.map((each) => ({ kind: "source-converted" as const, ...each })),
+          ...notes,
+        ],
+      };
     });
   } catch (error) {
     return refusal(project, error);

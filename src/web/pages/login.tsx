@@ -1,14 +1,14 @@
+import { CopyButton } from "@editor/components/copy-button";
+import { Notice, useTitle } from "@editor/components/page";
+import { cn } from "@editor/lib/utils";
+import { Button } from "@editor/ui/button";
+import { Input } from "@editor/ui/input";
 import { useQuery } from "@tanstack/react-query";
 import { useSearch } from "@tanstack/react-router";
 import { useState } from "react";
 import { Mark } from "@/components/brand";
-import { CopyButton } from "@/components/copy-button";
-import { Notice, useTitle } from "@/components/page";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { api, errorMessage, queries } from "@/lib/api";
 import { APP_HOME } from "@/lib/return-path";
-import { cn } from "@/lib/utils";
 
 const SECRETS = [
   "wrangler secret put AUTH_SECRET",

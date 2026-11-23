@@ -1,3 +1,4 @@
+import { projectName, projectSlug, variantsOf } from "@editor/lib/project";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -20,7 +21,6 @@ import {
 } from "@/components/ui/command";
 import { signOut } from "@/components/user-menu";
 import { type Project, queries } from "@/lib/api";
-import { projectName, projectSlug, variantsOf } from "@/lib/project";
 import { setTheme, useTheme } from "@/lib/theme";
 
 /**

@@ -20,7 +20,7 @@ Usage
 
 Commands
   init <url or file>   Write a first openapi-proxy.yaml for a document
-  dev                  Serve the variants on localhost, as the service would
+  dev                  Serve the variants on localhost, with a page to edit the file
   validate             Check the file, and its names against the documents
   operations           List the operations and tags of the documents
   deploy               Send the file and its documents to the service
@@ -56,6 +56,10 @@ Serve the variants of the definition file on this machine, at the paths the
 service has: /v/<project>/<variant>.json. The file and its sources are read on
 every request.
 
+The same address in a browser is an editor for the file: pick operations,
+see the document they produce, and save. A save changes the file where the
+selection changed and leaves the rest, comments included, as you wrote it.
+
 Options
   --config <file>            The definition file (default: ${DEFAULT_CONFIG})
   --source [name=]<location> Read a source from another address or file on this
@@ -65,6 +69,7 @@ Options
   --allowed-host <host>      A host, besides localhost, that requests may be
                              addressed to. Repeat for several; ".example.com"
                              allows every host under it.
+  --no-editor                Serve the variants only, and nothing that writes
 
 Example
   openapi-proxy dev --source http://localhost:8080/openapi.json
@@ -166,6 +171,7 @@ async function main(argv: string[]): Promise<number> {
       variant: { type: "string" },
       json: { type: "boolean", default: false },
       "dry-run": { type: "boolean", default: false },
+      "no-editor": { type: "boolean", default: false },
     },
   });
   if (values.help) {
@@ -187,7 +193,13 @@ async function main(argv: string[]): Promise<number> {
       if (!Number.isInteger(port) || port < 1 || port > 65_535) {
         throw new Error(`--port ${values.port} is not a port number.`);
       }
-      return dev({ ...common, port, host: values.host, allowedHosts: values["allowed-host"] });
+      return dev({
+        ...common,
+        port,
+        host: values.host,
+        allowedHosts: values["allowed-host"],
+        editor: !values["no-editor"],
+      });
     }
     case "validate":
       return validate(common);

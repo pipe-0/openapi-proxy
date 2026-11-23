@@ -1,10 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDownIcon } from "lucide-react";
-import { useState } from "react";
-import { toast } from "sonner";
-import { CopyButton } from "@/components/copy-button";
-import { DocsLink } from "@/components/docs-link";
-import { Section } from "@/components/page";
+import { CopyButton } from "@editor/components/copy-button";
+import { DocsLink } from "@editor/components/docs-link";
+import { Section } from "@editor/components/page";
+import { projectName, projectSlug, variantsOf } from "@editor/lib/project";
+import { formatRelativeTime } from "@editor/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,8 +13,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+} from "@editor/ui/alert-dialog";
+import { Button } from "@editor/ui/button";
 import {
   Dialog,
   DialogClose,
@@ -25,7 +23,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@editor/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,12 +32,14 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
+} from "@editor/ui/dropdown-menu";
+import { Input } from "@editor/ui/input";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronDownIcon } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
 import { errorMessage, queries } from "@/lib/api";
 import { type ApiKey, type CreatedKey, type KeyVariant, keysApi, keysQuery } from "@/lib/api-keys";
-import { projectName, projectSlug, variantsOf } from "@/lib/project";
-import { formatRelativeTime } from "@/lib/utils";
 
 const scopeKey = (scope: KeyVariant) => `${scope.project}/${scope.variant}`;
 

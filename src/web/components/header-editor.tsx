@@ -1,6 +1,6 @@
+import { Button } from "@editor/ui/button";
+import { Input } from "@editor/ui/input";
 import { PlusIcon, XIcon } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import type { HeaderInput } from "@/lib/api";
 
 export interface HeaderDraft {

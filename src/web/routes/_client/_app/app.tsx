@@ -1,9 +1,9 @@
+import { projectSlug } from "@editor/lib/project";
+import { Skeleton } from "@editor/ui/skeleton";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
-import { Skeleton } from "@/components/ui/skeleton";
 import { queries } from "@/lib/api";
 import { lastProject } from "@/lib/hooks";
-import { projectSlug } from "@/lib/project";
 
 /** `/app` has no content of its own: it opens the project you were last in, or asks for a first one. */
 export const Route = createFileRoute("/_client/_app/app")({ component: Home });

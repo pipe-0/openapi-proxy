@@ -1,9 +1,9 @@
+import { useTitle } from "@editor/components/page";
+import { Button } from "@editor/ui/button";
+import { Skeleton } from "@editor/ui/skeleton";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { Mark } from "@/components/brand";
-import { useTitle } from "@/components/page";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { api, errorMessage, queries, RequestError } from "@/lib/api";
 
 /**

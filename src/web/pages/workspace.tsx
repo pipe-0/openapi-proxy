@@ -1,14 +1,15 @@
+import { CopyButton } from "@editor/components/copy-button";
+import { Field, Notice, Page, PageHeader, Section, useTitle } from "@editor/components/page";
+import { Segmented } from "@editor/components/segmented";
+import { VISIBILITY } from "@editor/components/visibility";
+import { cn, formatBytes, plural } from "@editor/lib/utils";
+import { Button } from "@editor/ui/button";
+import { Input } from "@editor/ui/input";
+import { Skeleton } from "@editor/ui/skeleton";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ApiKeys } from "@/components/api-keys";
-import { CopyButton } from "@/components/copy-button";
-import { Field, Notice, Page, PageHeader, Section, useTitle } from "@/components/page";
-import { Segmented } from "@/components/segmented";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import { VISIBILITY } from "@/components/visibility";
 import {
   api,
   errorMessage,
@@ -17,7 +18,6 @@ import {
   type Visibility,
   type Workspace,
 } from "@/lib/api";
-import { cn, formatBytes, plural } from "@/lib/utils";
 import { PLAN_LIMITS, PLAN_PRICES } from "../../shared/plans";
 
 export function WorkspacePage() {

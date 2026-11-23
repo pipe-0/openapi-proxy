@@ -1,12 +1,15 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useParams } from "@tanstack/react-router";
-import { useState } from "react";
-import { toast } from "sonner";
-import { CopyButton } from "@/components/copy-button";
-import { Documents } from "@/components/documents";
-import { ManagedByFile } from "@/components/managed-by-file";
-import { Field, Missing, Notice, Page, PageHeader, Section, useTitle } from "@/components/page";
-import { ProjectNotifications } from "@/components/project-notifications";
+import { CopyButton } from "@editor/components/copy-button";
+import {
+  Field,
+  Missing,
+  Notice,
+  Page,
+  PageHeader,
+  Section,
+  useTitle,
+} from "@editor/components/page";
+import { projectName, projectSlug, variantsOf } from "@editor/lib/project";
+import { bareUrl, plural } from "@editor/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,14 +20,20 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import { api, bareUrl, errorMessage, type Project, queries, RequestError } from "@/lib/api";
+} from "@editor/ui/alert-dialog";
+import { Button } from "@editor/ui/button";
+import { Input } from "@editor/ui/input";
+import { Skeleton } from "@editor/ui/skeleton";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate, useParams } from "@tanstack/react-router";
+import { useState } from "react";
+import { toast } from "sonner";
+import { Documents } from "@/components/documents";
+import { ManagedByFile } from "@/components/managed-by-file";
+import { ProjectNotifications } from "@/components/project-notifications";
+import { api, errorMessage, type Project, queries, RequestError } from "@/lib/api";
 import { useProject } from "@/lib/hooks";
-import { projectName, projectSlug, useApply, variantsOf } from "@/lib/project";
-import { plural } from "@/lib/utils";
+import { useApply } from "@/lib/use-apply";
 
 export function ProjectSettingsPage() {
   const { project: slug } = useParams({ from: "/_client/_app/p/$project/settings" });

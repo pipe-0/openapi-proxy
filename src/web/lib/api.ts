@@ -5,8 +5,6 @@ import type {
   ProjectNote,
   ProjectView,
   SourceState,
-  SpecFormat,
-  TargetVersion,
   VariantDefinition,
   VariantState,
 } from "@openapi-proxy/core";
@@ -128,14 +126,6 @@ export interface AuthConfig {
   methods: { google: boolean; password: boolean };
   /** Whether this instance has terms and a privacy policy (the hosted service does). */
   legal: boolean;
-}
-
-/**
- * What follows a variant's URL for one representation of it: `.json` for the
- * version its document has, `/3.0.json` for one it is converted to.
- */
-export function representation(version: TargetVersion | null, format: SpecFormat): string {
-  return `${version === null ? "" : `/${version}`}.${format}`;
 }
 
 export interface HeaderInput {
@@ -304,8 +294,3 @@ export const queries = {
   invitation: (id: string) =>
     queryOptions({ queryKey: ["invitation", id], queryFn: () => api.invitation(id), retry: false }),
 };
-
-/** A URL as people read it: without the protocol. */
-export function bareUrl(url: string): string {
-  return url.replace(/^https?:\/\//, "");
-}

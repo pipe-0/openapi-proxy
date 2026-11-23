@@ -1,6 +1,21 @@
-import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { ADMIN_PASSWORD, FIXTURE_PORT } from "./server.ts";
+
+export const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+/** The command line tool as it is published: one built file, and the page it serves. */
+export const cli = join(root, "packages/cli/dist/cli.js");
+
+/** Build the command line tool, so that the journeys run what people will install. */
+export function buildCli(): void {
+  const built = spawnSync("pnpm", ["--filter", "@pipe0/openapi-proxy", "build"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  expect(built.status, built.stderr).toBe(0);
+}
 
 export const fixtureUrl = (path: string) => `http://127.0.0.1:${FIXTURE_PORT}${path}`;
 

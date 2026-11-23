@@ -1,3 +1,8 @@
+import { Notice } from "@editor/components/page";
+import { SLUG_HELP, SlugInput } from "@editor/components/slug-input";
+import { bareUrl, cn, looksLikeUrl } from "@editor/lib/utils";
+import { Button } from "@editor/ui/button";
+import { Input } from "@editor/ui/input";
 import { isValidSlug, type ProjectDefinition, slugify } from "@openapi-proxy/core";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowRightIcon, KeyRoundIcon, MergeIcon, PlusIcon, XIcon } from "lucide-react";
@@ -10,12 +15,8 @@ import {
   newHeader,
   toHeaderInput,
 } from "@/components/header-editor";
-import { Notice } from "@/components/page";
-import { SLUG_HELP, SlugInput, useSlugStatus } from "@/components/slug-input";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { api, bareUrl, errorMessage, type HeaderInput, queries, RequestError } from "@/lib/api";
-import { cn, looksLikeUrl } from "@/lib/utils";
+import { api, errorMessage, type HeaderInput, queries, RequestError } from "@/lib/api";
+import { useSlugStatus } from "@/lib/use-slug-status";
 
 /** One more document to merge in, while it is being typed. */
 interface Extra {

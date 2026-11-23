@@ -1,6 +1,6 @@
+import { Missing } from "@editor/components/page";
 import { createRouter } from "@tanstack/react-router";
 import { createIsomorphicFn } from "@tanstack/react-start";
-import { Missing } from "@/components/page";
 import { routeTree } from "./routeTree.gen";
 
 /**

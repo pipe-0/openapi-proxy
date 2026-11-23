@@ -1,6 +1,6 @@
+import { cn } from "@editor/lib/utils";
+import { buttonVariants } from "@editor/ui/button";
 import type { ReactNode } from "react";
-import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { GUARDS, PLAN_LIMITS, PLAN_NAMES, PLAN_PRICES } from "../../shared/plans";
 import { GITHUB_URL } from "./site";
 

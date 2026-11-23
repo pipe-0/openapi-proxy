@@ -1,8 +1,8 @@
+import { projectSlug } from "@editor/lib/project";
 import { type UnmatchedNames, unmatchedCount } from "@openapi-proxy/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api, errorMessage, type Project, queries } from "@/lib/api";
-import { projectSlug } from "@/lib/project";
 
 /** "Check now": look at the documents the service follows at once, and say what came of it. */
 export function useCheckProject(project: Project | undefined) {

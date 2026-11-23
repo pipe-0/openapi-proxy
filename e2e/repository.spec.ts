@@ -1,10 +1,9 @@
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { cpSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { expect, test } from "@playwright/test";
-import { shot, signIn } from "./helpers.ts";
+import { buildCli, cli, root, shot, signIn } from "./helpers.ts";
 import { APP_PORT } from "./server.ts";
 
 /**
@@ -19,8 +18,6 @@ import { APP_PORT } from "./server.ts";
 test.describe.configure({ mode: "serial" });
 test.use({ viewport: { width: 1440, height: 900 } });
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const cli = join(root, "packages/cli/dist/cli.js");
 const LOCAL_PORT = 7746;
 const instance = `http://localhost:${APP_PORT}`;
 
@@ -40,12 +37,7 @@ function run(...args: string[]) {
 }
 
 test.beforeAll(() => {
-  // The tool as it is published: one built file.
-  const built = spawnSync("pnpm", ["--filter", "@pipe0/openapi-proxy", "build"], {
-    cwd: root,
-    encoding: "utf8",
-  });
-  expect(built.status, built.stderr).toBe(0);
+  buildCli();
 
   // A repository: the example from the guide, deploying to this suite's instance.
   dir = mkdtempSync(join(tmpdir(), "openapi-proxy-e2e-"));

@@ -1,0 +1,424 @@
+/*
+ * How the editor looks, wherever it is shown: the tokens, the materials and
+ * the few utilities its components are drawn with. A page that hosts it
+ * imports Tailwind first and then this file.
+ */
+/* The classes in these components are part of the page's stylesheet too. */
+@source "./";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * The design system, in one file.
+ *
+ * Structure is neutral: white, near-black and a short ladder of greys.
+ * Interactivity is one hue, a saturated indigo. Judgment (fine, look at this,
+ * broken) is three status colors that appear nowhere else. Depth comes from
+ * materials at the edges of controls, not from shadows under cards.
+ *
+ * Hierarchy is carried by type and space. Rules and boxes are the exception.
+ */
+:root {
+  --radius: 0.6rem;
+
+  --background: hsl(0 0% 100%);
+  --foreground: hsl(0 0% 7%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(0 0% 7%);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(0 0% 7%);
+
+  /* One step off the background: the sidebar, table headers, code. */
+  --subtle: hsl(0 0% 98%);
+  --muted: hsl(0 0% 96%);
+  --muted-foreground: hsl(0 0% 38%);
+  /* Third-level text: placeholders, counts next to labels, punctuation. */
+  --faint: hsl(0 0% 58%);
+  --secondary: hsl(0 0% 93%);
+  --secondary-foreground: hsl(0 0% 9%);
+  --accent: hsl(0 0% 95.5%);
+  --accent-foreground: hsl(0 0% 9%);
+
+  --border: hsl(0 0% 90%);
+  /* Field outlines sit a step above dividers so a field reads as a field. */
+  --input: hsl(0 0% 80%);
+
+  --primary: hsl(236 77% 55%);
+  --primary-foreground: hsl(0 0% 100%);
+  --ring: hsl(236 77% 62%);
+  --destructive: hsl(0 74% 50%);
+  --destructive-foreground: hsl(0 0% 100%);
+
+  /* Status: a tint, readable text on it, and an edge. */
+  --ok: hsl(150 62% 95.5%);
+  --ok-foreground: hsl(156 64% 24%);
+  --ok-edge: hsl(152 45% 37%);
+  --warn: hsl(46 92% 93%);
+  --warn-foreground: hsl(28 92% 29%);
+  --warn-edge: hsl(40 72% 40%);
+  --bad: hsl(0 78% 96.5%);
+  --bad-foreground: hsl(0 66% 42%);
+  --bad-edge: hsl(0 58% 48%);
+
+  /* Syntax, for the document preview. */
+  --code-key: hsl(0 0% 13%);
+  --code-string: hsl(158 64% 27%);
+  --code-number: hsl(236 70% 52%);
+  --code-punctuation: hsl(0 0% 60%);
+
+  --sidebar: hsl(0 0% 97.5%);
+  --sidebar-border: hsl(0 0% 91%);
+}
+
+.dark {
+  --background: hsl(0 0% 5%);
+  --foreground: hsl(0 0% 96%);
+  --card: hsl(0 0% 7%);
+  --card-foreground: hsl(0 0% 96%);
+  --popover: hsl(0 0% 8.5%);
+  --popover-foreground: hsl(0 0% 96%);
+
+  --subtle: hsl(0 0% 7.5%);
+  --muted: hsl(0 0% 12%);
+  --muted-foreground: hsl(0 0% 64%);
+  --faint: hsl(0 0% 44%);
+  --secondary: hsl(0 0% 15%);
+  --secondary-foreground: hsl(0 0% 96%);
+  --accent: hsl(0 0% 13%);
+  --accent-foreground: hsl(0 0% 96%);
+
+  --border: hsl(0 0% 15.5%);
+  --input: hsl(0 0% 22%);
+
+  /* Primary is text as often as it is a fill, so it runs lighter on dark. */
+  --primary: hsl(236 88% 67%);
+  --primary-foreground: hsl(0 0% 100%);
+  --ring: hsl(236 75% 66%);
+  --destructive: hsl(0 78% 62%);
+
+  --ok: hsl(152 40% 12%);
+  --ok-foreground: hsl(152 58% 70%);
+  --ok-edge: hsl(152 50% 46%);
+  --warn: hsl(45 42% 12%);
+  --warn-foreground: hsl(45 88% 68%);
+  --warn-edge: hsl(45 70% 48%);
+  --bad: hsl(0 42% 14%);
+  --bad-foreground: hsl(0 88% 76%);
+  --bad-edge: hsl(0 65% 56%);
+
+  --code-key: hsl(0 0% 90%);
+  --code-string: hsl(158 58% 62%);
+  --code-number: hsl(236 100% 80%);
+  --code-punctuation: hsl(0 0% 46%);
+
+  --sidebar: hsl(0 0% 7%);
+  --sidebar-border: hsl(0 0% 14%);
+}
+
+@theme inline {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  /* Headings only. Inter's optical-size axis switches to its Display cut at large sizes. */
+  --font-display: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-subtle: var(--subtle);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-faint: var(--faint);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-ok: var(--ok);
+  --color-ok-foreground: var(--ok-foreground);
+  --color-ok-edge: var(--ok-edge);
+  --color-warn: var(--warn);
+  --color-warn-foreground: var(--warn-foreground);
+  --color-warn-edge: var(--warn-edge);
+  --color-bad: var(--bad);
+  --color-bad-foreground: var(--bad-foreground);
+  --color-bad-edge: var(--bad-edge);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-border: var(--sidebar-border);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+
+  --shadow-float:
+    0 0 0 1px color-mix(in srgb, var(--foreground) 8%, transparent),
+    0 2px 4px color-mix(in srgb, #000 6%, transparent),
+    0 12px 32px -8px color-mix(in srgb, #000 22%, transparent);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground text-sm antialiased;
+    font-synthesis-weight: none;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 24%, transparent);
+  }
+  /* Search inputs keep their native clear button out of the way of ours. */
+  input[type="search"]::-webkit-search-cancel-button {
+    display: none;
+  }
+}
+
+@layer components {
+  /*
+   * Materials. A control gets its body from the edge: a border that catches
+   * light at the top and deepens toward the bottom, one inset highlight, a
+   * hairline of cast shadow. Faces stay flat.
+   */
+
+  /* Raised: secondary buttons, tabs at rest, anything pressable that is not the main action. */
+  .material-raised {
+    border: 1px solid transparent;
+    background:
+      linear-gradient(
+        180deg,
+        var(--background),
+        color-mix(in srgb, var(--foreground) 2.5%, var(--background))
+      )
+      padding-box,
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--foreground) 11%, transparent),
+        color-mix(in srgb, var(--foreground) 23%, transparent)
+      )
+      border-box;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.9),
+      0 1px 2px color-mix(in srgb, var(--foreground) 7%, transparent);
+  }
+  .material-raised-hover:hover:not(:disabled, [aria-disabled="true"]),
+  .material-raised-hover[aria-expanded="true"] {
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--foreground) 2%, var(--background)),
+        color-mix(in srgb, var(--foreground) 7%, var(--background))
+      )
+      padding-box,
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--foreground) 17%, transparent),
+        color-mix(in srgb, var(--foreground) 36%, transparent)
+      )
+      border-box;
+  }
+  .dark .material-raised {
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, #fff 8%, var(--background)),
+        color-mix(in srgb, #fff 4%, var(--background))
+      )
+      padding-box,
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, #fff 22%, transparent),
+        color-mix(in srgb, #fff 9%, transparent)
+      )
+      border-box;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.08),
+      0 1px 2px rgb(0 0 0 / 0.4);
+  }
+  .dark .material-raised-hover:hover:not(:disabled, [aria-disabled="true"]),
+  .dark .material-raised-hover[aria-expanded="true"] {
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, #fff 13%, var(--background)),
+        color-mix(in srgb, #fff 8%, var(--background))
+      )
+      padding-box,
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, #fff 32%, transparent),
+        color-mix(in srgb, #fff 16%, transparent)
+      )
+      border-box;
+  }
+
+  /* Solid: the one main action on a screen, and whatever is selected. */
+  .material-solid {
+    --tone: var(--primary);
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--tone) 86%, #fff),
+      color-mix(in srgb, var(--tone) 94%, #000)
+    );
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.3),
+      0 0 0 0.5px color-mix(in srgb, var(--tone) 70%, #000),
+      0 1px 2px color-mix(in srgb, var(--tone) 42%, transparent);
+  }
+  .material-solid:hover:not(:disabled, [aria-disabled="true"]) {
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--tone) 93%, #fff),
+      color-mix(in srgb, var(--tone) 85%, #000)
+    );
+  }
+  .dark .material-solid {
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--tone) 92%, #fff),
+      color-mix(in srgb, var(--tone) 74%, #000)
+    );
+  }
+  .dark .material-solid:hover:not(:disabled, [aria-disabled="true"]) {
+    background: linear-gradient(180deg, var(--tone), color-mix(in srgb, var(--tone) 66%, #000));
+  }
+  .material-danger {
+    --tone: var(--destructive);
+  }
+
+  /*
+   * HTTP methods as quiet chips. One recipe, one hue per method (--hue).
+   */
+  .method {
+    --hue: 0;
+    --chroma: 0.13;
+    color: oklch(0.5 var(--chroma) var(--hue));
+  }
+  .dark .method {
+    color: oklch(0.78 calc(var(--chroma) * 0.85) var(--hue));
+  }
+  .method[data-method="GET"] {
+    --hue: 152;
+  }
+  .method[data-method="POST"] {
+    --hue: 255;
+  }
+  .method[data-method="PUT"] {
+    --hue: 70;
+  }
+  .method[data-method="PATCH"] {
+    --hue: 195;
+  }
+  .method[data-method="DELETE"] {
+    --hue: 25;
+  }
+  .method[data-method="QUERY"] {
+    --hue: 300;
+  }
+  .method:not(
+    [data-method="GET"],
+    [data-method="POST"],
+    [data-method="PUT"],
+    [data-method="PATCH"],
+    [data-method="DELETE"],
+    [data-method="QUERY"]
+  ) {
+    --chroma: 0;
+  }
+}
+
+@layer utilities {
+  /* Scrollbars that stay out of the way: no track, a faint thumb that firms up on hover. */
+  .scroll-quiet {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--muted-foreground) 28%, transparent) transparent;
+  }
+  .scroll-quiet::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .scroll-quiet::-webkit-scrollbar-thumb {
+    background-color: color-mix(in srgb, var(--muted-foreground) 28%, transparent);
+    border-radius: 9999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  .scroll-quiet::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in srgb, var(--muted-foreground) 55%, transparent);
+  }
+
+  /* Page and section titles: Inter Display, tight. */
+  .type-title {
+    font-family: var(--font-display);
+    font-size: 26px;
+    line-height: 32px;
+    font-weight: 600;
+    letter-spacing: -0.022em;
+  }
+  .type-heading {
+    font-family: var(--font-display);
+    font-size: 16px;
+    line-height: 24px;
+    font-weight: 600;
+    letter-spacing: -0.011em;
+  }
+}
+
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-6px);
+  }
+  75% {
+    transform: translateX(6px);
+  }
+}
+
+@utility animate-shake {
+  animation: shake 0.18s ease-in-out 2;
+}
+
+@keyframes arrive {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 40%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 12px transparent;
+  }
+}
+
+/* A single ring that expands and fades: "this is new, and it is here". */
+@utility animate-arrive {
+  animation: arrive 0.8s ease-out 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: a user preference has to win over every component */
+    animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: a user preference has to win over every component */
+    transition-duration: 0.01ms !important;
+  }
+}

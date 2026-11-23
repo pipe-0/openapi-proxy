@@ -11,10 +11,11 @@
     "verbatimModuleSyntax": false,
     "paths": {
       "@/*": ["./src/web/*"],
+      "@editor/*": ["./packages/editor/src/*"],
       "collections/*": ["./.source/*"]
     }
   },
-  "include": ["src/web"],
+  "include": ["src/web", "packages/editor/src"],
   // The Worker entry runs in workerd, not in a page: tsconfig.worker.json checks it.
   "exclude": ["src/web/server.ts"]
 }

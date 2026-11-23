@@ -1,0 +1,14 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+/* The editor and everything it is drawn with. The app imports the same file. */
+@import "../../editor/src/theme.css";
+
+/* Headings are set in Inter, as in the app. Latin is what the interface is written in. */
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("@fontsource-variable/inter/files/inter-latin-opsz-normal.woff2")
+    format("woff2-variations");
+}

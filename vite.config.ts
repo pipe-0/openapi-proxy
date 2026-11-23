@@ -105,6 +105,8 @@ export default defineConfig(({ mode, command }) => {
     resolve: {
       alias: {
         "@": new URL("./src/web", import.meta.url).pathname,
+        // The variant editor and what it is drawn with: also shown by `openapi-proxy dev`.
+        "@editor": new URL("./packages/editor/src", import.meta.url).pathname,
         collections: new URL("./.source", import.meta.url).pathname,
       },
       // Fumadocs ships its own copies otherwise, and two Reacts do not hydrate.

@@ -1,7 +1,7 @@
+import { useTitle } from "@editor/components/page";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { ConnectForm } from "@/components/connect-form";
-import { useTitle } from "@/components/page";
 import { queries } from "@/lib/api";
 
 /**

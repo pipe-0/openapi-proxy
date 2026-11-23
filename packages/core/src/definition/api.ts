@@ -96,8 +96,12 @@ export interface ProjectState {
   sources: SourceState[];
   /** By slug, like the definition's variants. */
   variants: Record<string, VariantState>;
-  /** Who may read a variant when neither it nor the project says. */
-  defaultVisibility: "public" | "private";
+  /**
+   * Who may read a variant when neither it nor the project says: what the
+   * workspace says. Null where that is not known, as for a definition file
+   * that is not deployed yet.
+   */
+  defaultVisibility: "public" | "private" | null;
   createdAt: number;
   /**
    * What can be done with this project here. An editor shows only what the
@@ -134,7 +138,11 @@ export interface ApplyRequest {
   credentials?: Record<string, Array<{ name: string; value?: string }>>;
   /** What a deploy says about where it ran. */
   origin?: AppliedRecord["origin"];
-  /** Apply only if the project is still at this revision. */
+  /**
+   * What the change started from: apply only if the project is still at this
+   * revision. 0 says "there is no such project yet", for a form that makes one.
+   * Left out, the definition is applied to whatever is there, as a deploy does.
+   */
   ifRevision?: number;
   /** On a project that is deployed from a file: edit it here from now on. */
   editInApp?: boolean;

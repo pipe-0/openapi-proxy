@@ -1,3 +1,6 @@
+import { MethodChip } from "@editor/components/method-chip";
+import { OperationPath } from "@editor/components/operation-path";
+import { cn } from "@editor/lib/utils";
 import {
   BookOpenIcon,
   BotIcon,
@@ -13,9 +16,6 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Mark } from "@/components/brand";
-import { MethodChip } from "@/components/method-chip";
-import { OperationPath } from "@/components/operation-path";
-import { cn } from "@/lib/utils";
 
 /**
  * The two problems openapi-proxy was made for, as pictures rather than prose:

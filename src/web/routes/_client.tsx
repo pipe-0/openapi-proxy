@@ -1,8 +1,8 @@
+import { TooltipProvider } from "@editor/ui/tooltip";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createFileRoute, Outlet, useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { Toaster } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
 import { setUnauthorizedHandler } from "@/lib/api";
 import { queryClient } from "@/lib/query-client";
 

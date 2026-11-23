@@ -1,10 +1,10 @@
+import { Notice } from "@editor/components/page";
+import { formatRelativeTime } from "@editor/lib/utils";
+import { Button } from "@editor/ui/button";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Notice } from "@/components/page";
-import { Button } from "@/components/ui/button";
 import { errorMessage, type Project } from "@/lib/api";
-import { useApply } from "@/lib/project";
-import { formatRelativeTime } from "@/lib/utils";
+import { useApply } from "@/lib/use-apply";
 
 /** Where a deploy ran, in a few words: the commit, and the branch or tag it was on. */
 function originOf(project: Project): string | undefined {

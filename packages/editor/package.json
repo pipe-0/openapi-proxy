@@ -1,0 +1,21 @@
+{
+  "name": "@openapi-proxy/editor",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The screen a variant is edited on: its operations, the document they produce, and what is said at its top. Used by the app, and by the page `openapi-proxy dev` serves.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": [
+    "*.css"
+  ],
+  "dependencies": {
+    "@base-ui/react": "^1.9.0",
+    "@openapi-proxy/core": "workspace:*",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.77.0",
+    "react": "^19.3.1",
+    "sonner": "^2.0.8",
+    "tailwind-merge": "^3.7.1"
+  }
+}

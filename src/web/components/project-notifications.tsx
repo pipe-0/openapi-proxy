@@ -1,9 +1,9 @@
+import { Field, Notice, Section } from "@editor/components/page";
+import { Segmented } from "@editor/components/segmented";
+import { projectName, projectSlug } from "@editor/lib/project";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Field, Notice, Section } from "@/components/page";
-import { Segmented } from "@/components/segmented";
 import { api, errorMessage, type NotificationScope, type Project, queries } from "@/lib/api";
-import { projectName, projectSlug } from "@/lib/project";
 
 const SCOPES: ReadonlyArray<{ value: NotificationScope; label: string }> = [
   { value: "off", label: "Nothing" },

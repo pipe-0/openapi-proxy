@@ -1,7 +1,7 @@
+import { cn } from "@editor/lib/utils";
+import { Button } from "@editor/ui/button";
 import { Link } from "@tanstack/react-router";
 import { Mark, Wordmark } from "@/components/brand";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { GITHUB_URL } from "./site";
 
 const quietLink =

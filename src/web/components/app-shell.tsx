@@ -1,3 +1,18 @@
+import { StatusChip } from "@editor/components/status-chip";
+import { VariantIcon } from "@editor/components/variant-icon";
+import { projectName, projectSlug, variantsOf } from "@editor/lib/project";
+import { cn, isTyping, MOD_KEY } from "@editor/lib/utils";
+import { Button } from "@editor/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@editor/ui/dropdown-menu";
+import { Kbd } from "@editor/ui/kbd";
+import { Sheet, SheetContent, SheetTitle } from "@editor/ui/sheet";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@editor/ui/tooltip";
 import { useQuery } from "@tanstack/react-query";
 import { Link, Outlet, useNavigate, useParams } from "@tanstack/react-router";
 import {
@@ -12,24 +27,9 @@ import {
 import { useEffect, useState } from "react";
 import { Mark, Wordmark } from "@/components/brand";
 import { CommandMenu } from "@/components/command-menu";
-import { StatusChip } from "@/components/status-chip";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Kbd } from "@/components/ui/kbd";
-import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { UserMenu } from "@/components/user-menu";
-import { VariantIcon } from "@/components/variant-icon";
 import { type Project, queries } from "@/lib/api";
 import { checkStatus, lastProject, notFoundCount, rememberProject } from "@/lib/hooks";
-import { projectName, projectSlug, variantsOf } from "@/lib/project";
-import { cn, isTyping, MOD_KEY } from "@/lib/utils";
 
 const navItem =
   "group/nav flex h-8 items-center gap-2 rounded-lg px-2 text-[13px] text-foreground/75 outline-none hover:bg-foreground/5 hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50";

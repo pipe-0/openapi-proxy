@@ -1,5 +1,5 @@
+import { cn } from "@editor/lib/utils";
 import { useId } from "react";
-import { cn } from "@/lib/utils";
 
 /**
  * The mark: a pair of JSON braces with a face between them, `{•‿•}`. An
