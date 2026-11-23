@@ -1,0 +1,65 @@
+name: Publish the command line tool
+
+# Publishes @pipe0/openapi-proxy to npm when a tag like cli-v0.2.0 is pushed.
+# There is no npm token in this repository: npm trusts this workflow (trusted
+# publishing), which is set up once in the package's settings on npmjs.com,
+# under "Trusted Publisher", with this file's name.
+on:
+  push:
+    tags: ["cli-v*"]
+
+permissions:
+  contents: read
+  # What trusted publishing needs: a token that says which workflow this is.
+  id-token: write
+
+# One publish at a time, and never cut short.
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # All of the history, to see whether the tagged commit is on main.
+          fetch-depth: 0
+      # Only a commit that is on main is published. A tag on a commit of some
+      # other branch publishes nothing.
+      - name: The tagged commit is on main
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME points at a commit that is not on main."
+            exit 1
+          fi
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      - name: The tag is the version in package.json
+        run: |
+          version=$(node -p "require('./packages/cli/package.json').version")
+          if [ "$GITHUB_REF_NAME" != "cli-v$version" ]; then
+            echo "::error::The tag is $GITHUB_REF_NAME, and packages/cli/package.json says $version. Tag cli-v$version, or change the version first."
+            exit 1
+          fi
+      # Trusted publishing needs npm 11.5.1 or later.
+      - name: npm is new enough
+        run: |
+          npm install --global npm@^11.5.1
+          npm --version
+      - run: pnpm --filter @openapi-proxy/core test
+      - run: pnpm --filter @pipe0/openapi-proxy typecheck
+      - run: pnpm --filter @pipe0/openapi-proxy test
+      # The package as it will be published, installed and used outside this repository.
+      - run: pnpm --filter @pipe0/openapi-proxy test:packed
+      # Packing builds the tool again (prepack), from the commit the steps above tested.
+      - run: npm publish --access public
+        working-directory: packages/cli

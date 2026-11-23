@@ -9,7 +9,7 @@ import {
   slugify,
 } from "@openapi-proxy/core";
 import type { Config } from "../config.js";
-import { bold, dim, plural, print, warn } from "../output.js";
+import { bold, dim, plural, print, RUN, warn } from "../output.js";
 import { describe } from "../project.js";
 import { readSources } from "../sources.js";
 
@@ -96,7 +96,7 @@ export async function init(options: {
       ? [
           "    # This address is on your machine, so a deploy from a pipeline cannot read",
           "    # it. Put the file or the address the pipeline reads here, and read this",
-          `    # one while you work: openapi-proxy dev --source ${options.location}`,
+          `    # one while you work: ${RUN} dev --source ${options.location}`,
         ]
       : remote
         ? [
@@ -109,7 +109,7 @@ export async function init(options: {
     "variants:",
     "  public:",
     "    # What this variant serves. Nothing yet: pick operations in the editor that",
-    "    # `openapi-proxy dev` opens, or name whole tags and single operations here.",
+    "    # `openapi-proxy dev` serves, or name whole tags and single operations here.",
     ...commentLines(
       "    # ",
       tags.length > 0
@@ -125,13 +125,13 @@ export async function init(options: {
   print(`Wrote ${bold(options.config)} for ${plural(index.totalOperations, "operation")}.`);
   print();
   print("Next:");
-  print(`  openapi-proxy dev          ${dim("serve it on localhost and pick what it serves")}`);
-  print(`  openapi-proxy operations   ${dim("list the operations and tags to pick from")}`);
-  print(`  openapi-proxy deploy       ${dim("publish it")}`);
+  print(`  ${RUN} dev          ${dim("serve it on localhost and pick what it serves")}`);
+  print(`  ${RUN} operations   ${dim("list the operations and tags to pick from")}`);
+  print(`  ${RUN} deploy       ${dim("publish it")}`);
   if (local) {
     print();
     warn(
-      `${options.location} is on this machine. Before you deploy from a pipeline, put the file or the address it reads into ${options.config}, and read this one with: openapi-proxy dev --source ${options.location}`,
+      `${options.location} is on this machine. Before you deploy from a pipeline, put the file or the address it reads into ${options.config}, and read this one with: ${RUN} dev --source ${options.location}`,
     );
   }
   return 0;

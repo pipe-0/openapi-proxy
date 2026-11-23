@@ -9,7 +9,7 @@ import {
   unmatchedCount,
 } from "@openapi-proxy/core";
 import { type Config, lineOf, loadConfig, parseConfig } from "../config.js";
-import { bold, dim, fail, green, note, plural, print, table, warn } from "../output.js";
+import { bold, dim, fail, green, note, plural, print, RUN, table, warn } from "../output.js";
 import { type ReadSource, readSource, SourceError, tooLarge } from "../sources.js";
 import { problemLine } from "./validate.js";
 
@@ -94,7 +94,7 @@ export async function deploy(options: {
     note("A deploy needs a deploy API key. The owner of the workspace creates one at");
     note(`${instance}/workspace and stores it as a secret of the pipeline:`);
     note("");
-    note(`  ${KEY_VARIABLE}=oap_... openapi-proxy deploy`);
+    note(`  ${KEY_VARIABLE}=oap_... ${RUN} deploy`);
     return 1;
   }
 

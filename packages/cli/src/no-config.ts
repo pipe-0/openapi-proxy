@@ -1,5 +1,5 @@
 import { HOSTED_URL, WAYS } from "@openapi-proxy/core";
-import { fail, note } from "./output.js";
+import { fail, note, RUN } from "./output.js";
 
 /** A sentence broken into lines a terminal shows whole. */
 function lines(text: string, width = 76): string[] {
@@ -25,7 +25,7 @@ export function noConfig(path: string): void {
   note(`${WAYS.repository.title}.`);
   for (const line of lines(WAYS.repository.when)) note(line);
   note("");
-  note("  openapi-proxy init <url or file of your OpenAPI document>");
+  note(`  ${RUN} init <url or file of your OpenAPI document>`);
   note("");
   note(`${WAYS.url.title}.`);
   for (const line of lines(WAYS.url.when)) note(line);

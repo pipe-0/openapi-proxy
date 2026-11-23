@@ -9,7 +9,9 @@ import { noConfig } from "./no-config.js";
 import { fail, note, print } from "./output.js";
 import { SourceError } from "./sources.js";
 
-const VERSION = "0.1.0";
+/** The version in package.json, put here when the tool is built. */
+declare const __VERSION__: string;
+const VERSION = __VERSION__;
 
 const HELP = `openapi-proxy: one OpenAPI document in, a document for each audience out.
 

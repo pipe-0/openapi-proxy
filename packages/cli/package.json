@@ -1,7 +1,7 @@
 {
   "name": "@pipe0/openapi-proxy",
   "version": "0.1.0",
-  "description": "Filter, merge and serve OpenAPI documents from a config file in your repo: a local dev server for your variants, and deploy from CI.",
+  "description": "Filter an OpenAPI document into one for each audience, from a config file in your repo: a local dev server for the filtered documents, and deploy from CI.",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -11,10 +11,13 @@
     "dist",
     "schema.json"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=20"
   },
-  "homepage": "https://openapi-proxy.app/docs",
+  "homepage": "https://openapi-proxy.app/docs/in-your-repository",
   "bugs": "https://github.com/pipe-0/openapi-proxy/issues",
   "repository": {
     "type": "git",
@@ -26,8 +29,10 @@
     "swagger",
     "openapi-filter",
     "openapi-merge",
+    "openapi-3",
     "api-docs",
     "sdk",
+    "codegen",
     "cli",
     "dev-server",
     "config-as-code"
@@ -36,6 +41,7 @@
     "build": "vite build && vite build --config vite.page.config.ts",
     "prepack": "pnpm build",
     "test": "vitest run",
+    "test:packed": "node scripts/packed.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.page.json"
   },
   "devDependencies": {

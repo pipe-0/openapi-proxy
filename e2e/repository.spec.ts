@@ -26,6 +26,22 @@ let key = "";
 let local: ChildProcess | undefined;
 
 const file = () => join(dir, "openapi-proxy.yaml");
+
+/**
+ * The block of a docs page that shows what a command prints, found by how it
+ * starts: the lines that say something, each as its columns.
+ */
+function shown(page: string, start: string): string[][] {
+  const text = readFileSync(join(root, "src/web/content/docs", `${page}.mdx`), "utf8");
+  const block = text.split("```\n").find((part) => part.startsWith(start)) ?? "";
+  return columns(block);
+}
+const columns = (text: string): string[][] =>
+  text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "")
+    .map((line) => line.split(/\s{2,}/));
 /** Run the command line tool in the repository folder, as a pipeline would. */
 function run(...args: string[]) {
   const result = spawnSync(process.execPath, [cli, ...args], {
@@ -86,6 +102,16 @@ test("a deploy API key, a rehearsal, and the first deploy", async ({ page, reque
     ),
   );
 
+  // The guide and the reference show this output. They are held to it, with
+  // the service's address and the repository's folder as the pages write them.
+  const printed = columns(
+    first.out
+      .replaceAll(instance, "https://openapi-proxy.app")
+      .replace(/read from \S+openapi\.json/, "read from /repo/openapi.json"),
+  );
+  expect(shown("in-your-repository", "Created bookshop")).toEqual(printed);
+  expect(shown("cli", "Created bookshop")).toEqual(printed);
+
   const served = await request.get("/v/bookshop/public.json");
   expect(served.status()).toBe(200);
   const doc = (await served.json()) as {
@@ -99,10 +125,21 @@ test("a deploy API key, a rehearsal, and the first deploy", async ({ page, reque
 test("localhost serves the same bytes as the service, in every format and version", async ({
   request,
 }) => {
+  // Without the test runner's own wish for color, which Node would remark on.
+  const { FORCE_COLOR: _, ...env } = process.env;
   local = spawn(process.execPath, [cli, "dev", "--port", String(LOCAL_PORT)], {
     cwd: dir,
-    env: { ...process.env, NO_COLOR: "1" },
-    stdio: "ignore",
+    env: { ...env, NO_COLOR: "1" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  // What it says when it starts: the addresses first, then two lines about how it works.
+  let said = "";
+  let noted = "";
+  local.stdout?.on("data", (chunk) => {
+    said += String(chunk);
+  });
+  local.stderr?.on("data", (chunk) => {
+    noted += String(chunk);
   });
   const here = `http://localhost:${LOCAL_PORT}`;
   await expect
@@ -113,6 +150,11 @@ test("localhost serves the same bytes as the service, in every format and versio
       },
     )
     .toBe(200);
+
+  // The docs show these lines, with the port the tool has unless told otherwise.
+  const started = columns(`${said}${noted}`.replaceAll(String(LOCAL_PORT), "7745"));
+  expect(shown("in-your-repository", "openapi-proxy is serving")).toEqual(started);
+  expect(shown("cli", "openapi-proxy is serving")).toEqual(started);
 
   for (const representation of [
     ".json",

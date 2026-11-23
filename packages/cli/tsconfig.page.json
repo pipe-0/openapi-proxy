@@ -10,10 +10,11 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "skipLibCheck": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["page", "../editor/src", "vite.page.config.ts"]
+  "include": ["page", "../editor/src", "vite.page.config.ts", "notices.ts"]
 }

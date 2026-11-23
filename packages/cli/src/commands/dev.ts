@@ -69,7 +69,9 @@ export async function dev(options: {
     print(`  Edit the file in your browser: ${bold(origin)}`);
     print();
   }
-  note(dim("Also as .yaml, and as OpenAPI 3.0 or 3.1 at /3.0.json and /3.1.json."));
+  note(
+    dim("Also as .yaml. A 3.0 or 3.1 document is served as either, at /3.0.json and /3.1.json."),
+  );
   note(dim("The file and its sources are read on every request. Stop with Ctrl+C."));
   if (!isLoopback(options.host) || options.allowedHosts.length > 0) {
     warn(

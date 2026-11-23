@@ -53,6 +53,22 @@ jobs:
           node packages/cli/dist/cli.js validate --config examples/from-a-url/openapi-proxy.yaml --source examples/from-a-url/openapi.json
           node packages/cli/dist/cli.js validate --config examples/several-audiences/openapi-proxy.yaml
           node packages/cli/dist/cli.js validate --config examples/in-your-repository/openapi-proxy.yaml
+      # The package as npm would publish it, installed into an empty folder
+      # outside this repository and used there.
+      - name: The packed command line tool works where it is installed
+        run: pnpm --filter @pipe0/openapi-proxy test:packed
+      # The package says it runs on Node 20. The same test once more, with the
+      # installed tool run by that Node (the test itself needs the newer one).
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+      - name: Remember where Node 20 is
+        run: echo "PACKED_NODE=$(which node)" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: The packed command line tool works on the oldest Node it supports
+        run: pnpm --filter @pipe0/openapi-proxy test:packed
 
   e2e:
     name: End to end

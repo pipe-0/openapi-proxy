@@ -3,8 +3,10 @@ import { join } from "node:path";
 import { DEFINITION_SHAPE, keysOf, readDefinition, VARIANT_ICONS, WAYS } from "@openapi-proxy/core";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { init } from "../src/commands/init.js";
+import { validate } from "../src/commands/validate.js";
 import { noConfig } from "../src/no-config.js";
-import { captured, EXAMPLES } from "./helpers.js";
+import { captured, copyOf, EXAMPLES } from "./helpers.js";
 
 /**
  * The docs are written by hand. These hold them to what the code knows: a key
@@ -16,19 +18,44 @@ const DOCS = join(ROOT, "src/web/content/docs");
 const page = (slug: string) => readFileSync(join(DOCS, `${slug}.mdx`), "utf8");
 const oneLine = (text: string) => text.replace(/\s+/g, " ");
 
+/** The headings of a page: the line each is on, its level and its text. A `#` in a code block is not one. */
+function headingsOf(text: string): Array<{ line: number; level: number; title: string }> {
+  const found: Array<{ line: number; level: number; title: string }> = [];
+  let fenced = false;
+  text.split("\n").forEach((line, index) => {
+    if (line.trimStart().startsWith("```")) fenced = !fenced;
+    const heading = fenced ? null : /^(#+)\s+(.+)$/.exec(line);
+    if (heading)
+      found.push({ line: index, level: (heading[1] ?? "").length, title: heading[2] ?? "" });
+  });
+  return found;
+}
+
 /** The part of a page under one heading, up to the next heading of the same or a higher level. */
-function section(text: string, heading: string): string {
-  const lines = text.split("\n");
-  const start = lines.findIndex(
-    (line) => line.replace(/^#+\s*/, "") === heading && /^#/.test(line),
+function section(text: string, title: string): string {
+  const headings = headingsOf(text);
+  const start = headings.find((heading) => heading.title === title);
+  expect(start, `a heading "${title}"`).toBeDefined();
+  if (!start) return "";
+  const next = headings.find(
+    (heading) => heading.line > start.line && heading.level <= start.level,
   );
-  expect(start, `a heading "${heading}"`).toBeGreaterThan(-1);
-  const level = (/^#+/.exec(lines[start] ?? "")?.[0] ?? "").length;
-  const end = lines.findIndex(
-    (line, index) =>
-      index > start && /^#+\s/.test(line) && (/^#+/.exec(line)?.[0] ?? "").length <= level,
-  );
-  return lines.slice(start, end === -1 ? undefined : end).join("\n");
+  return text.split("\n").slice(start.line, next?.line).join("\n");
+}
+
+/** The code blocks of a page, each with the language it names. */
+function codeBlocks(text: string): Array<{ lang: string; body: string }> {
+  const found: Array<{ lang: string; body: string }> = [];
+  let open: { lang: string; lines: string[] } | undefined;
+  for (const line of text.split("\n")) {
+    const fence = /^```(.*)$/.exec(line.trimStart());
+    if (!fence) open?.lines.push(line);
+    else if (open) {
+      found.push({ lang: open.lang, body: `${open.lines.join("\n")}\n` });
+      open = undefined;
+    } else open = { lang: (fence[1] ?? "").trim(), lines: [] };
+  }
+  return found;
 }
 
 /** Every file under a folder, by path. */
@@ -98,6 +125,110 @@ describe("the configuration reference", () => {
   });
 });
 
+describe("the README on npm", () => {
+  const readme = readFileSync(join(ROOT, "packages/cli/README.md"), "utf8");
+
+  it("names every key of the file", () => {
+    for (const key of keysOf(DEFINITION_SHAPE)) {
+      const name = key.slice(key.lastIndexOf(".") + 1);
+      expect(section(readme, "The file"), key).toContain(`\`${name}\``);
+    }
+  });
+
+  it("lists every command, and shows a workflow that is the one in examples/", () => {
+    for (const command of ["init", "dev", "validate", "operations", "deploy"]) {
+      expect(section(readme, "Commands")).toContain(`\`openapi-proxy ${command}`);
+    }
+    const workflow = readFileSync(
+      join(EXAMPLES, "in-your-repository/.github/workflows/openapi-proxy.yml"),
+      "utf8",
+    );
+    // The commands and the secret are the example's, which CI checks.
+    for (const line of [
+      "npx @pipe0/openapi-proxy validate",
+      "npx @pipe0/openapi-proxy deploy",
+      "OPENAPI_PROXY_API_KEY: $".concat("{{ secrets.OPENAPI_PROXY_API_KEY }}"),
+    ]) {
+      expect(workflow).toContain(line);
+      expect(section(readme, "Deploy from CI")).toContain(line);
+    }
+  });
+});
+
+describe("the output the docs show", () => {
+  // The guide and the reference show what the tool prints for the same example.
+  const pages = ["in-your-repository", "cli"] as const;
+  // The blocks that show output: the ones that name no language.
+  const blocksOf = (slug: string) =>
+    codeBlocks(page(slug))
+      .filter((block) => block.lang === "")
+      .map((block) => block.body);
+  const guide = page("in-your-repository");
+  const blocks = blocksOf("in-your-repository");
+  // What was printed, line by line, without the blank lines.
+  const linesOf = (out: string) =>
+    out
+      .split("\n")
+      .map((line) => line.trimEnd())
+      .filter((line) => line !== "");
+
+  it("is what init and validate print for the example", async () => {
+    const dir = copyOf("in-your-repository");
+    const config = join(dir, "openapi-proxy.yaml");
+
+    const fresh = join(dir, "fresh.yaml");
+    const written = await captured(() =>
+      init({ config: fresh, location: join(dir, "openapi.json"), force: false }),
+    );
+    const checked = await captured(() => validate({ config, sources: [] }));
+    expect(checked.result).toBe(0);
+    const said = linesOf(`${checked.out}${checked.err}`.replaceAll(config, "openapi-proxy.yaml"));
+    expect(said.length).toBeGreaterThan(1);
+
+    for (const slug of pages) {
+      const shown = blocksOf(slug).find((block) => block.startsWith("Wrote openapi-proxy.yaml"));
+      expect(shown, slug).toBeDefined();
+      expect(linesOf(shown ?? ""), slug).toEqual(
+        linesOf(written.out.replaceAll(fresh, "openapi-proxy.yaml")),
+      );
+      const validated = blocksOf(slug).find((block) => block.includes("is a valid definition"));
+      expect(linesOf(validated ?? ""), slug).toEqual(said);
+    }
+  });
+
+  it("is the same on both pages for dev and deploy, which a browser journey compares with the tool", () => {
+    for (const start of ["openapi-proxy is serving", "Created bookshop"]) {
+      const [inGuide, inReference] = pages.map((slug) =>
+        blocksOf(slug).find((block) => block.startsWith(start)),
+      );
+      expect(inGuide, start).toBeDefined();
+      expect(inReference, start).toBe(inGuide);
+    }
+    expect(guide).toContain("npx @pipe0/openapi-proxy dev");
+  });
+
+  it("shows the size and the counts a deploy of that example reports", () => {
+    const bytes = statSync(join(EXAMPLES, "in-your-repository/openapi.json")).size;
+    const deployed = blocks.find((block) => block.startsWith("Created bookshop"));
+    expect(deployed).toContain(`uploaded  ${Math.round(bytes / 1000)} kB  8 operations`);
+    expect(deployed).toContain("public  created  5 of 8 operations  public (set on the variant)");
+  });
+
+  it("uses an example that asks for a version of the tool the repository has", () => {
+    const { version } = JSON.parse(
+      readFileSync(join(ROOT, "packages/cli/package.json"), "utf8"),
+    ) as { version: string };
+    const example = JSON.parse(
+      readFileSync(join(EXAMPLES, "in-your-repository/package.json"), "utf8"),
+    ) as { devDependencies: Record<string, string> };
+    const [major, minor] = version.split(".");
+    // Before 1.0 a caret holds the minor version, so the example moves with each of those.
+    expect(example.devDependencies["@pipe0/openapi-proxy"]).toBe(
+      major === "0" ? `^0.${minor}.0` : `^${major}.0.0`,
+    );
+  });
+});
+
 describe("the reference of the command line tool", () => {
   it("names every command and every option the tool takes", () => {
     const source = readFileSync(join(ROOT, "packages/cli/src/cli.ts"), "utf8");
@@ -118,7 +249,7 @@ describe("links into the docs", () => {
   const anchors = new Map(
     pages.map((slug) => [
       slug,
-      new Set([...page(slug).matchAll(/^#+\s+(.+)$/gm)].map((match) => anchorOf(match[1] ?? ""))),
+      new Set(headingsOf(page(slug)).map((heading) => anchorOf(heading.title))),
     ]),
   );
 
@@ -176,8 +307,12 @@ describe("links into the docs", () => {
 describe("the two ways to make a project", () => {
   const sentences = [WAYS.url.when, WAYS.repository.when];
 
-  it("are described in the same words on the first page of the docs and in the README", () => {
-    for (const path of [join(DOCS, "index.mdx"), join(ROOT, "README.md")]) {
+  it("are described in the same words on the first page of the docs and in both READMEs", () => {
+    for (const path of [
+      join(DOCS, "index.mdx"),
+      join(ROOT, "README.md"),
+      join(ROOT, "packages/cli/README.md"),
+    ]) {
       const text = readFileSync(path, "utf8");
       expect(text, path).toContain(`**${WAYS.url.title}.** ${WAYS.url.when}`);
       expect(text, path).toContain(`**${WAYS.repository.title}.** ${WAYS.repository.when}`);

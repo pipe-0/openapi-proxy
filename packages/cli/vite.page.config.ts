@@ -1,6 +1,7 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import { notices } from "./notices.ts";
 
 /**
  * The page `openapi-proxy dev` serves at `/`: the variant editor over a
@@ -10,7 +11,12 @@ import { defineConfig } from "vite";
 export default defineConfig({
   root: "page",
   base: "./",
-  plugins: [tailwindcss(), react()],
+  // The stylesheet brings in Tailwind's base styles, the animations and the font.
+  plugins: [
+    tailwindcss(),
+    react(),
+    notices(["tailwindcss", "tw-animate-css", "@fontsource-variable/inter"]),
+  ],
   resolve: { dedupe: ["react", "react-dom"] },
   build: {
     outDir: "../dist/editor",

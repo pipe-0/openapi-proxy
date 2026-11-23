@@ -14,6 +14,13 @@ export const green = paint(32, process.stdout);
 const red = paint(31, process.stderr);
 const yellow = paint(33, process.stderr);
 
+/**
+ * How to run the tool, where a message says what to type next. This form
+ * works whether it is installed in the project or not; `openapi-proxy` alone
+ * only does inside the scripts of a package.json.
+ */
+export const RUN = "npx @pipe0/openapi-proxy";
+
 export const print = (line = "") => process.stdout.write(`${line}\n`);
 export const note = (line = "") => process.stderr.write(`${line}\n`);
 export const warn = (line: string) => process.stderr.write(`${yellow("warning")} ${line}\n`);
