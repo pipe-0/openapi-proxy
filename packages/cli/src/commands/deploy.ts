@@ -17,6 +17,8 @@ import { problemLine } from "./validate.js";
 export const HOSTED = HOSTED_URL;
 /** The environment variable a deploy reads its key from. */
 export const KEY_VARIABLE = DEPLOY_KEY_VARIABLE;
+/** How every key of the service starts. */
+const KEY_PREFIX = "oap_";
 const TIMEOUT_MS = 120_000;
 
 interface Refusal {
@@ -94,7 +96,16 @@ export async function deploy(options: {
     note("A deploy needs a deploy API key. The owner of the workspace creates one at");
     note(`${instance}/workspace and stores it as a secret of the pipeline:`);
     note("");
-    note(`  ${KEY_VARIABLE}=oap_... ${RUN} deploy`);
+    note(`  ${KEY_VARIABLE}=${KEY_PREFIX}... ${RUN} deploy`);
+    return 1;
+  }
+  // The variable has a name that other tools use for their own keys. A value
+  // that is not one of this service's keys is somebody else's secret: it is
+  // not sent anywhere.
+  if (!key.startsWith(KEY_PREFIX)) {
+    fail(
+      `${KEY_VARIABLE} does not hold a deploy API key of openapi-proxy. Those start with ${KEY_PREFIX}. Nothing was sent.`,
+    );
     return 1;
   }
 

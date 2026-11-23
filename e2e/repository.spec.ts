@@ -47,7 +47,7 @@ function run(...args: string[]) {
   const result = spawnSync(process.execPath, [cli, ...args], {
     cwd: dir,
     encoding: "utf8",
-    env: { ...process.env, OPENAPI_PROXY_API_KEY: key, NO_COLOR: "1", GITHUB_ACTIONS: "" },
+    env: { ...process.env, DEPLOY_API_KEY: key, NO_COLOR: "1", GITHUB_ACTIONS: "" },
   });
   return { status: result.status, out: result.stdout, err: result.stderr };
 }
@@ -81,10 +81,10 @@ test("a deploy API key, a rehearsal, and the first deploy", async ({ page, reque
   const keyless = spawnSync(process.execPath, [cli, "deploy"], {
     cwd: dir,
     encoding: "utf8",
-    env: { ...process.env, OPENAPI_PROXY_API_KEY: "", NO_COLOR: "1" },
+    env: { ...process.env, DEPLOY_API_KEY: "", NO_COLOR: "1" },
   });
   expect(keyless.status).toBe(1);
-  expect(keyless.stderr).toContain("OPENAPI_PROXY_API_KEY is not set");
+  expect(keyless.stderr).toContain("DEPLOY_API_KEY is not set");
 
   // A rehearsal says what would happen, and nothing does.
   const rehearsal = run("deploy", "--dry-run");

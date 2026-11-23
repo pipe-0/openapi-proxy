@@ -147,7 +147,7 @@ describe("the README on npm", () => {
     for (const line of [
       "npx @pipe0/openapi-proxy validate",
       "npx @pipe0/openapi-proxy deploy",
-      "OPENAPI_PROXY_API_KEY: $".concat("{{ secrets.OPENAPI_PROXY_API_KEY }}"),
+      "DEPLOY_API_KEY: $".concat("{{ secrets.DEPLOY_API_KEY }}"),
     ]) {
       expect(workflow).toContain(line);
       expect(section(readme, "Deploy from CI")).toContain(line);

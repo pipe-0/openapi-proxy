@@ -355,7 +355,7 @@ test("every page of the docs is also Markdown, for an agent", async ({ request }
   // A page that shows an example file has the file in it, written out.
   const guide = await (await request.get("/docs/in-your-repository.md")).text();
   expect(guide).toContain("name: OpenAPI documents");
-  expect(guide).toContain("secrets.OPENAPI_PROXY_API_KEY");
+  expect(guide).toContain("secrets.DEPLOY_API_KEY");
   // Links lead to Markdown too, by whole addresses.
   expect(guide).toMatch(/\]\(http:\/\/[^)]+\/docs\/configuration\.md\)/);
   expect(guide).not.toMatch(/\]\(\/docs\//);

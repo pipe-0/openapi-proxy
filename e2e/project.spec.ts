@@ -159,7 +159,7 @@ test("a new project starts from a URL or from a repository, and both are offered
   await expect(page.getByTestId("new-deploy-key")).toContainText(
     "This is the only time the key is shown.",
   );
-  await expect(page.getByText(/^OPENAPI_PROXY_API_KEY=oap_[0-9a-z]{40} npx/)).toBeVisible();
+  await expect(page.getByText(/^DEPLOY_API_KEY=oap_[0-9a-z]{40} npx/)).toBeVisible();
   await page.getByRole("button", { name: "A workflow for GitHub Actions" }).click();
   await expect(page.getByText(/run: npx @pipe0\/openapi-proxy deploy/)).toBeVisible();
   await expect(

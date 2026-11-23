@@ -16,7 +16,9 @@
       "!migrations/meta",
       "!public/schema",
       "!**/routeTree.gen.ts",
-      "!.source"
+      "!.source",
+      "!.changeset/*.md",
+      "!**/CHANGELOG.md"
     ]
   },
   "formatter": {

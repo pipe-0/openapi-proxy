@@ -1,5 +1,5 @@
 # Checks the definition on every pull request, and deploys it from main.
-# Needs one secret: OPENAPI_PROXY_API_KEY, a deploy API key from the app
+# Needs one secret: DEPLOY_API_KEY, a deploy API key from the app
 # (Workspace, then Deploy API keys).
 name: OpenAPI documents
 
@@ -27,4 +27,4 @@ jobs:
         if: github.event_name == 'push'
         run: npx @pipe0/openapi-proxy deploy
         env:
-          OPENAPI_PROXY_API_KEY: ${{ secrets.OPENAPI_PROXY_API_KEY }}
+          DEPLOY_API_KEY: ${{ secrets.DEPLOY_API_KEY }}
