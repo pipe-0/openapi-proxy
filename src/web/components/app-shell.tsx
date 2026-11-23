@@ -61,6 +61,7 @@ export function AppShell() {
       : (projects.data?.find((candidate) => projectSlug(candidate) === lastProject()) ??
         projects.data?.[0]));
   const current = project ? projectSlug(project) : undefined;
+  const editable = project?.state.can.edit === true;
   useEffect(() => {
     if (current) rememberProject(current);
   }, [current]);
@@ -74,6 +75,7 @@ export function AppShell() {
       } else if (
         event.key === "n" &&
         current &&
+        editable &&
         !isTyping(event.target) &&
         !event.metaKey &&
         !event.ctrlKey &&
@@ -85,7 +87,7 @@ export function AppShell() {
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [navigate, current]);
+  }, [navigate, current, editable]);
 
   const sidebar = (
     <SidebarBody

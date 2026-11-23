@@ -1,4 +1,5 @@
 import { CopyButton } from "@editor/components/copy-button";
+import { OverridesSheet, overrideCount } from "@editor/components/overrides-sheet";
 import {
   Field,
   Missing,
@@ -8,7 +9,8 @@ import {
   Section,
   useTitle,
 } from "@editor/components/page";
-import { projectName, projectSlug, variantsOf } from "@editor/lib/project";
+import { VisibilityMenu } from "@editor/components/visibility";
+import { mainSourceName, projectName, projectSlug, variantsOf } from "@editor/lib/project";
 import { bareUrl, plural } from "@editor/lib/utils";
 import {
   AlertDialog,
@@ -31,9 +33,11 @@ import { toast } from "sonner";
 import { Documents } from "@/components/documents";
 import { ManagedByFile } from "@/components/managed-by-file";
 import { ProjectNotifications } from "@/components/project-notifications";
-import { api, errorMessage, type Project, queries, RequestError } from "@/lib/api";
+import { ViewAsFile } from "@/components/view-as-file";
+import { api, errorMessage, type Project, queries, RequestError, type Visibility } from "@/lib/api";
 import { useProject } from "@/lib/hooks";
 import { useApply } from "@/lib/use-apply";
+import { useProjectDoc } from "@/lib/use-project-doc";
 
 export function ProjectSettingsPage() {
   const { project: slug } = useParams({ from: "/_client/_app/p/$project/settings" });
@@ -66,6 +70,7 @@ function Settings({ project }: { project: Project }) {
   const address = `${project.state.urlPrefix}${slug}/`;
 
   const [name, setName] = useState(project.definition.name ?? "");
+  const [asFile, setAsFile] = useState(false);
   const dirty = name.trim() !== (project.definition.name ?? "");
 
   const save = useMutation({
@@ -97,6 +102,8 @@ function Settings({ project }: { project: Project }) {
           {!can.edit && <ManagedByFile project={project} />}
 
           <Documents project={project} />
+
+          <Defaults project={project} />
 
           <ProjectNotifications project={project} />
 
@@ -166,6 +173,19 @@ function Settings({ project }: { project: Project }) {
             </Field>
           </Section>
 
+          {can.edit && (
+            <Section
+              title="Definition file"
+              description="This project is edited here. It can also live in your repository, as a file that is deployed from CI: the same project, defined next to your code."
+              action={
+                <Button variant="outline" onClick={() => setAsFile(true)}>
+                  View as file
+                </Button>
+              }
+            />
+          )}
+          <ViewAsFile project={project} open={asFile} onOpenChange={setAsFile} />
+
           <Section
             title="Delete project"
             description={
@@ -207,5 +227,112 @@ function Settings({ project }: { project: Project }) {
         </div>
       </div>
     </Page>
+  );
+}
+
+/**
+ * What every variant of the project is, unless it says otherwise: who may
+ * read it, and the title, description and servers at the top of its
+ * document. A variant that says nothing follows these as they change.
+ */
+function Defaults({ project }: { project: Project }) {
+  const apply = useApply(project);
+  const source = useProjectDoc(project);
+  const [presenting, setPresenting] = useState(false);
+  const { can } = project.state;
+  const { visibility, overrides } = project.definition;
+  const following = Object.values(project.state.variants).filter(
+    (variant) => variant.visibility.from !== "variant",
+  ).length;
+  const save = useMutation({
+    mutationFn: (change: Parameters<typeof apply.mutateAsync>[0]) => apply.mutateAsync(change),
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+  const pick = (next: Visibility | undefined) => {
+    if (next === visibility) return;
+    const now = next ?? project.state.defaultVisibility;
+    const was = visibility ?? project.state.defaultVisibility;
+    const sure =
+      now !== "public" ||
+      was === "public" ||
+      following === 0 ||
+      window.confirm(
+        `Make ${plural(following, "variant")} public? Anyone with ${following === 1 ? "its URL" : "their URLs"} will be able to read ${following === 1 ? "it" : "them"}.`,
+      );
+    if (!sure) return;
+    save.mutate(
+      ({ visibility: _, ...definition }) => ({
+        ...definition,
+        ...(next ? { visibility: next } : {}),
+      }),
+      {
+        onSuccess: () =>
+          toast.success(
+            following === 0
+              ? "Saved"
+              : `${plural(following, "variant")} ${following === 1 ? "is" : "are"} ${now} now`,
+          ),
+      },
+    );
+  };
+
+  return (
+    <Section
+      title="Defaults for variants"
+      description="Who can read this project's variants, and what is at the top of their documents. A variant can set its own in its editor."
+    >
+      <Field
+        label="Who can read them"
+        hint={
+          Object.keys(project.state.variants).length === 0
+            ? "The project has no variants yet. New ones follow this."
+            : following === 0
+              ? "Every variant says for itself at the moment."
+              : `${plural(following, "variant")} ${following === 1 ? "follows" : "follow"} this, and ${following === 1 ? "changes" : "change"} with it at once.`
+        }
+      >
+        <div>
+          <VisibilityMenu
+            stated={visibility}
+            inherited={{ value: project.state.defaultVisibility, from: "workspace" }}
+            onChange={pick}
+            disabled={!can.edit || save.isPending}
+          />
+        </div>
+      </Field>
+      <Field
+        label="Title, description and servers"
+        hint="What readers see at the top of every variant, in place of what the document says."
+      >
+        <div>
+          <Button variant="outline" onClick={() => setPresenting(true)}>
+            Title and servers
+            {overrideCount(overrides ?? null) > 0 && (
+              <span className="rounded-full bg-primary/12 px-1.5 text-[11.5px] leading-[18px] font-medium text-primary tabular-nums">
+                {overrideCount(overrides ?? null)}
+              </span>
+            )}
+          </Button>
+        </div>
+      </Field>
+      {presenting && (
+        <OverridesSheet
+          doc={source.data?.doc}
+          mainSource={mainSourceName(project) ?? "the document"}
+          value={overrides ?? null}
+          scope="project"
+          readOnly={!can.edit}
+          onChange={(next) =>
+            save
+              .mutateAsync(({ overrides: _, ...definition }) => ({
+                ...definition,
+                ...(next ? { overrides: next } : {}),
+              }))
+              .then(() => toast.success("Saved for every variant that does not set its own"))
+          }
+          onClose={() => setPresenting(false)}
+        />
+      )}
+    </Section>
   );
 }

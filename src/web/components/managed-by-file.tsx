@@ -24,7 +24,8 @@ export function ManagedByFile({ project }: { project: Project }) {
   const takeBack = useMutation({
     mutationFn: () =>
       apply.mutateAsync({ change: (definition) => definition, more: { editInApp: true } }),
-    onSuccess: () => toast.success("This project is edited in the app now"),
+    onSuccess: () =>
+      toast.success("This project is edited in the app now, until its file is deployed again"),
     onError: (error) => toast.error(errorMessage(error)),
   });
   const { applied } = project.state;

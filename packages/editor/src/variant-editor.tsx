@@ -1,6 +1,7 @@
 import {
   type DocumentOverrides,
   isValidSlug,
+  normalizeSelection,
   type ProjectDefinition,
   type Selection,
   type SpecFormat,
@@ -10,7 +11,7 @@ import {
   type Visibility,
 } from "@openapi-proxy/core";
 import { ExternalLinkIcon, MoreHorizontalIcon } from "lucide-react";
-import { useEffect, useEffectEvent, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CopyButton } from "./components/copy-button";
 import { DocsLink } from "./components/docs-link";
@@ -68,7 +69,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 /** A new variant: nothing served yet, and what the API adds later stays hidden. */
 const EMPTY: Selection = { include: {} };
-const sameSelection = (a: Selection, b: Selection) => JSON.stringify(a) === JSON.stringify(b);
+/** Whether two selections say the same. Their stored form sorts what they list. */
+const sameSelection = (a: Selection, b: Selection) =>
+  JSON.stringify(normalizeSelection(a)) === JSON.stringify(normalizeSelection(b));
 
 /** What the editor looks like while its project is on the way. */
 export function EditorSkeleton() {
@@ -90,8 +93,8 @@ export interface VariantEditorProps {
   template?: VariantView | undefined;
   /** The variant was made a moment ago: its URL is what to look at. */
   justCreated?: boolean;
-  /** The project's documents assembled into one, once that is here. */
-  document: ProjectDoc | undefined;
+  /** The project's documents assembled into one, once that is here. `null`: it could not be loaded. */
+  document: ProjectDoc | null | undefined;
   /**
    * Apply the project's definition with a change made to it, and resolve when
    * the project that is shown is the one that came of it. Everything the
@@ -108,6 +111,8 @@ export interface VariantEditorProps {
   onDirtyChange?: (dirty: boolean) => void;
   /** Shown under the header: what the host has to say about this project. */
   banner?: React.ReactNode;
+  /** Offered in the variant's menu where a project is not a file yet: show it as one. */
+  onViewAsFile?: (() => void) | undefined;
   /** Shown next to "readers send an API key", for a private variant: where a key is made. */
   privateAction?: (view: { version: TargetVersion | null; format: SpecFormat }) => React.ReactNode;
   /** What saving is called here. In the app a save is live at once; on a laptop it is a file. */
@@ -129,6 +134,8 @@ function useAction<T = void>(
     run(value).then(
       () => {
         setPending(false);
+        // What was asked for is what there is now: nothing stands in for it any more.
+        setInput(undefined);
         after.done?.(value);
       },
       (error: unknown) => {
@@ -160,10 +167,14 @@ export function VariantEditor({
   onDuplicate,
   onDirtyChange,
   banner,
+  onViewAsFile,
   privateAction,
   words = PUBLISH,
 }: VariantEditorProps) {
   const failed = (error: unknown) => toast.error(describeError(error));
+  // Said once, when the editor opens on a variant that was just made. The host
+  // may take the mark out of its address meanwhile.
+  const [arrived] = useState(justCreated);
   const projectParam = projectSlug(project);
   /** A project that is deployed from a file is read here, not changed. */
   const canEdit = project.state.can.edit;
@@ -210,10 +221,29 @@ export function VariantEditor({
 
   const sameOverrides = (other: DocumentOverrides | null) =>
     JSON.stringify(overrides) === JSON.stringify(other);
+  const differsFrom = (other: typeof published) =>
+    name.trim() !== other.name ||
+    !sameSelection(selection, other.selection) ||
+    !sameOverrides(other.overrides);
+
+  // What is published can change under an open editor: by its own save, by a
+  // colleague, by the file being edited by hand. A draft with nothing unsaved
+  // follows it. One with something unsaved keeps what was typed, also what
+  // was typed while a save was on its way, and is compared with what is
+  // published now. A project that can no longer be edited here shows what it serves.
+  const publishedNow = JSON.stringify(published);
+  const [base, setBase] = useState(publishedNow);
+  if (variant && base !== publishedNow) {
+    setBase(publishedNow);
+    if (!canEdit || !differsFrom(JSON.parse(base) as typeof published)) {
+      setName(published.name);
+      setSelection(published.selection);
+      setOverrides(published.overrides);
+    }
+  }
+
   const dirty = variant
-    ? name.trim() !== published.name ||
-      !sameSelection(selection, published.selection) ||
-      !sameOverrides(published.overrides)
+    ? canEdit && differsFrom(published)
     : name.trim() !== "" || !sameSelection(selection, EMPTY) || overrides !== null;
 
   const reportDirty = useEffectEvent((value: boolean) => onDirtyChange?.(value));
@@ -282,7 +312,9 @@ export function VariantEditor({
         const now = next ?? inherited.value;
         toast.success(
           now === "private"
-            ? "Private: readers need an API key"
+            ? project.state.can.keys
+              ? "Private: readers need a user API key"
+              : "Private once it is deployed"
             : now === "public"
               ? "Public: anyone with the URL can read it"
               : "It is what the workspace says now",
@@ -323,8 +355,12 @@ export function VariantEditor({
     else create.start();
   };
 
-  // ⌘↵ and ⌘S both mean "make it so", from anywhere on the page.
-  const onShortcut = useEffectEvent(submit);
+  // ⌘↵ and ⌘S both mean "make it so", from anywhere on the page. While a
+  // sheet or a dialog is open, the editor's or its host's, what is typed or
+  // shown there is not part of "it" yet.
+  const onShortcut = useEffectEvent(() => {
+    if (!window.document.querySelector('[role="dialog"], [role="alertdialog"]')) submit();
+  });
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const mod = event.metaKey || event.ctrlKey;
@@ -344,8 +380,11 @@ export function VariantEditor({
       )
     : [];
   // What the document is told at the top: the variant's own, over what its project says.
-  const atTheTop = { ...project.definition.overrides, ...overrides };
-  const servedOverrides = Object.keys(atTheTop).length > 0 ? atTheTop : null;
+  const atTheTop = JSON.stringify({ ...project.definition.overrides, ...overrides });
+  const servedOverrides = useMemo(
+    () => (atTheTop === "{}" ? null : (JSON.parse(atTheTop) as DocumentOverrides)),
+    [atTheTop],
+  );
   const icon = variant ? (saveIcon.input ?? variant.definition.icon ?? null) : newIcon;
 
   return (
@@ -370,7 +409,7 @@ export function VariantEditor({
               placeholder={variant ? variant.slug : "Name this variant"}
               aria-label="Variant name"
               maxLength={100}
-              readOnly={!canEdit}
+              readOnly={!canEdit || create.pending}
               // biome-ignore lint/a11y/noAutofocus: a new variant starts with its name
               autoFocus={!variant}
               autoComplete="off"
@@ -426,6 +465,9 @@ export function VariantEditor({
                     )}
                   </span>
                 </DropdownMenuItem>
+                {onViewAsFile && (
+                  <DropdownMenuItem onClick={onViewAsFile}>View as file</DropdownMenuItem>
+                )}
                 <DropdownMenuItem onClick={() => onDuplicate(variant.slug)}>
                   Duplicate
                 </DropdownMenuItem>
@@ -445,11 +487,12 @@ export function VariantEditor({
               suffix={representation(version, format)}
               format={format}
               onFormatChange={setFormat}
-              celebrate={justCreated}
+              celebrate={arrived}
               stated={stated}
               inherited={inherited}
               onVisibilityChange={pickVisibility}
               busy={changeVisibility.pending || !canEdit}
+              withKeys={project.state.can.keys}
               privateAction={privateAction?.({ version, format })}
             />
           ) : (
@@ -471,7 +514,7 @@ export function VariantEditor({
                 {slugStatus === "taken" || slugStatus === "invalid"
                   ? SLUG_HELP[slugStatus]
                   : visibility === "private"
-                    ? "Where this variant will be served. Readers will need an API key."
+                    ? "Where this variant will be served. Readers will need a user API key."
                     : "Where this variant will be served, as JSON and YAML."}
               </span>
             </div>
@@ -524,7 +567,8 @@ export function VariantEditor({
           entries={project.state.operations}
           selection={selection}
           onChange={setSelection}
-          readOnly={!canEdit}
+          // A variant that is being created is on its way as it was sent.
+          readOnly={!canEdit || create.pending}
           view={view}
           onViewChange={setView}
           mainSource={mainSourceName(project)}
@@ -549,7 +593,9 @@ export function VariantEditor({
           doc={source?.doc}
           mainSource={mainSourceName(project) ?? "the document"}
           value={overrides}
-          onChange={canEdit ? setOverrides : () => {}}
+          inherited={project.definition.overrides}
+          readOnly={!canEdit}
+          onChange={setOverrides}
           onClose={() => setPresenting(false)}
         />
       )}
@@ -616,6 +662,7 @@ function UrlBar({
   inherited,
   onVisibilityChange,
   busy,
+  withKeys,
   privateAction,
 }: {
   url: string;
@@ -628,6 +675,8 @@ function UrlBar({
   inherited: InheritedVisibility;
   onVisibilityChange: (next: Visibility | undefined) => void;
   busy: boolean;
+  /** Whether a private variant is read with a key here. On a laptop it is not: the machine is its owner's. */
+  withKeys: boolean;
   /** Where a key for this variant is made, where there are keys. */
   privateAction: React.ReactNode;
 }) {
@@ -673,7 +722,7 @@ function UrlBar({
           disabled={busy}
         />
         {/* A browser sends no key, so there is nothing to open a private one with. */}
-        {!isPrivate && (
+        {(!isPrivate || !withKeys) && (
           <Tooltip>
             <TooltipTrigger
               render={
@@ -694,12 +743,18 @@ function UrlBar({
       </div>
       {isPrivate && (
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] leading-[18px] text-muted-foreground">
-          <span>
-            Readers send an API key as{" "}
-            <span className="font-medium text-foreground">Authorization: Bearer</span>.
-          </span>
+          {withKeys ? (
+            <span>
+              Readers send a user API key as{" "}
+              <span className="font-medium text-foreground">Authorization: Bearer</span>.
+            </span>
+          ) : (
+            <span>
+              Once deployed, readers send a user API key. On this machine it is served without one.
+            </span>
+          )}
           {privateAction}
-          <DocsLink slug="serving">How private variants work</DocsLink>
+          <DocsLink slug="private-variants">How private variants work</DocsLink>
         </p>
       )}
     </div>
@@ -732,6 +787,9 @@ function ChangeUrlDialog({
   onChanged: (slug: string) => void;
 }) {
   const [slug, setSlug] = useState(variant.slug);
+  useEffect(() => {
+    if (open) setSlug(variant.slug);
+  }, [open, variant.slug]);
   const status = slugStatusIn(project, slug, variant.slug);
   const change = useAction(
     () =>
@@ -749,13 +807,7 @@ function ChangeUrlDialog({
   );
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (next) setSlug(variant.slug);
-        onOpenChange(next);
-      }}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <form
           className="contents"
@@ -767,7 +819,7 @@ function ChangeUrlDialog({
           <DialogHeader>
             <DialogTitle>Change the URL</DialogTitle>
             <DialogDescription>
-              Anything still requesting the old URL will get a 404, and an API key made for this
+              Anything still requesting the old URL will get a 404, and a user API key made for this
               variant alone stops working. Update your consumers first, or right after.
             </DialogDescription>
           </DialogHeader>

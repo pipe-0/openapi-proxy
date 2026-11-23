@@ -317,7 +317,7 @@ export async function applyDefinition(ctx: ApplyContext, input: ApplyInput): Pro
           ? "This project no longer exists."
           : input.ifRevision === 0
             ? `There is a project "${input.slug}" already.`
-            : "This project was changed by someone else in the meantime. Reload and try again.",
+            : "This project was changed by someone else in the meantime.",
       );
     }
 

@@ -81,10 +81,9 @@ export function ApiKeys({ owner }: { owner: boolean }) {
         title="Deploy API keys"
         description={
           <>
-            For a pipeline that deploys a definition file with{" "}
-            <span className="font-medium text-foreground">openapi-proxy deploy</span>. A deploy API
-            key belongs to the workspace: it deploys to its projects, does nothing else, and keeps
-            working when whoever made it leaves. The owner makes and revokes them.{" "}
+            For a pipeline that runs{" "}
+            <span className="font-medium text-foreground">openapi-proxy deploy</span>: the key
+            belongs to the workspace, deploys to its projects and does nothing else.{" "}
             <DocsLink slug="in-your-repository">Deploying from a repository</DocsLink>
           </>
         }
@@ -105,11 +104,10 @@ export function ApiKeys({ owner }: { owner: boolean }) {
         title="User API keys"
         description={
           <>
-            For someone, or something, that reads private variants. A user API key reads them and
-            does nothing else. It acts for the person who made it, and stops working when they leave
-            the workspace. It is sent as{" "}
+            For reading private variants, sent as{" "}
             <span className="font-medium text-foreground">Authorization: Bearer</span> followed by
-            the key. <DocsLink slug="private-variants">Private variants and keys</DocsLink>
+            the key: it acts for the person who made it, and does nothing else.{" "}
+            <DocsLink slug="private-variants">Private variants and keys</DocsLink>
           </>
         }
       >
@@ -129,7 +127,7 @@ export function ApiKeys({ owner }: { owner: boolean }) {
           created?.access === "deploy"
             ? {
                 label:
-                  "Store it as a secret of the pipeline named OPENAPI_PROXY_API_KEY. To try it here:",
+                  "Store it in your pipeline as a secret named OPENAPI_PROXY_API_KEY. To try it here:",
                 command: (key) =>
                   `OPENAPI_PROXY_API_KEY=${key} npx @pipe0/openapi-proxy deploy --dry-run`,
               }
@@ -329,7 +327,12 @@ function CreateUserKey({
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <DropdownMenu>
             <DropdownMenuTrigger
-              render={<Button variant="outline" aria-label="Which variants it reads" />}
+              render={
+                <Button
+                  variant="outline"
+                  aria-label={`Which variants it reads: ${scope?.label ?? "every private variant"}`}
+                />
+              }
             >
               <span className="max-w-56 truncate">{scope?.label ?? "Every private variant"}</span>
               <ChevronDownIcon className="text-muted-foreground" />

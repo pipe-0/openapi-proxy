@@ -289,14 +289,17 @@ function editorRoutes(app: Hono, options: ServerOptions, pageDir: string): void 
         400,
       );
     }
-    if (payload.ifRevision !== undefined && payload.ifRevision !== revisionOf(config.text)) {
-      return c.json(
+    // The file is someone's to edit while this page is open. A save that started from an older one is not made.
+    const changedMeanwhile = () =>
+      c.json(
         {
           code: "conflict",
-          error: `${options.config} was changed in the meantime. It has been read again: make the change once more.`,
+          error: `${options.config} was changed in the meantime, so this was not saved.`,
         },
         409,
       );
+    if (payload.ifRevision !== undefined && payload.ifRevision !== revisionOf(config.text)) {
+      return changedMeanwhile();
     }
 
     const text = patchDefinition(config.text, config.definition, read.definition);
@@ -316,6 +319,9 @@ function editorRoutes(app: Hono, options: ServerOptions, pageDir: string): void 
     const loaded = await loadProject(options.config, options.sources);
     const dryRun = c.req.query("dryRun") === "true";
     if (!dryRun && text !== config.text) {
+      // Reading the documents took a moment. The file is looked at once more
+      // right before it is replaced, with nothing to wait for in between.
+      if (readFileSync(config.path, "utf8") !== config.text) return changedMeanwhile();
       // Whole or not at all: a file that is half written is worse than one
       // that is not. A file that is a link stays one, with the rights it had.
       const target = realpathSync(config.path);

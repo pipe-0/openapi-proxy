@@ -55,7 +55,8 @@ export function ResultPane({
   filename,
   className,
 }: {
-  source: ProjectDoc | undefined;
+  /** The assembled document. Not here yet: undefined. Could not be loaded: null. */
+  source: ProjectDoc | null | undefined;
   /** The OpenAPI version of the project's document: "3.0", "3.1" or "3.2". */
   sourceVersion: string;
   selection: Selection;
@@ -102,6 +103,16 @@ export function ResultPane({
     return serialize(result.doc, format);
   }, [result, source, format]);
   const lines = useMemo(() => text.split("\n"), [text]);
+
+  if (source === null) {
+    return (
+      <div className={cn("flex flex-col justify-center p-5", className)}>
+        <p className="text-center text-[13px] text-muted-foreground">
+          There is no preview: the document could not be loaded.
+        </p>
+      </div>
+    );
+  }
 
   if (!source || !result) {
     return (

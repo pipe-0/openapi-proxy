@@ -134,7 +134,8 @@ test("a new variant, who may read it, and a change made to the file somewhere el
   const who = page.getByRole("button", { name: "Who can read it" });
   await expect(who).toHaveText(/Private\s*by default/);
   await page.getByRole("button", { name: /Create variant/ }).click();
-  await expect(page).toHaveURL(`${here}/#/v/checkout?created`);
+  // It opens on the new variant. That it is new is said once, and does not stay in the address.
+  await expect(page).toHaveURL(`${here}/#/v/checkout`);
   await expect(
     page.getByRole("navigation", { name: "Variants" }).getByRole("link", { name: "Checkout" }),
   ).toBeVisible();
@@ -162,6 +163,79 @@ test("a new variant, who may read it, and a change made to the file somewhere el
   await page.getByRole("alertdialog").getByRole("button", { name: "Delete variant" }).click();
   await expect(page).toHaveURL(`${here}/#/v/docs`);
   expect(text()).toBe(before);
+});
+
+test("what is not saved stays on the screen when the file changes or cannot be read", async ({
+  page,
+}) => {
+  const before = text();
+  await page.goto(`${here}/#/v/partner`);
+  await page.getByLabel("POST /orders", { exact: true }).click();
+  await expect(page.getByText("Unsaved changes")).toBeVisible();
+
+  // The file is edited by hand meanwhile. Coming back to the page says so, and keeps the draft.
+  writeFileSync(file(), before.replace("name: Catalogue partner", "name: Catalogue partners"));
+  await page.evaluate("window.dispatchEvent(new Event('focus'))");
+  await expect(page.getByText("The file was changed somewhere else.")).toBeVisible();
+  await expect(page.getByLabel("POST /orders", { exact: true })).toBeChecked();
+  await shot(page, "26-local-editor-file-changed");
+  // Saving would write over what was done there, and is refused.
+  await page.getByRole("button", { name: /Save to file/ }).click();
+  await expect(page.getByText(/was changed in the meantime/)).toBeVisible();
+  expect(text()).toContain("name: Catalogue partners");
+  expect(text()).not.toContain("- POST /orders");
+
+  // The file becomes unreadable while it is being edited by hand. The draft is still there.
+  writeFileSync(file(), `${text()}\n  broken: [`);
+  await page.evaluate("window.dispatchEvent(new Event('focus'))");
+  await expect(page.getByLabel("POST /orders", { exact: true })).toBeChecked();
+  writeFileSync(file(), before.replace("name: Catalogue partner", "name: Catalogue partners"));
+  await page.evaluate("window.dispatchEvent(new Event('focus'))");
+
+  // Reading the file again is a decision: it shows what the file says, without the draft.
+  await page.getByRole("button", { name: "Read the file again" }).click();
+  await expect(page.getByLabel("Variant name")).toHaveValue("Catalogue partners");
+  await expect(page.getByLabel("POST /orders", { exact: true })).not.toBeChecked();
+  await expect(page.getByText("Unsaved changes")).toBeHidden();
+
+  // The browser's Back does not walk away from unsaved work without asking.
+  await page
+    .getByRole("navigation", { name: "Variants" })
+    .getByRole("link", { name: "SDK" })
+    .click();
+  await expect(page).toHaveURL(`${here}/#/v/sdk`);
+  await page.getByLabel("POST /orders", { exact: true }).click();
+  // An icon is saved the moment it is picked. The selection is still not
+  // saved, so it stays as it is on screen, and leaving still asks.
+  await page.getByRole("button", { name: "Variant icon" }).click();
+  await page.getByRole("menuitem", { name: "Production" }).click();
+  await expect.poll(() => text()).toContain("icon: rocket");
+  await expect(page.getByText("Unsaved changes")).toBeVisible();
+  await expect(page.getByLabel("POST /orders", { exact: true })).not.toBeChecked();
+  page.once("dialog", (dialog) => void dialog.dismiss());
+  await page
+    .getByRole("navigation", { name: "Variants" })
+    .getByRole("link", { name: /Catalogue partner/ })
+    .click();
+  await expect(page).toHaveURL(`${here}/#/v/sdk`);
+  page.once("dialog", (dialog) => void dialog.dismiss());
+  await page.goBack();
+  await expect(page).toHaveURL(`${here}/#/v/sdk`);
+  await expect(page.getByText("Unsaved changes")).toBeVisible();
+  await page.getByRole("button", { name: "Discard", exact: true }).click();
+
+  // What a variant says at the top is saved into the file like its selection.
+  await page.getByRole("button", { name: /Title and servers/ }).click();
+  await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Bookshop SDK");
+  // What the project says for every variant is what an empty field stands for.
+  await expect(page.getByText("As the project says: https://api.bookshop.example")).toBeVisible();
+  await page.getByLabel("Title", { exact: true }).fill("Bookshop SDK, v2");
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.getByRole("button", { name: /Save to file/ }).click();
+  await expect(page.getByText("Saved to the file")).toBeVisible();
+  expect(text()).toContain("      title: Bookshop SDK, v2\n");
+
+  writeFileSync(file(), before);
 });
 
 test("only the page changes the file, and without it nothing does", async ({ request }) => {

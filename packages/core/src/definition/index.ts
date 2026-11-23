@@ -48,3 +48,5 @@ export {
 export { definitionSchema, SCHEMA_URL } from "./schema.js";
 export type { Problem, Shape } from "./shape.js";
 export { keysOf } from "./shape.js";
+export { CLI_PACKAGE, DEPLOY_KEY_VARIABLE, HOSTED_URL, WAYS } from "./ways.js";
+export { definitionNode, definitionYaml } from "./write.js";

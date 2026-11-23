@@ -225,6 +225,23 @@ test("in the app it is read, not edited, until someone says otherwise", async ({
   await expect(page.getByText("Deployed from a file", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /Publish changes/ })).toBeHidden();
   await expect(page.getByLabel("Variant name")).toHaveAttribute("readonly", "");
+  // Nothing on it changes the selection: not a box, and not the row around it.
+  await expect(page.getByTestId("served-operations")).toHaveText("5");
+  await page.getByText("/admin/staff").click();
+  await page.getByLabel("DELETE /admin/cache", { exact: true }).click({ force: true });
+  await expect(page.getByTestId("served-operations")).toHaveText("5");
+  // So there is nothing to lose by leaving, and nothing asks.
+  await page.getByRole("link", { name: "Project settings" }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Project settings");
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await page
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("link", { name: /Public docs/ })
+    .click();
+  // Starting a variant is not offered either, by button or by key.
+  await expect(page.getByRole("button", { name: "New variant" })).toHaveCount(0);
+  await page.keyboard.press("n");
+  await expect(page).toHaveURL(/\/p\/bookshop\/v\/public$/);
   await shot(page, "19-deployed-variant");
 
   // Not through the back door either.

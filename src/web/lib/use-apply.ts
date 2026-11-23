@@ -44,24 +44,39 @@ export function useApply(project: Project | undefined) {
       const save = async () => {
         const current = cached() ?? project;
         if (!current) throw new Error("There is no project to change.");
-        const result = await api.applyProject({
-          definition: change(current.definition),
-          ifRevision: current.state.revision,
-          ...more,
-        });
-        const next = await api.getProject(result.project.slug);
-        replace(next);
-        return { result, project: next };
+        let result: ApplyResult;
+        try {
+          result = await api.applyProject({
+            definition: change(current.definition),
+            ifRevision: current.state.revision,
+            ...more,
+          });
+        } catch (error) {
+          // The project is not what this screen shows any more: someone else
+          // saved, or a deploy made it a file's. Show what it is now.
+          if (error instanceof RequestError && error.status === 409) {
+            await queryClient.invalidateQueries({ queryKey: queries.projects.queryKey });
+            // Still there, and changed: what was typed here is kept, and can be saved over it.
+            if (error.code === "conflict" && cached()) {
+              throw new RequestError(409, {
+                code: "conflict",
+                error:
+                  "Someone else changed this project in the meantime. What is published is up to date now. Your changes are still here: save once more.",
+              });
+            }
+          }
+          throw error;
+        }
+        // The save went through. If reading the project again does not, that
+        // is not the save failing: the list is read again when it can be.
+        const next = await api.getProject(result.project.slug).catch(() => undefined);
+        if (next) replace(next);
+        else void queryClient.invalidateQueries({ queryKey: queries.projects.queryKey });
+        return { result, project: next ?? current };
       };
       const turn = (underWay.get(slug) ?? Promise.resolve()).catch(() => undefined).then(save);
       underWay.set(slug, turn);
       return turn;
-    },
-    onError: async (error) => {
-      // Someone else saved in between. Show what they saved.
-      if (error instanceof RequestError && error.code === "conflict") {
-        await queryClient.invalidateQueries({ queryKey: queries.projects.queryKey });
-      }
     },
   });
 }

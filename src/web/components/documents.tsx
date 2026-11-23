@@ -210,11 +210,11 @@ export function Documents({ project }: { project: Project }) {
                   ? "It was just deployed, so we look every few minutes for a while. "
                   : ""}
                 {quick ? (
-                  <DocsLink slug="keeping-in-sync">How checks work</DocsLink>
+                  <DocsLink slug="following-a-url">How checks work</DocsLink>
                 ) : (
                   <>
                     For checks every 5 minutes, send an ETag with it.{" "}
-                    <DocsLink slug="etag">How</DocsLink>
+                    <DocsLink slug="following-a-url#sending-an-etag">How</DocsLink>
                   </>
                 )}
               </span>
@@ -451,7 +451,8 @@ function DocumentSheet({
               ) : (
                 <>
                   We keep reading this address. Each check downloads the whole document. An ETag
-                  makes it quick. <DocsLink slug="etag">How to send one</DocsLink>
+                  makes it quick.{" "}
+                  <DocsLink slug="following-a-url#sending-an-etag">How to send one</DocsLink>
                 </>
               )}
             </p>

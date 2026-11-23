@@ -1,10 +1,9 @@
-import type { ProjectDefinition } from "@openapi-proxy/core";
+import { definitionNode, type ProjectDefinition } from "@openapi-proxy/core";
 import {
   type Document,
   isMap,
   isScalar,
   isSeq,
-  type Node,
   parseDocument,
   type Scalar,
   type YAMLMap,
@@ -40,30 +39,6 @@ function styleOf(text: string): { indent: number; indentSeq: boolean } {
   return { indent: Math.min(Math.max(indent, 2), 8), indentSeq: !flush };
 }
 
-/** A new value as a node, written the way a person would write it in this file. */
-function nodeFor(doc: Document, value: unknown, key?: string | number): Node {
-  const node = doc.createNode(value) as Node;
-  const dress = (current: unknown, name?: string | number) => {
-    if (isSeq(current)) {
-      // A few tags read best on one line. Operations, which are long and can
-      // hold braces, get a line each.
-      const items = current.items;
-      const short =
-        name === "tags" &&
-        items.every(isScalar) &&
-        items.reduce((sum, item) => sum + String((item as Scalar).value).length + 2, 0) <= 60;
-      current.flow = short;
-      for (const item of items) dress(item);
-    } else if (isMap(current)) {
-      for (const pair of current.items) {
-        dress(pair.value, isScalar(pair.key) ? String(pair.key.value) : undefined);
-      }
-    }
-  };
-  dress(node, key);
-  return node;
-}
-
 /**
  * The order the keys of a definition are written in, by people and by `init`.
  * A key that is new to a map goes where it would be looked for, not at the end.
@@ -95,7 +70,7 @@ const rankOf = (key: unknown): number => ORDER.indexOf(String(isScalar(key) ? ke
 
 /** Put a new key into a map: before the first key that belongs after it, or at the end. */
 function insert(doc: Document, map: YAMLMap, key: string, value: unknown): void {
-  const pair = doc.createPair(key, nodeFor(doc, value, key));
+  const pair = doc.createPair(key, definitionNode(doc, value, key));
   const mine = rankOf(key);
   const at = mine === -1 ? -1 : map.items.findIndex((item) => rankOf(item.key) > mine);
   if (at === -1) map.items.push(pair);
@@ -122,7 +97,7 @@ function keepWithFirst(collection: YAMLMap | YAMLSeq, first: unknown): void {
 function patchTextList(doc: Document, path: Path, before: string[], after: string[]): void {
   const node = doc.getIn(path, true);
   if (!isSeq(node) || !node.items.every(isScalar)) {
-    doc.setIn(path, nodeFor(doc, after, path.at(-1)));
+    doc.setIn(path, definitionNode(doc, after, path.at(-1)));
     return;
   }
   const seq = node as YAMLSeq<Scalar>;
@@ -220,7 +195,7 @@ function patch(doc: Document, path: Path, before: unknown, after: unknown): void
     existing.value = after;
     return;
   }
-  doc.setIn(path, nodeFor(doc, after, path.at(-1)));
+  doc.setIn(path, definitionNode(doc, after, path.at(-1)));
 }
 
 /**

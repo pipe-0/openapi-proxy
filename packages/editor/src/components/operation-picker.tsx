@@ -119,13 +119,15 @@ function tagList(tags: string[]): string {
 export function OperationPicker({
   entries,
   selection,
-  onChange,
+  onChange: change,
   view,
   onViewChange,
   mainSource,
   readOnly = false,
   className,
 }: OperationPickerProps) {
+  // Read-only is said once, here: a row, its text and its box all change the selection through this.
+  const onChange = readOnly ? () => {} : change;
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const taggedShare =

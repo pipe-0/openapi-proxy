@@ -386,6 +386,124 @@ test("a variant for another environment: duplicate it, and state its own servers
   expect(original.info.title).toBe("Pipe0 API");
 });
 
+test("a variant's URL is changed on purpose, and never over unsaved work", async ({
+  page,
+  request,
+}) => {
+  await signIn(page);
+  await page
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("link", { name: /Billing staging/ })
+    .click();
+  await expect(page.getByTestId("served-operations")).toHaveText("2");
+
+  // With something unsaved, the URL stays: a variant under another URL is
+  // another variant, and what is not published would not come along.
+  await page.getByLabel("GET /billing/invoices", { exact: true }).click();
+  await expect(page.getByText("Unpublished changes")).toBeVisible();
+  await page.getByRole("button", { name: "More actions" }).click();
+  const change = page.getByRole("menuitem", { name: /Change URL/ });
+  await expect(change).toBeDisabled();
+  await expect(change).toContainText("Save or discard your changes first");
+  await page.keyboard.press("Escape");
+
+  // The shortcut that publishes belongs to the page. While the sheet is open,
+  // what is typed there is not saved by it.
+  await page.getByRole("button", { name: /Title and servers/ }).click();
+  await page.getByLabel("Title", { exact: true }).fill("Not saved by a shortcut");
+  await page.keyboard.press("ControlOrMeta+s");
+  await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Not saved by a shortcut");
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByText("Unpublished changes")).toBeVisible();
+  await page.getByRole("button", { name: "Discard", exact: true }).click();
+
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: /Change URL/ }).click();
+  await expect(page.getByLabel("URL slug")).toHaveValue("billing-staging");
+  // A slug another variant has is not free.
+  await page.getByLabel("URL slug").fill("billing-for-the-gateway");
+  await expect(page.getByText("Already in use.")).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).click();
+  // Opened again, it starts from the slug the variant has.
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: /Change URL/ }).click();
+  await expect(page.getByLabel("URL slug")).toHaveValue("billing-staging");
+  await page.getByLabel("URL slug").fill("staging");
+  await page.getByRole("button", { name: "Change URL" }).click();
+  await expect(page).toHaveURL(/\/p\/pipe0\/v\/staging$/);
+  await expect(page.getByTestId("variant-url")).toHaveText(/\/v\/pipe0\/staging\.json$/);
+  expect((await request.get("/v/pipe0/billing-staging.json")).status()).toBe(404);
+  const moved = (await (await request.get("/v/pipe0/staging.json")).json()) as {
+    info: { title: string };
+  };
+  // It is what it was: its title, and its place in the navigation.
+  expect(moved.info.title).toBe("Billing, staging");
+
+  // And back, so that the journeys after this one find it where they expect it.
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: /Change URL/ }).click();
+  await page.getByLabel("URL slug").fill("billing-staging");
+  await page.getByRole("button", { name: "Change URL" }).click();
+  await expect(page).toHaveURL(/\/p\/pipe0\/v\/billing-staging$/);
+});
+
+test("publishing leaves the editor as it is, with what was typed meanwhile", async ({
+  page,
+  request,
+}) => {
+  await signIn(page);
+  await page
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("link", { name: /Billing staging/ })
+    .click();
+  await expect(page.getByTestId("served-operations")).toHaveText("2");
+  const served = async () =>
+    Object.keys(
+      ((await (await request.get("/v/pipe0/billing-staging.json")).json()) as { paths: object })
+        .paths,
+    ).length;
+  const before = await served();
+
+  // How the editor is set up: a filter, and the document as YAML.
+  await page.getByLabel("Filter operations").fill("invoices");
+  await page
+    .getByRole("radiogroup", { name: "Format" })
+    .getByRole("radio", { name: "YAML" })
+    .click();
+  await expect(page.getByTestId("variant-url")).toHaveText(/billing-staging\.yaml$/);
+
+  // Hide one operation and publish with the keyboard.
+  const invoices = page.getByLabel("GET /billing/invoices", { exact: true });
+  await expect(invoices).toBeChecked();
+  await invoices.click();
+  await expect(page.getByText("Unpublished changes")).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+s");
+  await expect(page.getByText("Published", { exact: true })).toBeVisible();
+  await expect(page.getByText("Unpublished changes")).toBeHidden();
+  await expect(page.getByTestId("served-operations")).toHaveText("1");
+  expect(await served()).toBe(before - 1);
+  // The editor did not start again: the filter and the format are as they were set.
+  await expect(page.getByLabel("Filter operations")).toHaveValue("invoices");
+  await expect(
+    page.getByRole("radiogroup", { name: "Format" }).getByRole("radio", { name: "YAML" }),
+  ).toBeChecked();
+  await expect(page.getByTestId("variant-url")).toHaveText(/billing-staging\.yaml$/);
+
+  // Something ticked right after a publish was started is not part of it, and is not lost.
+  await invoices.click();
+  await page.getByRole("button", { name: /Publish changes/ }).click();
+  await page.getByLabel("Variant name").fill("Billing staging, renamed meanwhile");
+  await expect(page.getByText("Published", { exact: true }).first()).toBeVisible();
+  await expect(page.getByLabel("Variant name")).toHaveValue("Billing staging, renamed meanwhile");
+  await expect(page.getByText("Unpublished changes")).toBeVisible();
+  expect(await served()).toBe(before);
+  // The name that was not published is discarded, and the variant is as the journeys after this expect it.
+  await page.getByRole("button", { name: "Discard", exact: true }).click();
+  await expect(page.getByLabel("Variant name")).toHaveValue("Billing staging");
+  await expect(page.getByText("Unpublished changes")).toBeHidden();
+  await expect(page.getByTestId("served-operations")).toHaveText("2");
+});
+
 test("the workspace: inviting a colleague", async ({ page }) => {
   await signIn(page);
   await page.getByRole("link", { name: "Workspace" }).click();

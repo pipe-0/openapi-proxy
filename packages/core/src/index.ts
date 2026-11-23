@@ -25,15 +25,20 @@ export type {
   Visibility,
 } from "./definition/index.js";
 export {
+  CLI_PACKAGE,
   canonicalJson,
   DEFINITION_LIMITS,
   DEFINITION_SHAPE,
   DEFINITION_VERSIONS,
+  DEPLOY_KEY_VARIABLE,
+  definitionNode,
   definitionSchema,
+  definitionYaml,
   describeProblem,
   effectiveOverrides,
   effectiveVariant,
   effectiveVisibility,
+  HOSTED_URL,
   isLoopback,
   isVariantIcon,
   isVisibility,
@@ -47,6 +52,7 @@ export {
   UNNAMED_SOURCE,
   VARIANT_ICONS,
   VISIBILITIES,
+  WAYS,
   warningsOf,
 } from "./definition/index.js";
 export { WORK_BUDGET, withBudget } from "./document/budget.js";

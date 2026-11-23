@@ -92,7 +92,7 @@ test("a private variant: read with a key made for it, and by nobody else", async
 
   await page.getByRole("button", { name: "Who can read it" }).click();
   await page.getByRole("menuitemradio", { name: /Private/ }).click();
-  await expect(page.getByText(/Readers send an API key as/)).toBeVisible();
+  await expect(page.getByText(/Readers send a user API key as/)).toBeVisible();
   // A browser sends no key, so there is nothing to open it with.
   await expect(page.getByRole("link", { name: "Open in a new tab" })).toBeHidden();
   await shot(page, "15-private-variant");
@@ -156,6 +156,6 @@ test("a private variant: read with a key made for it, and by nobody else", async
   page.once("dialog", (dialog) => void dialog.accept());
   await page.getByRole("button", { name: "Who can read it" }).click();
   await page.getByRole("menuitemradio", { name: /Public/ }).click();
-  await expect(page.getByText(/Readers send an API key as/)).toBeHidden();
+  await expect(page.getByText(/Readers send a user API key as/)).toBeHidden();
   expect((await request.get(url)).status()).toBe(200);
 });

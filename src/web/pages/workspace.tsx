@@ -197,8 +197,8 @@ function RemoveMember({
         // A key acts as the person who made it, so it goes with them: said
         // here, because a docs build or a partner may be reading with one.
         const question = leaving
-          ? "Leave this workspace? You lose access to its projects, and the API keys you made here stop working."
-          : `Remove ${member.name}? They lose access to these projects, and the API keys they made stop working.`;
+          ? "Leave this workspace? You lose access to its projects, and the user API keys you made here stop working."
+          : `Remove ${member.name}? They lose access to these projects, and the user API keys they made stop working.`;
         if (window.confirm(question)) remove.mutate();
       }}
     >
@@ -448,7 +448,8 @@ function NewVariants({ workspace, onDone }: { workspace: Workspace; onDone: () =
   });
   const value = save.isPending && save.variables ? save.variables : workspace.defaultVisibility;
   const pick = (next: Visibility) => {
-    if (next === value) return;
+    // Not before it is known how many variants this changes.
+    if (next === value || !projects.data) return;
     const sure =
       next === "private" ||
       following === 0 ||
@@ -468,9 +469,11 @@ function NewVariants({ workspace, onDone }: { workspace: Workspace; onDone: () =
             {value === "private"
               ? "Such a variant is read with a user API key of this workspace."
               : "Such a variant can be read by anyone with its URL."}{" "}
-            {following === 0
-              ? "No variant follows this at the moment."
-              : `${plural(following, "variant")} ${following === 1 ? "follows" : "follow"} this, and ${following === 1 ? "changes" : "change"} with it at once.`}
+            {!projects.data
+              ? "Counting the variants that follow this."
+              : following === 0
+                ? "No variant follows this at the moment."
+                : `${plural(following, "variant")} ${following === 1 ? "follows" : "follow"} this, and ${following === 1 ? "changes" : "change"} with it at once.`}
           </>
         }
       >

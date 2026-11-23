@@ -74,8 +74,13 @@ export function sourcesOf(project: Project): SourceView[] {
   });
 }
 
-/** The name of the source that leads the merge: what the document's title and servers come from. */
+/**
+ * In a project of several documents, the name of the one that leads the
+ * merge: what the title and servers come from. A project's only document has
+ * no name worth saying.
+ */
 export const mainSourceName = (project: Project): string | undefined => {
+  if (project.definition.sources.length < 2) return undefined;
   const [main] = mergeOrder(project.definition);
   return main ? sourceLabel(main) : undefined;
 };

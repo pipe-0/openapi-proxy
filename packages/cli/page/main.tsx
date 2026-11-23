@@ -1,6 +1,6 @@
 import type { ProjectDefinition, ProjectView } from "@openapi-proxy/core";
 import { FilePenLineIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
-import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
+import { StrictMode, useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Toaster } from "sonner";
 import { DocsLink, DocsSite } from "../../editor/src/components/docs-link";
@@ -69,18 +69,48 @@ function placeOf(hash: string): Place {
   return { at: "home" };
 }
 
-function usePlace(): Place {
+/** An address the page itself is on its way to: it has asked, or nothing is lost by going. */
+let expected: string | undefined;
+const go = (hash: string) => {
+  expected = hash;
+  window.location.hash = hash;
+};
+
+/**
+ * Where the page is, from its address. Going somewhere else by the browser's
+ * own means (Back, a typed address) asks first while something is not saved,
+ * and stays if the answer is no.
+ *
+ * `replace` puts another address in place of the current one, for a move that
+ * is not a step of its own: Back then skips what was replaced.
+ */
+function usePlace(mayLeave: () => boolean): { place: Place; replace: (hash: string) => void } {
   const [hash, setHash] = useState(window.location.hash);
+  const settled = useRef(window.location.hash);
+  const ask = useEffectEvent(mayLeave);
   useEffect(() => {
-    const onChange = () => setHash(window.location.hash);
+    const onChange = () => {
+      const next = window.location.hash;
+      if (next === settled.current) return;
+      if (next !== expected && !ask()) {
+        // Put the address back. That is one more change of it, which finds nothing to do.
+        window.location.hash = settled.current;
+        return;
+      }
+      expected = undefined;
+      settled.current = next;
+      setHash(next);
+    };
     window.addEventListener("hashchange", onChange);
     return () => window.removeEventListener("hashchange", onChange);
   }, []);
-  return placeOf(hash);
+  const replace = useCallback((next: string) => {
+    window.history.replaceState(null, "", next);
+    settled.current = next;
+    setHash(next);
+  }, []);
+  return { place: placeOf(hash), replace };
 }
-const go = (hash: string) => {
-  window.location.hash = hash;
-};
 
 const navItem =
   "group/nav flex h-8 items-center gap-2 rounded-lg px-2 text-[13px] text-foreground/75 outline-none hover:bg-foreground/5 hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50";
@@ -98,41 +128,72 @@ function App() {
   const [document, setDocument] = useState<{ hash: string; doc: ProjectDoc }>();
   const [problem, setProblem] = useState<string>();
   const [loading, setLoading] = useState(false);
-  const place = usePlace();
+  /** The file changed on disk while something here was not saved: what is on screen is kept. */
+  const [fileChanged, setFileChanged] = useState(false);
   const dirty = useRef(false);
+  /** Whether going somewhere else is fine: nothing is unsaved, or the person says to drop it. */
+  const mayLeave = () =>
+    !dirty.current || window.confirm("Leave without saving? What you changed is discarded.");
+  const { place, replace } = usePlace(mayLeave);
+  /** Counted up to start the editor again from what the file says, when someone asks for that. */
+  const [generation, setGeneration] = useState(0);
   const shown = useRef<string | undefined>(undefined);
+  /** Which reading of the file is the newest: an older one that answers late is not shown. */
+  const reading = useRef(0);
   /** The file as it was read last, for a save that starts after another has finished. */
   const latest = useRef<ProjectView | undefined>(undefined);
   const underWay = useRef<Promise<unknown>>(Promise.resolve());
 
-  const load = useCallback(async (): Promise<ProjectView | undefined> => {
-    setLoading(true);
-    try {
-      const [view] = await ask<ProjectView[]>("/api/projects");
-      if (!view) throw new Refused("The server has no project.", "not-found");
-      // The documents are read again only when they are different ones.
-      if (shown.current !== view.state.documentHash) {
-        const text = await ask<string>(`/api/projects/${view.definition.project}/document`);
-        shown.current = view.state.documentHash;
-        setDocument({ hash: view.state.documentHash, doc: readProjectDoc(text) });
+  const load = useCallback(
+    async (options: { keepDraft?: boolean } = {}): Promise<ProjectView | undefined> => {
+      setLoading(true);
+      reading.current += 1;
+      const turn = reading.current;
+      try {
+        const [view] = await ask<ProjectView[]>("/api/projects");
+        if (!view) throw new Refused("The server has no project.", "not-found");
+        if (turn !== reading.current) return latest.current;
+        // Unsaved work is not swapped for what the file says now. It is said, and the person decides.
+        if (
+          options.keepDraft &&
+          dirty.current &&
+          latest.current &&
+          latest.current.state.revision !== view.state.revision
+        ) {
+          setFileChanged(true);
+          setProblem(undefined);
+          return latest.current;
+        }
+        setFileChanged(false);
+        // The documents are read again only when they are different ones.
+        if (shown.current !== view.state.documentHash) {
+          const text = await ask<string>(`/api/projects/${view.definition.project}/document`);
+          if (turn !== reading.current) return latest.current;
+          shown.current = view.state.documentHash;
+          setDocument({ hash: view.state.documentHash, doc: readProjectDoc(text) });
+        }
+        latest.current = view;
+        setProject(view);
+        setProblem(undefined);
+        return view;
+      } catch (error) {
+        if (turn === reading.current) {
+          setProblem(error instanceof Error ? error.message : "Something went wrong.");
+        }
+        return undefined;
+      } finally {
+        if (turn === reading.current) setLoading(false);
       }
-      latest.current = view;
-      setProject(view);
-      setProblem(undefined);
-      return view;
-    } catch (error) {
-      setProblem(error instanceof Error ? error.message : "Something went wrong.");
-      return undefined;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    },
+    [],
+  );
 
   // The file belongs to whoever edits it, here or in their editor: coming
-  // back to this page shows what it says now.
+  // back to this page shows what it says now, unless that would take unsaved
+  // work off the screen.
   useEffect(() => {
     void load();
-    const onFocus = () => void load();
+    const onFocus = () => void load({ keepDraft: true });
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, [load]);
@@ -161,10 +222,12 @@ function App() {
           }),
         });
       } catch (error) {
-        // The file was changed somewhere else in the meantime: show what it says now.
-        if (error instanceof Refused && error.code === "conflict") await load();
+        // The file was changed somewhere else in the meantime. What is typed here stays.
+        if (error instanceof Refused && error.code === "conflict") setFileChanged(true);
         throw error;
       }
+      // The editor says whether something is still unsaved: an icon that was
+      // saved leaves a selection that was not.
       await load();
     };
     const turn = underWay.current.catch(() => undefined).then(save);
@@ -181,18 +244,65 @@ function App() {
   }, [open, title]);
 
   // With nowhere in particular to be: the first variant, or making one.
+  // It takes the place of the bare address, so that Back leaves the page.
   useEffect(() => {
     if (!project || place.at !== "home") return;
     const [first] = variants;
-    go(first ? `#/v/${encodeURIComponent(first.slug)}` : "#/new");
+    replace(first ? `#/v/${encodeURIComponent(first.slug)}` : "#/new");
   });
 
-  /** Whether going somewhere else is fine: nothing is unsaved, or the person says to drop it. */
-  const mayLeave = () =>
-    !dirty.current || window.confirm("Leave without saving? What you changed is discarded.");
-  const leave = (event: React.MouseEvent) => {
-    if (!mayLeave()) event.preventDefault();
+  /** Follow a link of the navigation, unless that would throw away what was not saved. */
+  const leave = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    // Into another tab or window: nothing here is left.
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (event.currentTarget.hash === window.location.hash) return event.preventDefault();
+    if (mayLeave()) expected = event.currentTarget.hash;
+    else event.preventDefault();
   };
+
+  // "Just created" is for the first look, not for a reload: the editor has
+  // seen it by now, and the address goes without it.
+  const created = place.at === "variant" && place.created;
+  useEffect(() => {
+    if (created) replace(window.location.hash.replace(/\?created$/, ""));
+  }, [created, replace]);
+
+  /** What the page has to say above the editor: the file could not be read, or it changed under unsaved work. */
+  const banner = problem ? (
+    <Notice
+      tone="bad"
+      action={
+        <Button variant="outline" onClick={() => void load({ keepDraft: true })} loading={loading}>
+          {!loading && <RefreshCwIcon />} Try again
+        </Button>
+      }
+    >
+      <span className="font-medium">The project could not be read again.</span> {problem} What is on
+      screen is from before.
+    </Notice>
+  ) : fileChanged ? (
+    <Notice
+      tone="warn"
+      action={
+        <Button
+          variant="outline"
+          loading={loading}
+          onClick={() =>
+            // A decision: the editor starts again from what the file says now.
+            void load().then((view) => {
+              if (view) setGeneration((count) => count + 1);
+            })
+          }
+        >
+          Read the file again
+        </Button>
+      }
+    >
+      <span className="font-medium">The file was changed somewhere else.</span> What you changed
+      here is not saved, and cannot be saved over it. Reading the file again discards what you
+      changed here.
+    </Notice>
+  ) : undefined;
 
   return (
     <DocsSite value={DOCS}>
@@ -212,7 +322,7 @@ function App() {
                 </p>
                 <p className="mt-0.5 flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
                   <FilePenLineIcon className="size-3.5 shrink-0" />
-                  <span className="truncate">Saved to your definition file</span>
+                  <span className="truncate">Saves go to your definition file</span>
                 </p>
               </div>
               <div className="mt-5 flex h-6 items-center justify-between pr-2 pl-4">
@@ -270,73 +380,102 @@ function App() {
           )}
         </aside>
 
-        <main className="min-h-0 min-w-0 flex-1">
-          {problem ? (
-            <div className="mx-auto flex h-full max-w-xl flex-col justify-center gap-3 px-6">
-              <Notice
-                tone="bad"
-                action={
-                  <Button variant="outline" onClick={() => void load()} loading={loading}>
-                    {!loading && <RefreshCwIcon />} Try again
-                  </Button>
-                }
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {/* Without the sidebar, on a narrow window: the variants as one menu. */}
+          {project && (
+            <div className="flex h-12 shrink-0 items-center gap-2 border-b px-3 md:hidden">
+              <span className="text-[13px] font-medium">Variant</span>
+              <select
+                aria-label="Variant"
+                className="h-8 min-w-0 flex-1 rounded-lg border border-input bg-background px-2 text-[13px]"
+                value={open?.slug ?? ""}
+                onChange={(event) => {
+                  if (!mayLeave()) return;
+                  go(
+                    event.target.value === ""
+                      ? "#/new"
+                      : `#/v/${encodeURIComponent(event.target.value)}`,
+                  );
+                }}
               >
-                <span className="font-medium">The project could not be read.</span> {problem}
-              </Notice>
-              <p className="text-[13px] leading-5 text-muted-foreground">
-                The definition file and its documents are read each time. Fix what it says, and try
-                again.
-              </p>
+                <option value="">New variant</option>
+                {variants.map((variant) => (
+                  <option key={variant.slug} value={variant.slug}>
+                    {variant.name}
+                  </option>
+                ))}
+              </select>
             </div>
-          ) : !project || place.at === "home" ? (
-            <EditorSkeleton />
-          ) : place.at === "variant" && !open ? (
-            <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
-              <p className="type-heading">The file has no variant {place.slug}</p>
-              <p className="text-[13px] text-muted-foreground">
-                It may have been renamed or taken out of the file.
-              </p>
-            </div>
-          ) : (
-            <VariantEditor
-              // The editor starts again from what the file says whenever that changes.
-              key={
-                open
-                  ? JSON.stringify([
-                      open.slug,
-                      open.definition.name,
-                      open.selection,
-                      open.definition.overrides,
-                    ])
-                  : `new:${place.at === "new" ? (place.from ?? "") : ""}`
-              }
-              project={project}
-              variant={open}
-              template={
-                place.at === "new" ? variants.find((each) => each.slug === place.from) : undefined
-              }
-              justCreated={place.at === "variant" && place.created}
-              document={document?.doc}
-              apply={apply}
-              describeError={(error) =>
-                error instanceof Error ? error.message : "Something went wrong."
-              }
-              onDirtyChange={(value) => {
-                dirty.current = value;
-              }}
-              onCreated={(slug) => go(`#/v/${encodeURIComponent(slug)}?created`)}
-              onRenamed={(slug) => go(`#/v/${encodeURIComponent(slug)}`)}
-              onDeleted={() => go("#/")}
-              onDuplicate={(slug) => {
-                if (mayLeave()) go(`#/new?from=${encodeURIComponent(slug)}`);
-              }}
-              words={{
-                save: "Save to file",
-                saved: "Saved to the file",
-                unsaved: "Unsaved changes",
-              }}
-            />
           )}
+          <div className="min-h-0 flex-1">
+            {!project && problem ? (
+              <div className="mx-auto flex h-full max-w-xl flex-col justify-center gap-3 px-6">
+                <Notice
+                  tone="bad"
+                  action={
+                    <Button variant="outline" onClick={() => void load()} loading={loading}>
+                      {!loading && <RefreshCwIcon />} Try again
+                    </Button>
+                  }
+                >
+                  <span className="font-medium">The project could not be read.</span> {problem}
+                </Notice>
+                <p className="text-[13px] leading-5 text-muted-foreground">
+                  The definition file and its documents are read each time. Fix what it says, and
+                  try again.
+                </p>
+              </div>
+            ) : !project || place.at === "home" ? (
+              <EditorSkeleton />
+            ) : place.at === "variant" && !open ? (
+              <div className="flex h-full flex-col">
+                {/* Said here too: the variant may be missing because the file could not be read again. */}
+                {banner && <div className="shrink-0 border-b bg-subtle px-5 py-3">{banner}</div>}
+                <div className="flex flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
+                  <p className="type-heading">The file has no variant {place.slug}</p>
+                  <p className="text-[13px] text-muted-foreground">
+                    It may have been renamed or taken out of the file.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <VariantEditor
+                // One editor for as long as a variant is open. It follows what the
+                // file says by itself, and keeps what is typed across its own saves.
+                key={`${generation}:${open ? `v:${open.slug}` : `new:${place.at === "new" ? (place.from ?? "") : ""}`}`}
+                project={project}
+                variant={open}
+                template={
+                  place.at === "new" ? variants.find((each) => each.slug === place.from) : undefined
+                }
+                justCreated={created}
+                banner={banner}
+                document={document?.doc}
+                apply={apply}
+                describeError={(error) =>
+                  error instanceof Error ? error.message : "Something went wrong."
+                }
+                onDirtyChange={(value) => {
+                  dirty.current = value;
+                }}
+                onCreated={(slug) => go(`#/v/${encodeURIComponent(slug)}?created`)}
+                // The address that was is gone: the new one takes its place.
+                onRenamed={(slug) => replace(`#/v/${encodeURIComponent(slug)}`)}
+                onDeleted={() => {
+                  dirty.current = false;
+                  replace("#/");
+                }}
+                onDuplicate={(slug) => {
+                  if (mayLeave()) go(`#/new?from=${encodeURIComponent(slug)}`);
+                }}
+                words={{
+                  save: "Save to file",
+                  saved: "Saved to the file",
+                  unsaved: "Unsaved changes",
+                }}
+              />
+            )}
+          </div>
         </main>
       </div>
       <Toaster position="bottom-right" theme="system" />

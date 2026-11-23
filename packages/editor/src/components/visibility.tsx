@@ -12,7 +12,7 @@ import {
 
 export const VISIBILITY: Record<Visibility, { label: string; means: string }> = {
   public: { label: "Public", means: "Anyone with the URL can read it." },
-  private: { label: "Private", means: "Readers send an API key of this workspace." },
+  private: { label: "Private", means: "Readers send a user API key." },
 };
 
 /**
@@ -45,16 +45,23 @@ export function VisibilityMenu({
   const Icon =
     effective === "private" ? LockIcon : effective === "public" ? GlobeIcon : WaypointsIcon;
   const whose = inherited.from === "project" ? "the project" : "the workspace";
+  const label = effective ? VISIBILITY[effective].label : "Workspace default";
+  const byDefault = stated === undefined && effective !== null;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        render={<Button variant="outline" aria-label="Who can read it" disabled={disabled} />}
+        render={
+          <Button
+            variant="outline"
+            // The name says the value too: a label alone would hide it from a screen reader.
+            aria-label={`Who can read it: ${label}${byDefault ? " by default" : ""}`}
+            disabled={disabled}
+          />
+        }
       >
         <Icon />
-        {effective ? VISIBILITY[effective].label : "Workspace default"}
-        {stated === undefined && effective && (
-          <span className="font-normal text-muted-foreground">by default</span>
-        )}
+        {label}
+        {byDefault && <span className="font-normal text-muted-foreground">by default</span>}
         <ChevronDownIcon className="text-muted-foreground" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-72">

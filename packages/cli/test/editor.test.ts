@@ -1,4 +1,6 @@
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createServer as createHttpServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ApplyResult, ProjectView } from "@openapi-proxy/core";
@@ -156,6 +158,56 @@ describe("what the local server answers the editor", () => {
     });
     expect(((await rehearsal.json()) as ApplyResult).dryRun).toBe(true);
     expect(text()).toBe(before);
+  });
+
+  it("does not write over a file that changed while the save was reading the documents", async () => {
+    const dir = copyOf("several-audiences");
+    const config = join(dir, "openapi-proxy.yaml");
+    // The core document comes from a dev server, which takes a moment. In
+    // that moment, someone saves the file in their own editor.
+    let saving = false;
+    const core = readFileSync(join(dir, "core.yaml"), "utf8");
+    const upstream = createHttpServer((_request, response) => {
+      if (saving) {
+        writeFileSync(config, `${readFileSync(config, "utf8")}\n# written meanwhile\n`);
+      }
+      response.setHeader("content-type", "application/yaml");
+      response.end(core);
+    });
+    await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+    const { port } = upstream.address() as AddressInfo;
+    try {
+      const app = createServer({
+        config,
+        sources: [`core=http://127.0.0.1:${port}/core.yaml`],
+        allowedHosts: [],
+        editor: page(),
+      });
+      const ask = (path: string, init?: RequestInit) =>
+        app.fetch(new Request(`${ORIGIN}${path}`, init));
+      const project = (await (await ask("/api/projects/bookshop")).json()) as ProjectView;
+
+      saving = true;
+      const save = await ask("/api/projects/bookshop", {
+        method: "PUT",
+        headers: { "content-type": "application/json", origin: ORIGIN },
+        body: JSON.stringify({
+          definition: { ...project.definition, name: "Renamed here" },
+          ifRevision: project.state.revision,
+        }),
+      });
+      expect(save.status).toBe(409);
+      expect(await save.json()).toMatchObject({
+        code: "conflict",
+        error: expect.stringContaining("was changed in the meantime, so this was not saved"),
+      });
+      // What was written meanwhile is there, and what the page sent is not.
+      const text = readFileSync(config, "utf8");
+      expect(text).toContain("# written meanwhile");
+      expect(text).not.toContain("Renamed here");
+    } finally {
+      upstream.close();
+    }
   });
 
   it("takes a save from its own page only", async () => {

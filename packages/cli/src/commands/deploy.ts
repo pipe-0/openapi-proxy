@@ -1,6 +1,8 @@
 import { gzipSync } from "node:zlib";
 import {
   type ApplyResult,
+  DEPLOY_KEY_VARIABLE,
+  HOSTED_URL,
   type Problem,
   type SourceDefinition,
   sourceLabel,
@@ -12,9 +14,9 @@ import { type ReadSource, readSource, SourceError, tooLarge } from "../sources.j
 import { problemLine } from "./validate.js";
 
 /** Where a file is deployed to unless it names an instance of its own. */
-export const HOSTED = "https://openapi-proxy.app";
+export const HOSTED = HOSTED_URL;
 /** The environment variable a deploy reads its key from. */
-export const KEY_VARIABLE = "OPENAPI_PROXY_API_KEY";
+export const KEY_VARIABLE = DEPLOY_KEY_VARIABLE;
 const TIMEOUT_MS = 120_000;
 
 interface Refusal {
