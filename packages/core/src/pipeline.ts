@@ -1,5 +1,7 @@
 import { withBudget } from "./document/budget.js";
 import { measure, OUTPUT_LIMITS } from "./document/limits.js";
+import { parseSpec } from "./document/parse.js";
+import { serialize } from "./document/serialize.js";
 import {
   availableVersions,
   type ConversionLoss,
@@ -10,7 +12,7 @@ import {
 import { type MergeNote, type MergePart, mergeDocuments } from "./transforms/merge.js";
 import { applyOverrides, type DocumentOverrides } from "./transforms/override.js";
 import { applyVariant } from "./transforms/select.js";
-import type { FilterStats, OpenAPIDocument, Selection } from "./types.js";
+import type { FilterStats, OpenAPIDocument, Selection, SpecFormat } from "./types.js";
 
 /**
  * From source documents to the document a reader gets, in two stages. Both
@@ -126,4 +128,72 @@ function build(doc: OpenAPIDocument, options: VariantOptions): BuiltVariant {
   // Selecting first means only what is served gets converted, and only its losses reported.
   const { doc: converted, losses } = convertDocument(selected.doc, options.version);
   return { doc: converted, stats: selected.stats, losses };
+}
+
+/** One source as text, with what decides how it is merged in. */
+export interface SourceText {
+  name: string;
+  pathPrefix?: string | null | undefined;
+  text: string;
+}
+
+/**
+ * The project's document from the text of each source, in merge order. Not
+ * under a budget of its own on purpose: whoever calls it can put it, and
+ * whatever is done with the document after it, under one (`withBudget`).
+ */
+export function assembleTexts(parts: SourceText[]): {
+  doc: OpenAPIDocument;
+  /** Whether the main source is JSON on one line, for output that is too. */
+  minified: boolean;
+  /** With one source served as it is: its own text, which is the document. */
+  single: string | undefined;
+  /** For each operation, the name of the source it came from. */
+  origins: Map<string, string>;
+  /** What merging did. */
+  notes: MergeNote[];
+  converted: ConvertedSource[];
+} {
+  const parsed = parts.map((part) => ({ part, spec: parseSpec(part.text) }));
+  const [first] = parsed;
+  if (!first) throw new Error("A project without sources.");
+  const { doc, origins, notes, converted } = assembleDocument(
+    parsed.map(({ part, spec }) => ({
+      name: part.name,
+      doc: spec.doc,
+      pathPrefix: part.pathPrefix ?? undefined,
+    })),
+  );
+  return {
+    doc,
+    minified: first.spec.minified,
+    single: parsed.length === 1 && !first.part.pathPrefix ? first.part.text : undefined,
+    origins,
+    notes,
+    converted,
+  };
+}
+
+/** The project's whole document as text: the one source as it is, or the merge as JSON. */
+export function documentText(parts: SourceText[]): string {
+  return withBudget(() => {
+    const { doc, minified, single } = assembleTexts(parts);
+    return single ?? serialize(doc, "json", { minified });
+  });
+}
+
+/**
+ * What a reader of a variant is sent, from the text of the sources: assemble,
+ * select, convert if asked, write out. One budget of work for all of it. The
+ * service and the local server both serve exactly this.
+ */
+export function renderVariantText(
+  parts: SourceText[],
+  options: VariantOptions & { format: SpecFormat },
+): string {
+  return withBudget(() => {
+    const { doc, minified } = assembleTexts(parts);
+    const built = buildVariant(doc, options);
+    return serialize(built.doc, options.format, { minified });
+  });
 }

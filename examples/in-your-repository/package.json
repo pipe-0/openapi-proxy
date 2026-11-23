@@ -1,0 +1,14 @@
+{
+  "name": "bookshop-api",
+  "private": true,
+  "scripts": {
+    "openapi:dev": "openapi-proxy dev",
+    "openapi:check": "openapi-proxy validate",
+    "openapi:deploy": "openapi-proxy deploy",
+    "client:generate": "openapi-typescript http://localhost:7745/v/bookshop/public.json -o ./src/api.types.ts"
+  },
+  "devDependencies": {
+    "@pipe0/openapi-proxy": "^0.1.0",
+    "openapi-typescript": "^7.10.0"
+  }
+}

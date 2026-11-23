@@ -1,4 +1,11 @@
-import { type SpecFormat, TARGET_VERSIONS, type TargetVersion } from "@openapi-proxy/core";
+import {
+  CONTENT_TYPES,
+  etagMatches,
+  noSuchVersion,
+  readRepresentation,
+  type SpecFormat,
+  versionFor,
+} from "@openapi-proxy/core";
 import { and, eq } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
@@ -16,11 +23,6 @@ import { type RenderTarget, renderVariant, variantEtag } from "./render";
 const CACHE_CONTROL = "public, max-age=60, stale-while-revalidate=300";
 /** A private variant is for its reader alone, and is asked for again each time: a 304 is cheap. */
 const PRIVATE_CACHE_CONTROL = "private, no-cache";
-const CONTENT_TYPES: Record<SpecFormat, string> = {
-  json: "application/json; charset=utf-8",
-  yaml: "application/yaml; charset=utf-8",
-};
-
 type SourceStatus = "fresh" | "stale-error";
 
 /**
@@ -54,31 +56,11 @@ serveRoutes.use(
   }),
 );
 
-function parseVariantParam(
-  raw: string,
-  accept: string,
-): { slug: string; format: SpecFormat; negotiated: boolean } {
-  if (raw.endsWith(".json")) return { slug: raw.slice(0, -5), format: "json", negotiated: false };
-  if (raw.endsWith(".yaml")) return { slug: raw.slice(0, -5), format: "yaml", negotiated: false };
-  if (raw.endsWith(".yml")) return { slug: raw.slice(0, -4), format: "yaml", negotiated: false };
-  const wantsYaml = /application\/(x-)?yaml|text\/(x-)?yaml/i.test(accept);
-  return { slug: raw, format: wantsYaml ? "yaml" : "json", negotiated: true };
-}
-
 /** Key of a rendered document in the per-location edge cache. */
 export function edgeCacheKey(variantId: string, format: SpecFormat, etag: string): Request {
   return new Request(
     `https://openapi-proxy.internal/${variantId}.${format}?etag=${encodeURIComponent(etag)}`,
   );
-}
-
-/** If-None-Match uses weak comparison: `W/"x"` and `"x"` match. CDNs weaken ETags when they compress. */
-function etagMatches(header: string | undefined, etag: string): boolean {
-  if (!header) return false;
-  return header
-    .split(",")
-    .map((candidate) => candidate.trim().replace(/^W\//, ""))
-    .some((candidate) => candidate === "*" || candidate === etag);
 }
 
 serveRoutes.on(["GET", "HEAD"], "/:project/:variant", (c) =>
@@ -87,22 +69,6 @@ serveRoutes.on(["GET", "HEAD"], "/:project/:variant", (c) =>
 serveRoutes.on(["GET", "HEAD"], "/:project/:variant/:version", (c) =>
   serveVariant(c, c.req.param("project"), c.req.param("variant"), c.req.param("version")),
 );
-
-/**
- * The OpenAPI version a request gets, or undefined when the URL names one
- * there is none of. Null is the document's own, unconverted, which is what a
- * URL without a version in it serves. Conversion exists between 3.0 and 3.1.
- */
-function versionFor(
-  asked: string | undefined,
-  specVersion: string,
-): TargetVersion | null | undefined {
-  if (asked === undefined || asked === specVersion) return null;
-  const version = TARGET_VERSIONS.find((candidate) => candidate === asked);
-  return version && TARGET_VERSIONS.some((candidate) => candidate === specVersion)
-    ? version
-    : undefined;
-}
 
 /**
  * A private variant is read with an API key of its workspace: one with full
@@ -147,11 +113,11 @@ export async function serveVariant(
   variantParam: string,
   versionParam?: string,
 ): Promise<Response> {
-  // The extension is on the last segment, whichever that is.
-  const last = parseVariantParam(versionParam ?? variantParam, c.req.header("accept") ?? "");
-  const { format, negotiated } = last;
-  const slug = versionParam === undefined ? last.slug : variantParam;
-  const askedVersion = versionParam === undefined ? undefined : last.slug;
+  const { slug, format, negotiated, askedVersion } = readRepresentation(
+    variantParam,
+    versionParam,
+    c.req.header("accept") ?? "",
+  );
   const db = createDb(c.env.DB);
 
   // Only the columns this path needs: the operation index can be large and is
@@ -197,7 +163,7 @@ export async function serveVariant(
     return c.json(
       {
         code: "not-found",
-        error: `/v/${projectSlug}/${slug} is not served as "${askedVersion}". Its document is OpenAPI ${row.specVersion}; a 3.0 or 3.1 document is also served as the other, at /3.0 and /3.1.`,
+        error: noSuchVersion(`/v/${projectSlug}/${slug}`, askedVersion ?? "", row.specVersion),
       },
       404,
     );

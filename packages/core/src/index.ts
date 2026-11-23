@@ -30,6 +30,7 @@ export {
   mergeOrder,
   readDefinition,
   readSelection,
+  SCHEMA_URL,
   SELECTION_SHAPE,
   sourceLabel,
   UNNAMED_SOURCE,
@@ -68,9 +69,16 @@ export type {
   AssembledDocument,
   BuiltVariant,
   ConvertedSource,
+  SourceText,
   VariantOptions,
 } from "./pipeline.js";
-export { assembleDocument, buildVariant } from "./pipeline.js";
+export {
+  assembleDocument,
+  assembleTexts,
+  buildVariant,
+  documentText,
+  renderVariantText,
+} from "./pipeline.js";
 // Selections
 export type { LaterAdditions } from "./selection/edit.js";
 export {
@@ -84,6 +92,15 @@ export {
   withLaterAdditions,
 } from "./selection/edit.js";
 export { isValidSlug, resolveSelection, SLUG_PATTERN, slugify } from "./selection/resolve.js";
+// What a URL of a variant asks for
+export type { Representation } from "./serving.js";
+export {
+  CONTENT_TYPES,
+  etagMatches,
+  noSuchVersion,
+  readRepresentation,
+  versionFor,
+} from "./serving.js";
 // The transforms the pipeline is made of
 export type { ConversionLoss, ConvertResult, TargetVersion } from "./transforms/convert/index.js";
 export {

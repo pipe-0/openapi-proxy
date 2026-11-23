@@ -17,7 +17,7 @@ import type { BatchItem } from "drizzle-orm/batch";
 import { GUARDS } from "../shared/plans";
 import { sha256Hex, unpack } from "./codec";
 import type { Db } from "./db/client";
-import { type ProjectNote, type ProjectRow, projects, type SourceRow, sources } from "./db/schema";
+import { type ProjectNote, type ProjectRow, projects, sources } from "./db/schema";
 import type { Env } from "./env";
 import { diffOperations, type SourceChanges } from "./notify";
 import { cheapToCheck, nextCheckAt } from "./schedule";
@@ -142,38 +142,6 @@ export async function assembleProject(parts: SourceDocument[]): Promise<Assemble
     bodyBytes,
     opIndex,
     notes,
-  };
-}
-
-/**
- * The assembled document itself, from the text of each source. Not async on
- * purpose: whoever calls it can put it, and whatever is done with the
- * document after it, under one budget of work (`withBudget`).
- */
-export function documentFrom(
-  rows: Array<Pick<SourceRow, "name" | "pathPrefix">>,
-  texts: string[],
-): {
-  doc: OpenAPIDocument;
-  /** Whether the main source is JSON on one line, for output that is too. */
-  minified: boolean;
-  /** With one source served as it is: its own text, which is the document. */
-  single: string | undefined;
-} {
-  const parsed = rows.map((row, i) => ({ row, spec: parseSpec(texts[i] ?? "") }));
-  const [first] = parsed;
-  if (!first) throw new Error("A project without sources.");
-  const { doc } = assembleDocument(
-    parsed.map(({ row, spec }) => ({
-      name: row.name,
-      doc: spec.doc,
-      pathPrefix: row.pathPrefix ?? undefined,
-    })),
-  );
-  return {
-    doc,
-    minified: first.spec.minified,
-    single: parsed.length === 1 && !first.row.pathPrefix ? texts[0] : undefined,
   };
 }
 

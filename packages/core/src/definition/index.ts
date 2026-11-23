@@ -32,6 +32,6 @@ export {
   readSelection,
   warningsOf,
 } from "./read.js";
-export { definitionSchema } from "./schema.js";
+export { definitionSchema, SCHEMA_URL } from "./schema.js";
 export type { Problem, Shape } from "./shape.js";
 export { keysOf } from "./shape.js";

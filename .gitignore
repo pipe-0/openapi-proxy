@@ -15,3 +15,5 @@ playwright-report/
 # Generated from src/web/content by fumadocs-mdx (pnpm dev, build and typecheck write it).
 .source/
 .tanstack/
+# Copied from public/schema when the command line tool is built.
+packages/cli/schema.json

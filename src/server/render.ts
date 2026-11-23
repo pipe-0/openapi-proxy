@@ -1,19 +1,16 @@
 import {
-  buildVariant,
   ConvertError,
   type DocumentOverrides,
   DocumentTooComplexError,
   MergeError,
+  renderVariantText,
   type Selection,
   type SpecFormat,
   SpecParseError,
-  serialize,
   type TargetVersion,
   TRANSFORM_VERSION,
-  withBudget,
 } from "@openapi-proxy/core";
 import { and, eq } from "drizzle-orm";
-import { documentFrom } from "./assemble";
 import { MAX_PACKED_LENGTH, pack, sha256Hex, unpack } from "./codec";
 import type { Db } from "./db/client";
 import { projects, sources, variantOutputs } from "./db/schema";
@@ -140,15 +137,15 @@ export async function renderVariant(
 
   try {
     const texts = await Promise.all(rows.map((row) => unpack(row.body)));
-    const body = withBudget(() => {
-      const { doc, minified } = documentFrom(rows, texts);
-      const built = buildVariant(doc, {
+    const body = renderVariantText(
+      rows.map((row, i) => ({ name: row.name, pathPrefix: row.pathPrefix, text: texts[i] ?? "" })),
+      {
         selection: target.selection,
         version: target.version,
         overrides: target.overrides,
-      });
-      return serialize(built.doc, format, { minified });
-    });
+        format,
+      },
+    );
     // Compressed before it is answered with, not after: a document that does
     // not fit in a row could never be stored, and would be rendered again for
     // every request.

@@ -25,6 +25,8 @@ export const DEFINITION_LIMITS = {
   /** Tags one side of a selection may list. */
   tags: 2_000,
   name: 100,
+  /** All of a project's documents together, before compression. */
+  documentBytes: 5_000_000,
   /** One operation key, tag, URL or path. */
   text: 2_000,
   pathPrefix: 200,

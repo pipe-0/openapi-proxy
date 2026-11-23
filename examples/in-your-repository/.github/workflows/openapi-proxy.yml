@@ -1,0 +1,30 @@
+# Checks the definition on every pull request, and deploys it from main.
+# Needs one secret: OPENAPI_PROXY_API_KEY, a deploy API key from the app
+# (Workspace, then Deploy API keys).
+name: OpenAPI documents
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  openapi-proxy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # Your own step that writes the OpenAPI document goes here.
+      # - run: npm ci && npm run build:openapi
+
+      - name: Check the definition
+        run: npx @pipe0/openapi-proxy validate
+
+      - name: Deploy
+        if: github.event_name == 'push'
+        run: npx @pipe0/openapi-proxy deploy
+        env:
+          OPENAPI_PROXY_API_KEY: ${{ secrets.OPENAPI_PROXY_API_KEY }}

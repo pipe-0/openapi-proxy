@@ -1,0 +1,110 @@
+openapi: 3.1.0
+info:
+  title: Bookshop API
+  version: 1.4.0
+  description: The catalogue and the orders of the bookshop.
+servers:
+  - url: https://api.bookshop.example
+    description: Production
+  - url: https://core.bookshop.internal
+    description: Inside the company network
+tags:
+  - name: Books
+  - name: Orders
+  - name: Admin
+paths:
+  /books:
+    get:
+      tags: [Books]
+      summary: List books
+      responses:
+        "200":
+          description: A page of books.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Book"
+        default:
+          $ref: "#/components/responses/Error"
+  /books/{id}:
+    get:
+      tags: [Books]
+      summary: Get one book
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The book.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Book"
+        default:
+          $ref: "#/components/responses/Error"
+  /orders:
+    post:
+      tags: [Orders]
+      summary: Place an order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Order"
+      responses:
+        "201":
+          description: The order as placed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        default:
+          $ref: "#/components/responses/Error"
+  /admin/cache:
+    delete:
+      tags: [Admin]
+      summary: Empty the catalogue cache
+      responses:
+        "204":
+          description: Emptied.
+components:
+  responses:
+    Error:
+      description: What went wrong.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Book:
+      type: object
+      required: [id, title]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+    Order:
+      type: object
+      required: [books]
+      properties:
+        id:
+          type: string
+        books:
+          type: array
+          items:
+            $ref: "#/components/schemas/Book"
+    Error:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+        message:
+          type: string

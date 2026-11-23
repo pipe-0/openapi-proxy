@@ -42,7 +42,7 @@ export const GUARDS = {
   apiKeys: 100,
   sourcesPerProject: DEFINITION_LIMITS.sources,
   /** All of a project's sources together, before compression. */
-  projectBytes: 5_000_000,
+  projectBytes: DEFINITION_LIMITS.documentBytes,
 } as const;
 
 /** What each plan costs on the hosted service, as the pricing page shows it. */

@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=https://openapi-proxy.app/schema/definition.v1.json
+#
+# One document at a URL, and two variants of it.
+# The service keeps reading the URL, so the variants stay current by themselves.
+version: 1
+project: bookshop
+
+sources:
+  - url: https://api.bookshop.example/openapi.json
+    follow: true
+
+variants:
+  # For the public docs: the catalogue and orders, nothing that is for staff.
+  public:
+    name: Public docs
+    icon: globe
+    visibility: public
+    include:
+      tags: [Books, Orders]
+    exclude:
+      # Tagged Orders, and for staff only.
+      operations: [GET /orders/export]
+    overrides:
+      servers:
+        - url: https://api.bookshop.example
+          description: Production
+
+  # For a partner who lists the catalogue: read with an API key.
+  partner:
+    name: Catalogue partner
+    icon: users
+    visibility: private
+    include:
+      operations:
+        - GET /books
+        - GET /books/{id}

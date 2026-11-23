@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://openapi-proxy.app/schema/definition.v1.json
+#
+# The selection lives in the repository, next to the code that defines the API.
+# The document is a file the build writes, so a deploy uploads exactly what
+# this commit describes, and nothing is checked afterwards.
+version: 1
+project: bookshop
+
+sources:
+  - file: ./openapi.json
+
+variants:
+  public:
+    name: Public docs
+    visibility: public
+    include:
+      tags: [Books, Orders]
+    exclude:
+      operations: [GET /orders/export]
+    overrides:
+      servers:
+        - url: https://api.bookshop.example

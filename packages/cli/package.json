@@ -1,0 +1,51 @@
+{
+  "name": "@pipe0/openapi-proxy",
+  "version": "0.1.0",
+  "description": "Filter, merge and serve OpenAPI documents from a config file in your repo: a local dev server for your variants, and deploy from CI.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "openapi-proxy": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "schema.json"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "homepage": "https://openapi-proxy.app/docs",
+  "bugs": "https://github.com/pipe-0/openapi-proxy/issues",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pipe-0/openapi-proxy",
+    "directory": "packages/cli"
+  },
+  "keywords": [
+    "openapi",
+    "swagger",
+    "openapi-filter",
+    "openapi-merge",
+    "api-docs",
+    "sdk",
+    "cli",
+    "dev-server",
+    "config-as-code"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "prepack": "pnpm build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@hono/node-server": "^1.19.0",
+    "@openapi-proxy/core": "workspace:*",
+    "@types/node": "^24.10.0",
+    "hono": "^4.13.19",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1",
+    "yaml": "^2.9.1"
+  }
+}

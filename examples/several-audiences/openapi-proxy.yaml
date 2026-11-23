@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=https://openapi-proxy.app/schema/definition.v1.json
+#
+# Two services merged into one API, and a document for each audience.
+version: 1
+project: bookshop
+name: Bookshop
+
+# What every variant says unless it says otherwise.
+visibility: private
+overrides:
+  servers:
+    - url: https://api.bookshop.example
+      description: Production
+
+sources:
+  # The main document: its title and description describe the merged API.
+  - name: core
+    file: ./core.yaml
+    main: true
+  # Mounted under /billing in the real API, so its paths get that prefix.
+  - name: billing
+    file: ./billing.yaml
+    pathPrefix: /billing
+
+variants:
+  # The public reference: no staff routes, and refunds are not for everyone.
+  docs:
+    name: Public docs
+    icon: book
+    visibility: public
+    include:
+      tags: [Books, Orders, Invoices]
+    exclude:
+      operations:
+        - POST /billing/invoices/{id}/refund
+
+  # What the SDK is generated from: the same, for a generator that reads 3.0.
+  # Its URL is /v/bookshop/sdk/3.0.json.
+  sdk:
+    name: SDK
+    icon: package
+    visibility: public
+    include:
+      tags: [Books, Orders, Invoices]
+    overrides:
+      title: Bookshop SDK
+
+  # A partner who only lists the catalogue. Private, as the project says.
+  partner:
+    name: Catalogue partner
+    icon: users
+    include:
+      operations:
+        - GET /books
+        - GET /books/{id}
+
+  # Everything, for the company's own tools. Private, with the internal server.
+  internal:
+    name: Internal
+    icon: lock
+    overrides:
+      servers:
+        - url: https://core.bookshop.internal
+          description: Inside the company network

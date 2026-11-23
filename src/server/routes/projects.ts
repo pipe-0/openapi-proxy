@@ -1,10 +1,9 @@
 import {
+  documentText,
   isValidPathPrefix,
   isValidSlug,
   normalizePathPrefix,
-  serialize,
   slugify,
-  withBudget,
 } from "@openapi-proxy/core";
 import {
   and,
@@ -25,7 +24,6 @@ import { type Context, Hono } from "hono";
 import { PLAN_NAMES } from "../../shared/plans";
 import {
   assembleProject,
-  documentFrom,
   MAX_SOURCES_PER_PROJECT,
   projectAt,
   type SourceDocument,
@@ -583,10 +581,9 @@ projectRoutes.get("/:id/spec", async (c) => {
     .orderBy(sources.position);
   if (rows.length === 0) throw notFound("Source document");
   const texts = await Promise.all(rows.map((row) => unpack(row.body)));
-  const body = withBudget(() => {
-    const { doc, minified, single } = documentFrom(rows, texts);
-    return single ?? serialize(doc, "json", { minified });
-  });
+  const body = documentText(
+    rows.map((row, i) => ({ name: row.name, pathPrefix: row.pathPrefix, text: texts[i] ?? "" })),
+  );
   return new Response(body, {
     headers: {
       "content-type": body.trimStart().startsWith("{")

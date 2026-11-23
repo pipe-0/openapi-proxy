@@ -1,0 +1,61 @@
+openapi: 3.1.0
+info:
+  title: Billing API
+  version: 2.0.0
+servers:
+  - url: https://billing.bookshop.internal
+tags:
+  - name: Invoices
+paths:
+  /invoices:
+    get:
+      tags: [Invoices]
+      summary: List invoices
+      responses:
+        "200":
+          description: Your invoices, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Invoice"
+        default:
+          description: What went wrong.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /invoices/{id}/refund:
+    post:
+      tags: [Invoices]
+      summary: Refund an invoice
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: The refund was started.
+components:
+  schemas:
+    Invoice:
+      type: object
+      required: [id, total]
+      properties:
+        id:
+          type: string
+        total:
+          type: integer
+    # The same name as in the core document, with another meaning: the merge
+    # renames this one to BillingError and every reference follows.
+    Error:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+        retryable:
+          type: boolean
