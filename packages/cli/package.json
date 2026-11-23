@@ -5,7 +5,7 @@
   "license": "MIT",
   "type": "module",
   "bin": {
-    "openapi-proxy": "./dist/cli.js"
+    "openapi-proxy": "dist/cli.js"
   },
   "files": [
     "dist",
@@ -21,7 +21,7 @@
   "bugs": "https://github.com/pipe-0/openapi-proxy/issues",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pipe-0/openapi-proxy",
+    "url": "git+https://github.com/pipe-0/openapi-proxy.git",
     "directory": "packages/cli"
   },
   "keywords": [
