@@ -12,13 +12,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MethodChip } from "@/components/method-chip";
 import { OperationPath } from "@/components/operation-path";
 import { Segmented } from "@/components/segmented";
-import { StatusChip } from "@/components/status-chip";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Kbd } from "@/components/ui/kbd";
 import { cn, isTyping, plural } from "@/lib/utils";
 
-export type PickerView = "all" | "served" | "hidden" | "new";
+export type PickerView = "all" | "served" | "hidden";
 type Grouping = "tag" | "path";
 
 interface Group {
@@ -86,7 +85,6 @@ interface OperationPickerProps {
   view: PickerView;
   onViewChange: (view: PickerView) => void;
   /** Operations that appeared in the source since the selection was last reviewed. */
-  newKeys?: Set<string> | undefined;
   /**
    * In a project merged from several documents, the name of the main one.
    * Operations that came from another are marked with where they came from.
@@ -120,7 +118,6 @@ export function OperationPicker({
   onChange,
   view,
   onViewChange,
-  newKeys,
   mainSource,
   className,
 }: OperationPickerProps) {
@@ -159,7 +156,6 @@ export function OperationPicker({
   const visible = (entry: OperationEntry): boolean => {
     if (view === "served" && !served.has(entry.key)) return false;
     if (view === "hidden" && served.has(entry.key)) return false;
-    if (view === "new" && !newKeys?.has(entry.key)) return false;
     if (needle === "") return true;
     return (
       entry.path.toLowerCase().includes(needle) ||
@@ -178,7 +174,6 @@ export function OperationPicker({
   // What the selection lists is served ("include"), or everything but that is ("exclude").
   const including = selection.mode === "include";
   const servedCount = entries.filter((entry) => served.has(entry.key)).length;
-  const newCount = newKeys ? entries.filter((entry) => newKeys.has(entry.key)).length : 0;
 
   /** Whether a tag also covers the operations that are added to it later. What is served now stays. */
   const followTag = (tag: string, follow: boolean) =>
@@ -279,7 +274,6 @@ export function OperationPicker({
               { value: "all", label: "All" },
               { value: "served", label: "Served" },
               { value: "hidden", label: "Hidden" },
-              ...(newCount > 0 ? [{ value: "new" as const, label: "New", count: newCount }] : []),
             ]}
           />
         </div>
@@ -442,7 +436,6 @@ export function OperationPicker({
                           {entry.source && entry.source !== mainSource && (
                             <span className="shrink-0 text-[12px] text-faint">{entry.source}</span>
                           )}
-                          {newKeys?.has(entry.key) && <StatusChip tone="accent">New</StatusChip>}
                         </div>
                       </li>
                     );

@@ -3,52 +3,34 @@ title: Keeping in sync
 description: How the proxy notices that your API changed, how often it looks, and how to make it look more often.
 ---
 
-Variants are served from a stored copy of your document. The proxy decides how old that copy may get, from one thing: what a check costs your API.
+Variants are served from a stored copy of your document. A timer checks your API for a new one, and how often it does depends on one thing: what a check costs your API.
 
-- **Every 5 minutes**, if your API can say that nothing changed without sending the document again: it sends an `ETag` or `Last-Modified` with the document, or you gave the proxy a version endpoint.
+- **Every 5 minutes**, if your API can say that nothing changed without sending the document again: it sends an `ETag` or `Last-Modified` with the document.
 - **Once an hour**, if it cannot. Every check then makes your API send the whole document, and an OpenAPI document does not change often enough to ask for that more.
 
 There is nothing to configure. A project's settings list its documents and say which of the two applies to each.
 
-Once the copy is older than that, the next request checks your API first and is answered with the result. So a build that runs once a day gets today's document, not the one from the day before.
+A request for a variant never checks. It is answered from the stored copy at once, whatever your API is doing at that moment.
 
-- Exactly one request does the checking, however many arrive at once. The others wait for its result, or get the previous copy if it only just became due.
-- No request waits longer than 5 seconds. If your API is slower, the check carries on in the background and the request gets the previous copy.
-- A failing API is never waited on. Requests get the last good copy, and the proxy retries every five minutes until it is back. Checking for updates by hand retries at once.
-- Once an hour the proxy also checks every project that has variants and that nobody has requested lately, so you hear about changes before your next build does.
+- A failing API is checked again five minutes later, and once an hour after that until it is back. Variants keep being served from the last good copy.
+- Only projects with at least one variant are checked.
 
 ## Right after a deploy
 
-When you know your API just changed, say so, and the proxy checks at once:
+When you know your API just changed, say so, and the proxy checks at once: **Check for updates now**, in the project's settings. The answer says which operations were added, removed or changed.
 
-- **Check for updates now**, in the project's settings.
-- From a pipeline, with an [API key](/docs/api-and-mcp):
-
-```sh
-curl -X POST https://proxy.example.com/api/projects/$PROJECT_ID/check \
-  -H "Authorization: Bearer $OPENAPI_PROXY_API_KEY"
-```
-
-- From an agent, with the `check_project` tool.
-
-The answer says which operations were added, removed or changed. Readers of a public URL cannot ask for a check: they are anonymous, and how often your API is called is not theirs to decide.
+Readers of a public URL cannot ask for a check: they are anonymous, and how often your API is called is not theirs to decide.
 
 ## What a check does
 
 A check stops at the first step that answers "has the document changed?":
 
-1. **Version endpoint**, if you set one. The proxy asks it for the current version. The same answer as last time means nothing is downloaded. See [A version endpoint](/docs/version-endpoint).
-2. **Conditional request**, if your API sent an `ETag` or `Last-Modified` with the document. The proxy asks "anything newer than this?", and a `304` answer carries no body. See [Sending an ETag](/docs/etag).
-3. **Download**, otherwise. The proxy fetches the whole document and compares it with the stored one. If the bytes are the same, nothing else happens.
+1. **Conditional request**, if your API sent an `ETag` or `Last-Modified` with the document. The proxy asks "anything newer than this?", and a `304` answer carries no body. See [Sending an ETag](/docs/etag).
+2. **Download**, otherwise. The proxy fetches the whole document and compares it with the stored one. If the bytes are the same, nothing else happens.
 
 ## What it costs to do nothing
 
-Without an ETag or a version endpoint everything still works. The difference:
-
-- **Changes show up within the hour**, not within five minutes, unless you use Check for updates now.
-- **One request an hour is slower.** The request that triggers the check waits for a full download instead of a `304`. For a document of a few megabytes from a fast server that is usually under a second. If your server needs more than 5 seconds (some frameworks build the document on the first request after a deploy), that request gets the previous copy and the new one is served from the next request on.
-
-Nobody ever gets an error because of it. An ETag takes the waiting away and makes the proxy look twelve times as often, usually with one line of code.
+Without an ETag everything still works. Changes show up within the hour, not within five minutes, unless you use Check for updates now. An ETag makes the proxy look twelve times as often, usually with one line of code.
 
 ## In a project with several documents
 

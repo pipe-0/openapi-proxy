@@ -5,8 +5,6 @@ import type { Env } from "./env";
 import { hasChanges, notifyOfChanges } from "./notify";
 
 export interface CheckOptions {
-  /** Skip the version shortcut and look at the document itself. */
-  force?: boolean;
   /** The origin of the request that caused the check, for links in emails. */
   origin?: string;
   /** Hand follow-up work to the runtime (`waitUntil`) instead of waiting for it. */
@@ -15,9 +13,9 @@ export interface CheckOptions {
 
 /**
  * Compare a project with its source and tell people what changed. Every path
- * that looks at a source goes through here: a reader's request, the hourly
- * run, and "Check now". That is what makes a change get reported exactly
- * once, whoever happens to notice it first.
+ * that looks at a source goes through here: the timer and "Check now". That
+ * is what makes a change get reported exactly once, whichever notices it
+ * first.
  */
 export async function checkProject(
   db: Db,
@@ -26,9 +24,7 @@ export async function checkProject(
   now: number,
   options: CheckOptions = {},
 ): Promise<RefreshResult> {
-  const result = await refreshProject(db, env, project, now, {
-    ...(options.force ? { force: true } : {}),
-  });
+  const result = await refreshProject(db, env, project, now);
 
   if (result.changed && hasChanges(result.changes)) {
     const telling = notifyOfChanges(

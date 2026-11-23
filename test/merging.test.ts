@@ -9,6 +9,7 @@ import {
   login,
   MAIL,
   mailbox,
+  runTimer,
   SPEC,
   SPEC_URL,
   serveSpec,
@@ -448,7 +449,8 @@ describe("keeping a merged project current", () => {
     const next = structuredClone(BILLING) as typeof BILLING & { paths: Record<string, unknown> };
     next.paths["/refunds"] = { post: { tags: ["billing"], responses: ok } };
     serveSpec(next, {}, BILLING_URL);
-    await sql("UPDATE projects SET fetched_at = ?", Date.now() - 3 * 24 * 60 * 60 * 1000);
+    await sql("UPDATE projects SET next_check_at = ?", Date.now() - 1);
+    await runTimer();
 
     const response = await call(everything.path);
     expect(response.headers.get("x-proxy-source-status")).toBe("fresh");
@@ -470,7 +472,8 @@ describe("keeping a merged project current", () => {
     const next = structuredClone(SPEC) as typeof SPEC & { paths: Record<string, unknown> };
     next.paths["/owners"] = { get: { tags: ["pets"], responses: ok } };
     serveSpec(next);
-    await sql("UPDATE projects SET fetched_at = ?", Date.now() - 3 * 24 * 60 * 60 * 1000);
+    await sql("UPDATE projects SET next_check_at = ?", Date.now() - 1);
+    await runTimer();
 
     const response = await call(everything.path);
     expect(response.status).toBe(200);

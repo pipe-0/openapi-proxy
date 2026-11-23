@@ -76,7 +76,8 @@ export function sourceStatus(project: Project, now = Date.now()) {
       detail: "The last check of the source failed. The last good copy is being served.",
     };
   }
-  if (now - project.fetchedAt < project.checkIntervalSeconds * 1000) {
+  // A little more than one interval: the timer comes round every few minutes.
+  if (now - project.fetchedAt < project.checkIntervalSeconds * 1000 + 10 * 60_000) {
     return {
       tone: "ok" as const,
       label: "In sync",
@@ -85,18 +86,18 @@ export function sourceStatus(project: Project, now = Date.now()) {
   }
   return {
     tone: "neutral" as const,
-    label: "Idle",
-    detail: "Will be checked against the source on the next request.",
+    label: "Due",
+    detail: "The next check is due. It runs by itself within a few minutes.",
   };
 }
 
-/** Whether the source has moved in a way this variant's owner should look at. */
-export function driftOf(variant: Variant): { added: number; missing: number } {
-  const { drift } = variant;
-  return {
-    added: drift.newOperations.length,
-    missing:
-      drift.missingSelectedOperations.filter((key) => !drift.acknowledged.includes(key)).length +
-      drift.missingSelectedTags.length,
-  };
+/** How many names in this variant's selection the document has nothing for. */
+export function notFoundCount(variant: Variant): number {
+  const { include, exclude } = variant.notFound;
+  return (
+    include.operations.length +
+    include.tags.length +
+    exclude.operations.length +
+    exclude.tags.length
+  );
 }

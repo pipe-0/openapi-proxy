@@ -55,13 +55,12 @@ import { isNotificationScope } from "../notify";
 import { planOf } from "../plans";
 import { urlPrefix } from "../public-url";
 import { contactsSource } from "../rate-limit";
-import { CHECK_EVERY_MS } from "../schedule";
+import { checkInterval, nextCheckAt } from "../schedule";
 import { headerProblem, MAX_SOURCE_HEADERS, openHeaders, sealHeaders } from "../secrets";
 import {
   type FetchedSpec,
   fetchSpec,
   packSpec,
-  probeVersion,
   UpstreamError,
   validateSourceUrl,
 } from "../upstream";
@@ -101,10 +100,8 @@ function sourceToApi(source: SourceInfo) {
 
 /** A project as the app sees it, with its sources in order (the first is the main one). */
 export function projectToApi(project: ProjectRow, projectSources: SourceInfo[], prefix: string) {
-  const { organizationId: _org, checkClaimedAt: _claim, opIndex, ...rest } = project;
-  const every = projectSources.every((source) => source.cheap)
-    ? CHECK_EVERY_MS.cheap
-    : CHECK_EVERY_MS.costly;
+  const { organizationId: _org, nextCheckAt: _next, opIndex, ...rest } = project;
+  const every = checkInterval(projectSources.map((source) => Boolean(source.cheap)));
   return {
     ...rest,
     /** How long the service lets a copy age before it checks again. Not a setting. */
@@ -530,6 +527,14 @@ projectRoutes.post("/", contactsSource, async (c) => {
         slug: await availableSlug(db, organizationId, suggestSlug(main.fetched.title, main.url)),
         ...assembled,
         fetchedAt: now,
+        nextCheckAt: nextCheckAt({
+          now,
+          cheap: fetched.map(({ fetched: document }) =>
+            Boolean(document.etag || document.lastModified),
+          ),
+          failed: false,
+          wasFailing: false,
+        }),
         createdAt: now,
       })
       .returning();
@@ -632,11 +637,7 @@ projectRoutes.put("/:id/notifications", async (c) => {
 projectRoutes.post("/:id/check", contactsSource, async (c) => {
   const db = createDb(c.env.DB);
   const project = await findProject(db, c.var.organizationId, c.req.param("id"));
-  // A manual check asks for the truth: skip the version shortcut.
-  const result = await checkProject(db, c.env, project, Date.now(), {
-    ...followUp(c),
-    force: true,
-  });
+  const result = await checkProject(db, c.env, project, Date.now(), followUp(c));
   return c.json({
     changed: result.changed,
     addedOps: result.addedOps,
@@ -736,7 +737,7 @@ projectRoutes.post("/:id/sources", contactsSource, async (c) => {
 const alreadyPart = () =>
   new ApiError(409, "conflict", "This document is already part of the project.");
 
-/** Change how a document is fetched or merged in: its name, path prefix, credentials, version endpoint. */
+/** Change how a document is fetched or merged in: its name, path prefix, credentials. */
 projectRoutes.patch("/:id/sources/:sourceId", contactsSource, async (c) => {
   const db = createDb(c.env.DB);
   const project = await findProject(db, c.var.organizationId, c.req.param("id"));
@@ -746,7 +747,6 @@ projectRoutes.patch("/:id/sources/:sourceId", contactsSource, async (c) => {
   const fields: Partial<typeof sources.$inferInsert> = {};
   /** What changes about this source as a part of the merge. */
   const change: Partial<SourceDocument> = {};
-  let versionChanged = false;
 
   if (payload.name !== undefined) {
     const name = typeof payload.name === "string" ? payload.name.trim() : "";
@@ -780,8 +780,6 @@ projectRoutes.patch("/:id/sources/:sourceId", contactsSource, async (c) => {
       verifiedAt: now,
       lastStatus: "ok",
       lastError: null,
-      // Different credentials can mean a different document under the same version.
-      lastKnownVersion: null,
     });
     Object.assign(change, {
       bodyHash: fetched.bodyHash,
@@ -790,35 +788,9 @@ projectRoutes.patch("/:id/sources/:sourceId", contactsSource, async (c) => {
     });
   }
 
-  if (payload.versionUrl !== undefined) {
-    if (payload.versionUrl === null || payload.versionUrl === "") {
-      fields.versionUrl = null;
-    } else {
-      const versionUrl = validateSourceUrl(payload.versionUrl).href;
-      const sameOrigin = new URL(versionUrl).origin === new URL(source.url).origin;
-      const credentials = sameOrigin
-        ? await openHeaders(c.env.AUTH_SECRET, fields.headers ?? source.headers)
-        : {};
-      if ((await probeVersion(versionUrl, credentials)) === undefined) {
-        throw new ApiError(422, "no-version", "No version could be read from that URL.", {
-          detail:
-            "It should answer HEAD or GET with a version header (X-API-Version, ETag) or a small JSON or text body.",
-        });
-      }
-      fields.versionUrl = versionUrl;
-    }
-    // Whatever version we knew belonged to the old endpoint. The check below
-    // records a new one together with a document that is known to match it.
-    // Saving the endpoint (even unchanged) also gives it a second chance after
-    // it was caught out.
-    fields.lastKnownVersion = null;
-    fields.versionMismatchAt = null;
-    versionChanged = true;
-  }
-
   if (Object.keys(fields).length === 0) throw badRequest("Nothing to update.");
 
-  let updated = await editSources(c, db, project.id, (parts) => {
+  const updated = await editSources(c, db, project.id, (parts) => {
     if (!parts.some((part) => part.id === source.id)) throw notFound("Source");
     const clash = (part: StoredPart) =>
       part.id !== source.id && part.name.toLowerCase() === change.name?.toLowerCase();
@@ -835,10 +807,6 @@ projectRoutes.patch("/:id/sources/:sourceId", contactsSource, async (c) => {
       ],
     };
   });
-  if (versionChanged) {
-    updated = (await checkProject(db, c.env, updated, now, { ...followUp(c), force: true }))
-      .project;
-  }
   return respond(c, db, updated);
 });
 

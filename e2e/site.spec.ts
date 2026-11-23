@@ -252,8 +252,8 @@ test("the docs explain checks, and the Source page points to the right page", as
   // The pages are listed beside it, with search above them.
   const sidebar = page.locator("#nd-sidebar");
   await expect(sidebar.getByRole("button", { name: /Search/ })).toBeVisible();
-  await sidebar.getByRole("link", { name: "A version endpoint" }).click();
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("A version endpoint");
+  await sidebar.getByRole("link", { name: "Keeping in sync" }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Keeping in sync");
   await shot(page, "site-04-docs", { fullPage: true });
   await sidebar.getByRole("link", { name: "Environments and servers" }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Environments and servers");
@@ -263,11 +263,11 @@ test("the docs explain checks, and the Source page points to the right page", as
   await signIn(page);
   const projects = (await (await page.request.get("/api/projects")).json()) as Array<{
     id: string;
-    sources: Array<{ versionUrl: string | null }>;
+    sources: Array<{ validator: string | null }>;
   }>;
-  // A project of one document, which is shown opened, without a version endpoint.
+  // A project of one document that sends no validator.
   const project = projects.find(
-    (candidate) => candidate.sources.length === 1 && candidate.sources[0]?.versionUrl === null,
+    (candidate) => candidate.sources.length === 1 && candidate.sources[0]?.validator === null,
   );
   await page.goto(`/p/${project?.id}/settings`);
   await page.getByRole("table").getByRole("button").first().click();
@@ -275,10 +275,6 @@ test("the docs explain checks, and the Source page points to the right page", as
   await expect(page.getByRole("link", { name: "How to send one" })).toHaveAttribute(
     "href",
     "/docs/etag",
-  );
-  await expect(page.getByRole("link", { name: "What it can return" })).toHaveAttribute(
-    "href",
-    "/docs/version-endpoint",
   );
 });
 

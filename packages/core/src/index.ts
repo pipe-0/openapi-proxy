@@ -23,9 +23,9 @@ export { mapSchema, mapSchemas } from "./document/schemas.js";
 export type { SerializeOptions } from "./document/serialize.js";
 export { serialize } from "./document/serialize.js";
 // Looking at a document
-export { computeDrift } from "./inspect/drift.js";
 export { fingerprintOperations, sameScheme } from "./inspect/fingerprint.js";
 export { indexOperations } from "./inspect/operations.js";
+export { unmatchedNames } from "./inspect/unmatched.js";
 // From sources to what is served
 export type {
   AssembledDocument,
@@ -58,7 +58,6 @@ export { applyOverrides, OVERRIDE_LIMITS, readOverrides } from "./transforms/ove
 export { applyVariant } from "./transforms/select.js";
 export type {
   ComponentGroup,
-  Drift,
   FilterResult,
   FilterStats,
   HttpMethod,
@@ -71,5 +70,6 @@ export type {
   SelectionMode,
   SpecFormat,
   TagEntry,
+  UnmatchedNames,
 } from "./types.js";
 export { COMPONENT_GROUPS, HTTP_METHODS, isJsonObject, TRANSFORM_VERSION } from "./types.js";

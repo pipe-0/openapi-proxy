@@ -120,7 +120,7 @@ test("from a URL to a served variant", async ({ page, request }) => {
   ).toBeVisible();
 });
 
-test("a project's documents: version endpoint and URL prefix", async ({ page, request }) => {
+test("a project's documents and its URL prefix", async ({ page, request }) => {
   // A project opens on its documents.
   await signIn(page);
   await expect(page).toHaveURL(/\/p\/prj_[a-z0-9]+\/settings$/);
@@ -133,17 +133,7 @@ test("a project's documents: version endpoint and URL prefix", async ({ page, re
   await page.getByRole("button", { name: "Pipe0 API", exact: true }).click();
   await shot(page, "06-source-settings");
 
-  // An endpoint that reports nothing is refused, with the reason.
-  await page.getByLabel("Version endpoint").fill(fixtureUrl("/nothing-here"));
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("No version could be read");
-
-  // Saved: the sheet closes, and the list says how this document is checked now.
-  await page.getByLabel("Version endpoint").fill(fixtureUrl("/version"));
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByRole("cell", { name: "Version endpoint" })).toBeVisible();
-  await page.getByRole("button", { name: "Pipe0 API", exact: true }).click();
-  await expect(page.getByText("x-api-version: 1")).toBeVisible();
+  await expect(page.getByText(/Each check downloads the whole document/)).toBeVisible();
   await page.keyboard.press("Escape");
 
   // Renaming the prefix moves every variant URL.

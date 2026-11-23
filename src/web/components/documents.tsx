@@ -59,7 +59,6 @@ const sheet = "w-full gap-0 data-[side=right]:sm:max-w-lg";
 
 /** How a check finds out whether this document changed, in a word or two. */
 function checkedBy(source: Source): string {
-  if (source.versionUrl && !source.versionMismatchAt) return "Version endpoint";
   if (source.validator === "etag") return "ETag";
   if (source.validator === "last-modified") return "Last-Modified";
   return "Full download";
@@ -171,8 +170,8 @@ export function Documents({ project }: { project: Project }) {
                 <DocsLink slug="keeping-in-sync">How checks work</DocsLink>
               ) : (
                 <>
-                  For checks every 5 minutes, add an ETag or a version endpoint.{" "}
-                  <DocsLink slug="keeping-in-sync">How</DocsLink>
+                  For checks every 5 minutes, send an ETag with it.{" "}
+                  <DocsLink slug="etag">How</DocsLink>
                 </>
               )}
             </span>
@@ -214,7 +213,6 @@ function DocumentSheet({
 
   const [name, setName] = useState(source.name);
   const [pathPrefix, setPathPrefix] = useState(source.pathPrefix ?? "");
-  const [versionUrl, setVersionUrl] = useState(source.versionUrl ?? "");
   const [headers, setHeaders] = useState<HeaderDraft[]>(() =>
     source.headerNames.map((headerName) => newHeader(headerName, true)),
   );
@@ -230,9 +228,6 @@ function DocumentSheet({
     ...(pathPrefix.trim() !== (source.pathPrefix ?? "")
       ? { pathPrefix: pathPrefix.trim() || null }
       : {}),
-    ...(versionUrl.trim() !== (source.versionUrl ?? "")
-      ? { versionUrl: versionUrl.trim() || null }
-      : {}),
     ...(headersChanged ? { headers: headerInput } : {}),
   };
   const dirty = Object.keys(changes).length > 0;
@@ -247,18 +242,15 @@ function DocumentSheet({
     },
   });
   const act = useMutation({
-    mutationFn: (action: "main" | "remove" | "trust") => {
-      if (action === "main") return api.makeMainSource(project.id, source.id);
-      if (action === "remove") return api.removeSource(project.id, source.id);
-      // Saving the endpoint again, unchanged, is how it gets a second chance.
-      return api.updateSource(project.id, source.id, { versionUrl: source.versionUrl });
-    },
+    mutationFn: (action: "main" | "remove") =>
+      action === "main"
+        ? api.makeMainSource(project.id, source.id)
+        : api.removeSource(project.id, source.id),
     onSuccess: (updated, action) => {
       update(updated);
       if (action === "remove") toast.success(`${source.name} was taken out`);
       if (action === "main") toast.success(`${source.name} is the main document now`);
-      if (action === "trust") toast.success("Version endpoint is in use again");
-      if (action !== "trust") onClose();
+      onClose();
     },
     onError: (error) => toast.error(errorMessage(error)),
   });
@@ -328,54 +320,6 @@ function DocumentSheet({
                 </Field>
               </>
             )}
-
-            <Field
-              label="Version endpoint"
-              htmlFor={id("version")}
-              hint={
-                <>
-                  Optional. A URL that says which build is live, so a check does not have to
-                  download the document.{" "}
-                  <DocsLink slug="version-endpoint">What it can return</DocsLink>
-                  {source.versionUrl && !source.versionMismatchAt && source.lastKnownVersion && (
-                    <>
-                      {" "}
-                      Now reporting{" "}
-                      <span className="font-medium text-foreground">{source.lastKnownVersion}</span>
-                      .
-                    </>
-                  )}
-                </>
-              }
-            >
-              <div className="space-y-2">
-                <Input
-                  id={id("version")}
-                  value={versionUrl}
-                  onChange={(event) => setVersionUrl(event.target.value)}
-                  placeholder="https://api.example.com/version"
-                  className="text-[13px] md:text-[13px]"
-                  spellCheck={false}
-                />
-                {source.versionUrl && source.versionMismatchAt && (
-                  <Notice
-                    tone="warn"
-                    action={
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        loading={act.isPending && act.variables === "trust"}
-                        onClick={() => act.mutate("trust")}
-                      >
-                        Use it again
-                      </Button>
-                    }
-                  >
-                    It reported one version for two different documents, so it is not used.
-                  </Notice>
-                )}
-              </div>
-            </Field>
 
             <Field
               label="Credentials"

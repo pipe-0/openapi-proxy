@@ -14,9 +14,9 @@ import type { Env } from "./env";
 import { HeaderSecretError, openHeaders } from "./secrets";
 
 /**
- * Talking to a source: fetching its document, asking its version endpoint,
- * and the cheapest-first check of whether it has changed. What is done with
- * the answers (assembling a project's document, storing it) is in assemble.ts.
+ * Talking to a source: fetching its document, and the cheapest-first check
+ * of whether it has changed. What is done with the answers (assembling a
+ * project's document, storing it) is in assemble.ts.
  */
 
 /**
@@ -24,10 +24,7 @@ import { HeaderSecretError, openHeaders } from "./secrets";
  * Bounded by Worker memory and CPU, not by storage.
  */
 export const MAX_SOURCE_BYTES = GUARDS.projectBytes;
-/** A version endpoint is trusted for this long before the document itself is compared again. */
-export const MAX_UNVERIFIED_MS = 24 * 60 * 60 * 1000;
-
-/** For the small requests: version probes and redirects. */
+/** For a request that is not for the document itself. */
 const FETCH_TIMEOUT_MS = 10_000;
 /**
  * For the document itself. Generous on purpose: frameworks build the document
@@ -182,19 +179,24 @@ async function readCapped(response: Response, maxBytes: number): Promise<Uint8Ar
   return bytes;
 }
 
-export interface FetchedSpec {
+/** A document that was read and found to be one this service can work with. */
+export interface InspectedSpec {
   body: string;
   /** The body, parsed. */
   doc: OpenAPIDocument;
   bodyHash: string;
   bodyBytes: number;
-  etag: string | null;
-  lastModified: string | null;
   title: string | null;
   apiVersion: string | null;
   specVersion: string;
   /** How many operations it defines. */
   operations: number;
+}
+
+/** A document as a source sent it, with the validators it came with. */
+export interface FetchedSpec extends InspectedSpec {
+  etag: string | null;
+  lastModified: string | null;
 }
 
 export const megabytes = (bytes: number) => `${(bytes / 1_000_000).toFixed(1)} MB`;
@@ -255,6 +257,21 @@ export async function fetchSpec(
   if (knownHash !== undefined && bodyHash === knownHash) {
     return { identical: true, etag, lastModified };
   }
+  return { ...inspectDocument(bytes, bodyHash), etag, lastModified };
+}
+
+/**
+ * Read a document from its bytes and decide whether it is one this service
+ * can work with: an OpenAPI document in one file. The same for a document
+ * that was fetched and for one that was uploaded.
+ */
+export function inspectDocument(bytes: Uint8Array, bodyHash: string): InspectedSpec {
+  if (bytes.byteLength > MAX_SOURCE_BYTES) {
+    throw new UpstreamError(
+      "too-large",
+      `The source is larger than the ${megabytes(MAX_SOURCE_BYTES)} limit.`,
+    );
+  }
   const body = new TextDecoder().decode(bytes);
 
   // Reading the document and looking through it, under one budget of work.
@@ -290,110 +307,11 @@ export async function fetchSpec(
     doc: parsed.doc,
     bodyHash,
     bodyBytes: bytes.byteLength,
-    etag,
-    lastModified,
     title: typeof info?.title === "string" && info.title.trim() !== "" ? info.title.trim() : null,
     apiVersion: typeof info?.version === "string" ? info.version : null,
     specVersion: parsed.specVersion,
     operations,
   };
-}
-
-const VERSION_HEADERS = [
-  "x-api-version",
-  "api-version",
-  "x-version",
-  "x-revision",
-  "etag",
-  "last-modified",
-];
-const VERSION_BODY_KEYS = [
-  "version",
-  "apiVersion",
-  "api_version",
-  "revision",
-  "sha",
-  "commit",
-  "build",
-];
-
-function versionFromHeaders(headers: Headers): string | undefined {
-  for (const name of VERSION_HEADERS) {
-    const value = headers.get(name);
-    if (value) return `${name}: ${value}`;
-  }
-  return undefined;
-}
-
-function versionFromBody(body: string): string | undefined {
-  const text = body.trim();
-  if (text === "") return undefined;
-  try {
-    const parsed: unknown = JSON.parse(text);
-    if (typeof parsed === "string" || typeof parsed === "number") return String(parsed);
-    if (typeof parsed !== "object" || parsed === null) return undefined;
-    const record = parsed as Record<string, unknown>;
-    for (const key of VERSION_BODY_KEYS) {
-      const value = record[key];
-      if (typeof value === "string" || typeof value === "number") return `${key}: ${value}`;
-    }
-    const info = record.info;
-    if (typeof info === "object" && info !== null) {
-      const version = (info as Record<string, unknown>).version;
-      if (typeof version === "string") return `info.version: ${version}`;
-    }
-    return undefined;
-  } catch {
-    // Plain text such as "1.4.2" or a git sha.
-    return text.length <= 200 && !text.includes("\n") ? text : undefined;
-  }
-}
-
-/**
- * Ask a lightweight endpoint which version of the API is live, without
- * downloading the document. A HEAD request is tried first, so the endpoint can
- * be the spec URL itself if it answers HEAD with a version header. Otherwise a
- * GET is made and its headers, then a small body, are inspected.
- *
- * Returns undefined when no version can be read, in which case the caller
- * compares the document itself.
- */
-export async function probeVersion(
-  versionUrl: string,
-  credentials: Record<string, string>,
-): Promise<string | undefined> {
-  const accept = { accept: "application/json, text/plain, */*" };
-  try {
-    const head = await send(versionUrl, "HEAD", accept, credentials);
-    if (head.ok) {
-      const version = versionFromHeaders(head.headers);
-      if (version) return version;
-    }
-
-    const response = await send(versionUrl, "GET", accept, credentials);
-    if (!response.ok) {
-      await response.body?.cancel();
-      return undefined;
-    }
-    const version = versionFromHeaders(response.headers);
-    if (version) {
-      await response.body?.cancel();
-      return version;
-    }
-    const bytes = await readCapped(response, 16_384);
-    return bytes ? versionFromBody(new TextDecoder().decode(bytes)) : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/** Credentials for the version endpoint: the source's own, when it lives on the same origin. */
-function versionCredentials(
-  source: Pick<SourceRow, "url" | "versionUrl">,
-  credentials: Record<string, string>,
-): Record<string, string> {
-  if (!source.versionUrl) return {};
-  return new URL(source.versionUrl).origin === new URL(source.url).origin ? credentials : {};
 }
 
 /** A source as a check needs it: everything but the stored document. */
@@ -410,55 +328,20 @@ export type SourceCheck =
 /**
  * Find out whether a source has changed, cheapest check first:
  *
- * 1. Version endpoint, if configured. Same version as last time means nothing
- *    is downloaded. Not trusted forever: the document is compared at least
- *    once per MAX_UNVERIFIED_MS, because many APIs change without bumping a
- *    version. If that comparison finds a new document behind an old version,
- *    the endpoint has proven that it cannot be relied on and is ignored from
- *    then on.
- * 2. Conditional GET with the stored validators. A 304 transfers no body.
- * 3. Download. The same bytes as the stored copy end here, unparsed.
+ * 1. Conditional GET with the stored validators. A 304 transfers no body.
+ * 2. Download. The same bytes as the stored copy end here, unparsed.
  *
- * `force` ("Check now") skips step 1. Nothing is written here.
+ * Nothing is written here.
  */
-export async function checkSource(
-  env: Env,
-  source: SourceMeta,
-  now: number,
-  options: { force?: boolean } = {},
-): Promise<SourceCheck> {
+export async function checkSource(env: Env, source: SourceMeta, now: number): Promise<SourceCheck> {
   try {
     const credentials = await openHeaders(env.AUTH_SECRET, source.headers);
-
-    let observedVersion: string | undefined;
-    const askVersion = () =>
-      source.versionUrl
-        ? probeVersion(source.versionUrl, versionCredentials(source, credentials))
-        : Promise.resolve(undefined);
-    if (source.versionUrl && source.versionMismatchAt === null) {
-      observedVersion = await askVersion();
-      if (
-        !options.force &&
-        observedVersion !== undefined &&
-        observedVersion === source.lastKnownVersion &&
-        now - source.verifiedAt < MAX_UNVERIFIED_MS
-      ) {
-        return { outcome: "same", fields: { lastStatus: "ok", lastError: null } };
-      }
-    }
-
     const fetched = await fetchSpec(source.url, credentials, {
       validators: { etag: source.upstreamEtag, lastModified: source.upstreamLastModified },
       knownHash: source.bodyHash,
     });
 
-    const checked = {
-      verifiedAt: now,
-      lastStatus: "ok" as const,
-      lastError: null,
-      // The version we saw just before this fetch describes at least this document.
-      lastKnownVersion: observedVersion ?? null,
-    };
+    const checked = { verifiedAt: now, lastStatus: "ok" as const, lastError: null };
     if (fetched === "not-modified") return { outcome: "same", fields: checked };
     if ("identical" in fetched) {
       // Same bytes; the validators may still be new (a source that started sending an ETag).
@@ -472,24 +355,11 @@ export async function checkSource(
       };
     }
 
-    // The same version as last time, and a different document. Either a deploy
-    // landed between the two requests (then the version has moved by now), or
-    // the endpoint does not change when the document does.
-    let versionMismatchAt = source.versionMismatchAt;
-    if (
-      observedVersion !== undefined &&
-      observedVersion === source.lastKnownVersion &&
-      (await askVersion()) === observedVersion
-    ) {
-      versionMismatchAt = now;
-    }
-
     return {
       outcome: "new",
       fetched,
       fields: {
         ...checked,
-        versionMismatchAt,
         apiVersion: fetched.apiVersion,
         specVersion: fetched.specVersion,
         upstreamEtag: fetched.etag,

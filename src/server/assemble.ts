@@ -12,7 +12,7 @@ import {
   versionFamily,
   withBudget,
 } from "@openapi-proxy/core";
-import { and, eq, exists, isNull, lte, or, sql } from "drizzle-orm";
+import { and, eq, exists, sql } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import { GUARDS } from "../shared/plans";
 import { sha256Hex, unpack } from "./codec";
@@ -20,7 +20,7 @@ import type { Db } from "./db/client";
 import { type ProjectNote, type ProjectRow, projects, type SourceRow, sources } from "./db/schema";
 import type { Env } from "./env";
 import { diffOperations, type SourceChanges } from "./notify";
-import { cheapToCheck } from "./schedule";
+import { cheapToCheck, nextCheckAt } from "./schedule";
 import {
   checkSource,
   describeFailure,
@@ -226,9 +226,6 @@ export const sourceMeta = {
   url: sources.url,
   headers: sources.headers,
   pathPrefix: sources.pathPrefix,
-  versionUrl: sources.versionUrl,
-  lastKnownVersion: sources.lastKnownVersion,
-  versionMismatchAt: sources.versionMismatchAt,
   apiVersion: sources.apiVersion,
   specVersion: sources.specVersion,
   upstreamEtag: sources.upstreamEtag,
@@ -276,7 +273,8 @@ export const projectAt = (db: Db, projectId: string, bodyHash: string) =>
  * assembled again.
  *
  * A source that fails keeps its last good copy and the project keeps being
- * served; the failure is recorded and retried after a pause.
+ * served; the failure is recorded, and the next check comes sooner or later
+ * depending on how long it has been failing (schedule.ts).
  *
  * Everything this writes is conditional on the project still being as it was
  * found. Of two checks that overlap, exactly one stores and reports. A check
@@ -288,7 +286,6 @@ export async function refreshProject(
   env: Env,
   project: ProjectRow,
   now: number,
-  options: { force?: boolean } = {},
 ): Promise<RefreshResult> {
   const unchanged = (current: ProjectRow): RefreshResult => ({
     changed: false,
@@ -307,7 +304,7 @@ export async function refreshProject(
   };
 
   const metas = await sourcesOf(db, project.id);
-  const checks = await Promise.all(metas.map((source) => checkSource(env, source, now, options)));
+  const checks = await Promise.all(metas.map((source) => checkSource(env, source, now)));
 
   const failures: string[] = [];
   metas.forEach((source, i) => {
@@ -316,12 +313,23 @@ export async function refreshProject(
       failures.push(metas.length > 1 ? `${source.name}: ${check.error}` : check.error);
     }
   });
-  // Every source answered: the interval starts over. Otherwise the claim stays,
-  // which is what spaces out the retries (schedule.ts says by how much).
-  const status = (problems: string[]) =>
-    problems.length === 0
-      ? { fetchedAt: now, checkClaimedAt: null, lastStatus: "ok" as const, lastError: null }
-      : { lastStatus: "error" as const, lastError: problems.join(" "), checkClaimedAt: now };
+  // Whether each source can be checked without a download, as of this check:
+  // the validators a source sends can appear and disappear.
+  const cheap = metas.map((source, i) => {
+    const check = checks[i];
+    const seen = check && check.outcome !== "failed" ? check.fields : {};
+    const etag = "upstreamEtag" in seen ? seen.upstreamEtag : source.upstreamEtag;
+    const modified =
+      "upstreamLastModified" in seen ? seen.upstreamLastModified : source.upstreamLastModified;
+    return Boolean(etag || modified);
+  });
+  const status = (problems: string[]) => {
+    const failed = problems.length > 0;
+    const next = nextCheckAt({ now, cheap, failed, wasFailing: project.lastStatus === "error" });
+    return failed
+      ? { lastStatus: "error" as const, lastError: problems.join(" "), nextCheckAt: next }
+      : { fetchedAt: now, lastStatus: "ok" as const, lastError: null, nextCheckAt: next };
+  };
 
   const found = and(eq(projects.id, project.id), eq(projects.bodyHash, project.bodyHash));
   /** What to record on each source that has no new document, once the project is at `hash`. */
@@ -445,32 +453,3 @@ export async function refreshProject(
     project: updated,
   };
 }
-
-/**
- * Take the right to check a project against its sources. Many requests can
- * notice a stale project at once; exactly one of them wins the claim and
- * talks to the sources. The claim expires on its own, so a crashed check
- * cannot block later ones, and a failed one is not retried before it expires.
- */
-export async function claimCheck(
-  db: Db,
-  projectId: string,
-  now: number,
-  /** How long the claim before this one has to be past. */
-  since = CHECK_CLAIM_MS,
-): Promise<boolean> {
-  const claimed = await db
-    .update(projects)
-    .set({ checkClaimedAt: now })
-    .where(
-      and(
-        eq(projects.id, projectId),
-        or(isNull(projects.checkClaimedAt), lte(projects.checkClaimedAt, now - since)),
-      ),
-    )
-    .returning({ id: projects.id });
-  return claimed.length > 0;
-}
-
-/** How long one check holds its claim: after that it is taken to have died. */
-export const CHECK_CLAIM_MS = 30_000;

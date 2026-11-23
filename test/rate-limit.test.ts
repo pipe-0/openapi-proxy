@@ -93,46 +93,21 @@ describe("a workspace's budget of requests", () => {
     const { key: token } = await createKey(ada);
     const meter = limiter(4);
 
-    // A session, a token and the MCP endpoint are one budget.
+    // A session and a token are one budget.
     await call("/api/projects", { headers: { cookie: ada } }, meter.bindings);
     await callAsProgram("/api/projects", { headers: bearer(token) }, meter.bindings);
-    const tool = await callAsProgram(
-      "/mcp",
-      {
-        method: "POST",
-        headers: {
-          ...bearer(token),
-          "content-type": "application/json",
-          accept: "application/json, text/event-stream",
-        },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "tools/call",
-          params: { name: "get_project", arguments: { projectId: project.id } },
-        }),
-      },
-      meter.bindings,
-    );
-    expect(tool.status).toBe(200);
+    await call(`/api/projects/${project.id}`, { headers: { cookie: ada } }, meter.bindings);
+    await callAsProgram(`/api/projects/${project.id}`, { headers: bearer(token) }, meter.bindings);
     expect(new Set(meter.charges.map((charge) => charge.key)).size).toBe(1);
-    // One each for the two requests, and for the agent: the message, and the request its tool made.
     expect(meter.spent()).toBe(4);
 
     // Ada's workspace is out of budget, by any door.
     expect((await call("/api/projects", { headers: { cookie: ada } }, meter.bindings)).status).toBe(
       429,
     );
-    const agent = await callAsProgram(
-      "/mcp",
-      {
-        method: "POST",
-        headers: { ...bearer(token), "content-type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
-      },
-      meter.bindings,
-    );
-    expect(agent.status).toBe(429);
+    expect(
+      (await callAsProgram("/api/projects", { headers: bearer(token) }, meter.bindings)).status,
+    ).toBe(429);
     // Bob's is untouched.
     expect((await call("/api/projects", { headers: { cookie: bob } }, meter.bindings)).status).toBe(
       200,

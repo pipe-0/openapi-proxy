@@ -1,21 +1,16 @@
-import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
-import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import { scheduled } from "../src/server/scheduled";
 import {
-  type ApiProject,
   call,
   callsTo,
   createProject,
   createVariant,
   googleLogin,
   json,
-  login,
   MAIL,
   MAIL_URL,
   mailbox,
+  runTimer,
   SPEC,
-  SPEC_URL,
   serveSpec,
   sql,
   upstream,
@@ -181,15 +176,15 @@ describe("the email about it", () => {
   });
 
   it("is sent once, whoever notices the change first", async () => {
-    const { cookie, project, variant } = await published();
+    const { cookie, project } = await published();
     const sent = mailbox();
     serveSpec(nextRelease());
-    await sql("UPDATE projects SET fetched_at = ?", Date.now() - DAY);
+    await sql("UPDATE projects SET next_check_at = ?", Date.now() - DAY);
 
-    // A reader, a second reader, and someone pressing "Check now", all at once.
+    // The timer and two people pressing "Check now", all at once.
     await Promise.all([
-      call(variant.path, undefined, MAIL),
-      call(variant.path, undefined, MAIL),
+      runTimer(MAIL),
+      refresh(cookie, project.id, MAIL),
       refresh(cookie, project.id, MAIL),
     ]);
     expect(sent).toHaveLength(1);
@@ -231,87 +226,5 @@ describe("the email about it", () => {
       expect(await invited.json()).toMatchObject({ emailed: false });
     }
     expect(subject).not.toMatch(/[\r\n]/);
-  });
-});
-
-describe("the hourly run", () => {
-  async function run(bindings = {}) {
-    const ctx = createExecutionContext();
-    await scheduled({} as ScheduledController, { ...env, ...bindings }, ctx);
-    await waitOnExecutionContext(ctx);
-  }
-  const project = async (cookie: string, id: string) =>
-    (await (await call(`/api/projects/${id}`, { headers: { cookie } })).json()) as ApiProject;
-
-  it("notices a change no reader has come by to trigger, and says so", async () => {
-    const { cookie, project: created } = await published();
-    const sent = mailbox();
-    serveSpec(nextRelease());
-    await sql("UPDATE projects SET fetched_at = ?", Date.now() - 2 * 60 * 60 * 1000);
-
-    await run({ ...MAIL, APP_URL: "https://proxy.example.com/" });
-
-    expect((await project(cookie, created.id)).operations.map((op) => op.key)).toContain(
-      "GET /pets/{id}",
-    );
-    expect(sent).toHaveLength(1);
-    expect(sent[0]?.text).toContain(`https://proxy.example.com/p/${created.id}`);
-  });
-
-  it("leaves alone what was checked recently and what nobody serves anything from", async () => {
-    const { cookie } = await published();
-    const before = callsTo("GET", SPEC_URL);
-    await run(); // checked a moment ago
-    expect(callsTo("GET", SPEC_URL)).toBe(before);
-
-    const other = "https://api.example.com/unused.json";
-    serveSpec(SPEC, {}, other);
-    await createProject(cookie, { url: other });
-    await sql("UPDATE projects SET fetched_at = ?", Date.now() - 2 * 60 * 60 * 1000);
-    const unusedBefore = callsTo("GET", other);
-    await run();
-    expect(callsTo("GET", other)).toBe(unusedBefore);
-    expect(callsTo("GET", SPEC_URL)).toBe(before + 1);
-  });
-
-  it("is not held up by sources that are down: everyone gets their turn", async () => {
-    const cookie = await login();
-    const connect = async (url: string) => {
-      serveSpec(SPEC, {}, url);
-      const created = await createProject(cookie, { url });
-      await createVariant(cookie, created.id);
-      return created;
-    };
-    // More broken projects than one run takes, all checked longer ago than the healthy one.
-    const dead = Array.from({ length: 42 }, (_, n) => `https://dead-${n}.example.com/openapi.json`);
-    for (const url of dead) await connect(url);
-    const healthy = "https://healthy.example.com/openapi.json";
-    await connect(healthy);
-    for (const url of dead) upstream("GET", url, () => new Response("down", { status: 500 }));
-    const HOUR = 60 * 60 * 1000;
-    await sql("UPDATE projects SET fetched_at = ?", Date.now() - 5 * HOUR);
-    await sql(
-      "UPDATE projects SET fetched_at = ? WHERE slug LIKE 'test-43%'",
-      Date.now() - 4 * HOUR,
-    );
-
-    const before = callsTo("GET", healthy);
-    await run();
-    // The first run goes to the forty that have waited longest, and all of them fail.
-    expect(callsTo("GET", healthy)).toBe(before);
-    // An hour later they are at the back of the line, although they have not succeeded since.
-    await sql("UPDATE projects SET check_claimed_at = check_claimed_at - ?", HOUR);
-    await run();
-    expect(callsTo("GET", healthy)).toBe(before + 1);
-  });
-
-  it("records a failing source and moves on", async () => {
-    const { cookie, project: created } = await published();
-    const sent = mailbox();
-    await sql("UPDATE projects SET fetched_at = ?", Date.now() - 2 * 60 * 60 * 1000);
-    serveSpec("not json at all");
-    await run(MAIL);
-    expect(await project(cookie, created.id)).toMatchObject({ lastStatus: "error" });
-    expect(sent).toEqual([]);
   });
 });

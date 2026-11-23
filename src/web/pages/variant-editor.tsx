@@ -1,6 +1,5 @@
 import {
   type DocumentOverrides,
-  resolveSelection,
   type Selection,
   type SpecFormat,
   slugify,
@@ -9,7 +8,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useBlocker, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { ExternalLinkIcon, MoreHorizontalIcon } from "lucide-react";
-import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { toast } from "sonner";
 import { NewKeyDialog } from "@/components/api-keys";
 import { CopyButton } from "@/components/copy-button";
@@ -69,7 +68,7 @@ import {
 import { type CreatedKey, keysApi, keysQuery } from "@/lib/api-keys";
 import { useProject, useProjectVariants } from "@/lib/hooks";
 import { useProjectDoc } from "@/lib/use-project-doc";
-import { cn, MOD_KEY, plural } from "@/lib/utils";
+import { cn, MOD_KEY } from "@/lib/utils";
 
 const EMPTY: Selection = { mode: "include", operations: [], tags: [] };
 const sameSelection = (a: Selection, b: Selection) => JSON.stringify(a) === JSON.stringify(b);
@@ -227,8 +226,8 @@ function Editor({
     onError: (error) => toast.error(errorMessage(error)),
   });
 
-  // Bookkeeping about the source that does not change what is served.
-  const acknowledge = useMutation({
+  // What does not change what is served, and is saved the moment it is chosen.
+  const saveAtOnce = useMutation({
     mutationFn: (changes: Parameters<typeof api.updateVariant>[1]) =>
       api.updateVariant((variant as Variant).id, changes),
     onSuccess: replaceVariant,
@@ -312,14 +311,9 @@ function Editor({
     withResolver: true,
   });
 
-  const newKeys = useMemo(
-    () => (variant ? new Set(variant.drift.newOperations) : undefined),
-    [variant],
-  );
+  // Selected operations the document does not have, while they are still selected.
   const missing = variant
-    ? variant.drift.missingSelectedOperations.filter(
-        (key) => !variant.drift.acknowledged.includes(key) && selection.operations.includes(key),
-      )
+    ? variant.notFound.include.operations.filter((key) => selection.operations.includes(key))
     : [];
 
   return (
@@ -334,7 +328,7 @@ function Editor({
               onChange={(icon) => {
                 if (!variant) return setNewIcon(icon);
                 replaceVariant({ ...variant, icon });
-                acknowledge.mutate({ icon });
+                saveAtOnce.mutate({ icon });
               }}
             />
             <input
@@ -454,84 +448,40 @@ function Editor({
         </div>
       </header>
 
-      {variant && (missing.length > 0 || variant.drift.newOperations.length > 0) && (
+      {missing.length > 0 && (
         <div className="flex shrink-0 flex-col gap-2 border-b bg-subtle px-5 py-3">
-          {missing.length > 0 && (
-            // No decision to make here: a selected operation that disappears
-            // stays selected, so a rollback or a fixed deploy brings it back
-            // without anyone having to notice. This only says what happened.
-            <Notice
-              tone="warn"
-              action={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={acknowledge.isPending}
-                  onClick={() =>
-                    acknowledge.mutate({
-                      acknowledgedMissingOps: [...variant.drift.acknowledged, ...missing],
-                    })
-                  }
-                >
-                  Dismiss
-                </Button>
-              }
-            >
-              <p>
-                <span className="font-medium">
-                  {missing.length === 1
-                    ? "A selected operation is no longer in the source"
-                    : `${missing.length} selected operations are no longer in the source`}
-                </span>
-                , so {missing.length === 1 ? "it is" : "they are"} left out. If the source brings{" "}
-                {missing.length === 1 ? "it" : "them"} back,{" "}
-                {missing.length === 1 ? "it is" : "they are"} served again.
-              </p>
-              <ul className="mt-1.5 flex flex-col gap-1">
-                {missing.map((key) => {
-                  const [method = "", ...rest] = key.split(" ");
-                  return (
-                    <li key={key} className="flex items-center gap-2">
-                      <MethodChip method={method} />
-                      <OperationPath
-                        path={rest.join(" ")}
-                        webhook={rest[0]?.startsWith("webhook:")}
-                        className="text-[13px] line-through"
-                      />
-                    </li>
-                  );
-                })}
-              </ul>
-            </Notice>
-          )}
-          {variant.drift.newOperations.length > 0 && (
-            <Notice
-              tone="accent"
-              action={
-                <>
-                  <Button variant="outline" size="sm" onClick={() => setView("new")}>
-                    Show them
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={acknowledge.isPending}
-                    onClick={() => {
-                      setView("all");
-                      acknowledge.mutate({ reviewNewOps: true });
-                    }}
-                  >
-                    Dismiss
-                  </Button>
-                </>
-              }
-            >
+          {/*
+            No decision to make here: a selected operation the document does
+            not have stays selected, so the deploy that adds it, or a rollback
+            that brings it back, needs nobody to notice. This only says so.
+          */}
+          <Notice tone="warn">
+            <p>
               <span className="font-medium">
-                {plural(variant.drift.newOperations.length, "new operation")} in your API
-              </span>{" "}
-              since you last looked. {newOperationsAre(variant, project)}
-            </Notice>
-          )}
+                {missing.length === 1
+                  ? "A selected operation is not in the document"
+                  : `${missing.length} selected operations are not in the document`}
+              </span>
+              , so {missing.length === 1 ? "it is" : "they are"} left out. Once the document has{" "}
+              {missing.length === 1 ? "it" : "them"}, {missing.length === 1 ? "it is" : "they are"}{" "}
+              served.
+            </p>
+            <ul className="mt-1.5 flex flex-col gap-1">
+              {missing.map((key) => {
+                const [method = "", ...rest] = key.split(" ");
+                return (
+                  <li key={key} className="flex items-center gap-2">
+                    <MethodChip method={method} />
+                    <OperationPath
+                      path={rest.join(" ")}
+                      webhook={rest[0]?.startsWith("webhook:")}
+                      className="text-[13px]"
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+          </Notice>
         </div>
       )}
 
@@ -543,7 +493,6 @@ function Editor({
           onChange={setSelection}
           view={view}
           onViewChange={setView}
-          newKeys={newKeys}
           mainSource={project.sources[0]?.name}
         />
         <ResultPane
@@ -659,32 +608,6 @@ function Editor({
 }
 
 /** The variant's address: the reason the screen exists, always in view. */
-/**
- * What became of the operations an API added: served or hidden, as the
- * variant says for operations added later. Said in the notice, because
- * nothing about them waits for a decision: dismissing it changes nothing
- * that is served.
- */
-function newOperationsAre(variant: Variant, project: Project): string {
-  const entries = project.operations;
-  const served = resolveSelection(
-    { entries, tags: [], totalOperations: entries.length },
-    variant.selection,
-  );
-  const added = variant.drift.newOperations;
-  const servedCount = added.filter((key) => served.has(key)).length;
-  const hiddenCount = added.length - servedCount;
-  const rule = "as this variant says for operations added later";
-  const are = (count: number) => (count === 1 ? "1 is" : `${count} are`);
-  if (hiddenCount === 0) {
-    return `${added.length === 1 ? "It is" : "They are"} served already, ${rule}. Uncheck what should not be.`;
-  }
-  if (servedCount === 0) {
-    return `${added.length === 1 ? "It is" : "They are"} hidden, ${rule}. Check the ones to serve, and publish.`;
-  }
-  return `${are(servedCount)} served already and ${are(hiddenCount)} hidden, ${rule}.`;
-}
-
 function UrlBar({
   url,
   suffix,

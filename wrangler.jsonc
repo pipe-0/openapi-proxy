@@ -9,7 +9,7 @@
   "assets": {
     // Built files are served straight from the edge. Everything else reaches
     // the Worker; these must never be answered by a file of the same name.
-    "run_worker_first": ["/v/*", "/api/*", "/mcp"]
+    "run_worker_first": ["/v/*", "/api/*"]
   },
   // Each workspace's budget of API requests per minute, counted by Cloudflare.
   // What a request costs is in src/server/rate-limit.ts: one, or ten if it
@@ -18,8 +18,8 @@
   "ratelimits": [
     { "name": "API_RATE_LIMIT", "namespace_id": "7732", "simple": { "limit": 300, "period": 60 } }
   ],
-  // Hourly: check the sources nobody has asked about lately (src/server/scheduled.ts).
-  "triggers": { "crons": ["0 * * * *"] },
+  // Every five minutes: check the sources that are due (src/server/scheduled.ts).
+  "triggers": { "crons": ["*/5 * * * *"] },
   "d1_databases": [
     {
       "binding": "DB",

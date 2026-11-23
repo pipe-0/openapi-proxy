@@ -10,7 +10,6 @@ import { emailConfigured } from "./email";
 import type { AppContext } from "./env";
 import { errorResponse } from "./errors";
 import { bearerCredential } from "./keys";
-import { handleMcp } from "./mcp";
 import { limitsToApi, planOf, sellsPlans } from "./plans";
 import { charge, REQUEST_COST } from "./rate-limit";
 import { keyRoutes } from "./routes/keys";
@@ -23,7 +22,6 @@ import { serveRoutes } from "./serve";
  * The surfaces of the Worker that are not pages:
  *   /v/*    public, cacheable, unauthenticated: the filtered documents
  *   /api/*  the API, behind a session or an API key (/api/auth/* is better-auth)
- *   /mcp    the same API as tools for agents (src/server/mcp.ts)
  * Pages, and the routing between this app and them, are in src/web/server.ts.
  */
 const app = new Hono<AppContext>();
@@ -42,11 +40,7 @@ const requestLimit = bodyLimit({
   maxSize: MAX_REQUEST_BYTES,
   onError: (c) => c.json({ code: "too-large", error: "The request is too large." }, 413),
 });
-app.use("/mcp", requestLimit);
 app.use("/api/*", requestLimit);
-
-// Tools reach the API by sending requests through this same app.
-app.all("/mcp", (c) => handleMcp(c, (request) => app.fetch(request, c.env, c.executionCtx)));
 
 const api = new Hono<AppContext>();
 
@@ -138,7 +132,7 @@ api.route("/invitations", invitationRoutes);
 
 app.route("/api", api);
 
-// Only /v/*, /api/* and /mcp are sent here (see src/web/server.ts), so
+// Only /v/* and /api/* are sent here (see src/web/server.ts), so
 // anything that falls through is an unknown path.
 app.notFound((c) => c.json({ code: "not-found", error: "Not found." }, 404));
 

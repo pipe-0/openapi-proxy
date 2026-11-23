@@ -132,13 +132,10 @@ export interface ParsedSpec {
   minified: boolean;
 }
 
-export interface Drift {
-  /** Explicitly selected operation keys that no longer exist in the source. */
-  missingSelectedOperations: string[];
-  /** Tag rules that currently match zero operations. */
-  missingSelectedTags: string[];
-  /** Operation keys present in the source but absent from the variant's snapshot. */
-  newOperations: string[];
+/** Names in a selection that match nothing in the document, by where they stand. */
+export interface UnmatchedNames {
+  include: { operations: string[]; tags: string[] };
+  exclude: { operations: string[]; tags: string[] };
 }
 
 export function isJsonObject(value: unknown): value is JsonObject {

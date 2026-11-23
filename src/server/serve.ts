@@ -2,23 +2,13 @@ import { type SpecFormat, TARGET_VERSIONS, type TargetVersion } from "@openapi-p
 import { and, eq } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
-import { CHECK_CLAIM_MS, claimCheck } from "./assemble";
 import { keyPrincipal } from "./auth";
-import { checkProject } from "./check";
 import { createDb, type Db } from "./db/client";
 import { projects, variants } from "./db/schema";
 import type { AppContext } from "./env";
 import { bearerCredential, reads } from "./keys";
 import { type RenderTarget, renderVariant, variantEtag } from "./render";
-import { checkEveryMs, RETRY_AFTER_MS } from "./schedule";
 
-/**
- * Timing of the freshness contract. An object, so tests can shorten the waits.
- */
-export const timing = {
-  /** How long a request waits for a check of the source before answering from the copy it has. */
-  checkWaitMs: 5_000,
-};
 /**
  * For caches in between. A minute of reuse, since nothing here changes by
  * the second, and a strong ETag to revalidate with after that.
@@ -31,7 +21,7 @@ const CONTENT_TYPES: Record<SpecFormat, string> = {
   yaml: "application/yaml; charset=utf-8",
 };
 
-type SourceStatus = "fresh" | "stale" | "stale-error";
+type SourceStatus = "fresh" | "stale-error";
 
 /**
  * Variant serving:
@@ -44,21 +34,13 @@ type SourceStatus = "fresh" | "stale" | "stale-error";
  * version by a path segment. Each is rendered when it is first asked for and
  * stored. A private variant is all of this behind an API key.
  *
- * Two promises, in this order.
+ * A request reads what is stored and nothing else. It never makes the
+ * service contact a source: keeping the copy current is the timer's work
+ * (scheduled.ts), and a deploy's.
  *
- * Delivery does not fail. Once a project has been fetched, its variants are
- * answered from the last good copy whatever the source does afterwards; a
- * failing or slow source only shows in the X-Proxy-Source-Status header.
- *
- * What is delivered is current. A copy older than the project's check
- * interval (which the service decides, see schedule.ts) is not handed out on
- * trust: the request that notices checks the source first and answers with
- * the result. That matters because the typical reader of an
- * OpenAPI document is a build that runs a few times a day, and "serve the old
- * copy, refresh afterwards" would give every one of those the document as of
- * the previous build. Exactly one request does the checking; the others wait
- * for it, unless the copy only just crossed its interval, in which case it is
- * still as good as it was a moment ago and they get it at once.
+ * So delivery does not fail. Once a project has its documents, its variants
+ * are answered from the last good copy whatever a source does afterwards; a
+ * failing source only shows in the X-Proxy-Source-Status header.
  */
 export const serveRoutes = new Hono<AppContext>();
 
@@ -97,75 +79,6 @@ function etagMatches(header: string | undefined, etag: string): boolean {
     .split(",")
     .map((candidate) => candidate.trim().replace(/^W\//, ""))
     .some((candidate) => candidate === "*" || candidate === etag);
-}
-
-interface SourceState {
-  bodyHash: string;
-  lastStatus: "ok" | "error";
-}
-
-async function refreshById(
-  c: Context<AppContext>,
-  db: Db,
-  id: string,
-  now: number,
-): Promise<SourceState | undefined> {
-  try {
-    const project = await db.select().from(projects).where(eq(projects.id, id)).get();
-    if (!project) return undefined;
-    const result = await checkProject(db, c.env, project, now, {
-      origin: new URL(c.req.url).origin,
-      defer: (work) => c.executionCtx.waitUntil(work),
-    });
-    return result.project;
-  } catch (error) {
-    console.error("refresh failed", error);
-    return undefined;
-  }
-}
-
-/** The promise's value, or undefined if it takes longer than `ms`. */
-function within<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(undefined), ms);
-    void promise.then((value) => {
-      clearTimeout(timer);
-      resolve(value);
-    });
-  });
-}
-
-/**
- * Wait for the check another request is running, by watching the project row
- * until it settles. Polling is what works here: the other request usually
- * runs in a different isolate, so there is no promise to share.
- */
-async function otherCheck(
-  db: Db,
-  projectId: string,
-  seenFetchedAt: number,
-  deadline: number,
-): Promise<SourceState | undefined> {
-  for (let delay = 50; Date.now() + delay < deadline; delay = Math.min(delay * 2, 400)) {
-    await new Promise((resolve) => setTimeout(resolve, delay));
-    const current = await db
-      .select({
-        bodyHash: projects.bodyHash,
-        lastStatus: projects.lastStatus,
-        fetchedAt: projects.fetchedAt,
-        checkClaimedAt: projects.checkClaimedAt,
-      })
-      .from(projects)
-      .where(eq(projects.id, projectId))
-      .get();
-    if (!current) return undefined;
-    const settled =
-      current.fetchedAt !== seenFetchedAt ||
-      current.lastStatus === "error" ||
-      current.checkClaimedAt === null;
-    if (settled) return current;
-  }
-  return undefined;
 }
 
 serveRoutes.on(["GET", "HEAD"], "/:project/:variant", (c) =>
@@ -240,7 +153,6 @@ export async function serveVariant(
   const slug = versionParam === undefined ? last.slug : variantParam;
   const askedVersion = versionParam === undefined ? undefined : last.slug;
   const db = createDb(c.env.DB);
-  const now = Date.now();
 
   // Only the columns this path needs: the operation index can be large and is
   // irrelevant here.
@@ -255,8 +167,6 @@ export async function serveVariant(
       organizationId: projects.organizationId,
       specVersion: projects.specVersion,
       bodyHash: projects.bodyHash,
-      fetchedAt: projects.fetchedAt,
-      checkEveryMs,
       lastStatus: projects.lastStatus,
     })
     .from(variants)
@@ -293,44 +203,11 @@ export async function serveVariant(
     );
   }
 
-  let { bodyHash } = row;
-  let status: SourceStatus = row.lastStatus === "error" ? "stale-error" : "fresh";
-
-  const age = now - row.fetchedAt;
-
-  if (age >= row.checkEveryMs) {
-    const adopt = (state: SourceState | undefined) => {
-      if (!state) {
-        status = "stale";
-        return;
-      }
-      bodyHash = state.bodyHash;
-      status = state.lastStatus === "error" ? "stale-error" : "fresh";
-    };
-
-    if (row.lastStatus === "error") {
-      // The source is failing. Nobody waits on it again; every few minutes
-      // one request retries in the background until it is back.
-      if (await claimCheck(db, row.projectId, now, RETRY_AFTER_MS)) {
-        c.executionCtx.waitUntil(refreshById(c, db, row.projectId, now));
-      }
-    } else if (await claimCheck(db, row.projectId, now)) {
-      // This request checks. If the source is slow, the check carries on in
-      // the background and the answer comes from the copy.
-      const check = refreshById(c, db, row.projectId, now);
-      c.executionCtx.waitUntil(check);
-      adopt(await within(check, timing.checkWaitMs));
-    } else if (age < row.checkEveryMs + CHECK_CLAIM_MS) {
-      // Someone else is checking, and the copy only just crossed its interval.
-      status = "stale";
-    } else {
-      adopt(await otherCheck(db, row.projectId, row.fetchedAt, now + timing.checkWaitMs));
-    }
-  }
+  const status: SourceStatus = row.lastStatus === "error" ? "stale-error" : "fresh";
 
   const target: RenderTarget = {
     projectId: row.projectId,
-    bodyHash,
+    bodyHash: row.bodyHash,
     variantId: row.variantId,
     selection: row.selection,
     version,
@@ -366,7 +243,7 @@ export async function serveVariant(
 
   let rendered: Awaited<ReturnType<typeof renderVariant>>;
   try {
-    rendered = await renderVariant(db, target, format, etag, now);
+    rendered = await renderVariant(db, target, format, etag, Date.now());
   } catch (error) {
     // The database, not the document: a document that cannot be rendered is
     // answered for below. A consumer is never handed a raw exception.
@@ -390,7 +267,7 @@ export async function serveVariant(
 
   const { body, store } = rendered;
   if (rendered.etag !== etag) {
-    // The source changed between reading the project and reading its document.
+    // The documents changed between reading the project and reading them.
     // The validator has to describe the bytes that are actually sent.
     etag = rendered.etag;
     headers.etag = etag;

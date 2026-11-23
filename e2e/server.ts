@@ -2,7 +2,7 @@
  * Everything the end-to-end suite needs, in one process:
  *
  * - a fixture server standing in for "your backend": it serves the reference
- *   spec publicly, behind a bearer token, and next to a version endpoint;
+ *   spec publicly and behind a bearer token;
  * - the app itself (Vite + the Worker in workerd) on a fresh, migrated local
  *   database that lives apart from normal development data.
  *
@@ -71,7 +71,6 @@ const billing = JSON.stringify({
 });
 
 function startFixtureServer(): void {
-  let version = "1";
   createServer((request, response) => {
     const url = new URL(request.url ?? "/", `http://${request.headers.host}`);
     const json = (status: number, body: Buffer | string) => {
@@ -84,11 +83,6 @@ function startFixtureServer(): void {
     if (url.pathname === "/private/openapi.json") {
       const authorized = request.headers.authorization === `Bearer ${FIXTURE_TOKEN}`;
       return authorized ? json(200, spec) : json(401, '{"error":"unauthorized"}');
-    }
-    if (url.pathname === "/version") {
-      if (url.searchParams.has("set")) version = url.searchParams.get("set") as string;
-      response.writeHead(200, { "x-api-version": version });
-      return response.end();
     }
     return json(404, '{"error":"not found"}');
   }).listen(FIXTURE_PORT, "127.0.0.1");

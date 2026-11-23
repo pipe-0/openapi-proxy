@@ -467,16 +467,6 @@ describe("a private variant", () => {
     expect(
       (await withKey(one.key, `/api/variants/${partner.id}`, { method: "DELETE" })).status,
     ).toBe(403);
-    const mcp = await withKey(all.key, "/mcp", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json, text/event-stream",
-      },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
-    });
-    expect(mcp.status).toBe(403);
-
     // The list says what each key is for.
     const listed = (await (
       await call("/api/workspace/keys", { headers: { cookie: ada } })

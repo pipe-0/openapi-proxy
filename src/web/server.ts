@@ -4,11 +4,10 @@ import api from "../server/index";
 import { scheduled } from "../server/scheduled";
 
 /**
- * The Worker. One deployment, four jobs:
+ * The Worker. One deployment, five jobs:
  *
  *   /v/*, /api/*   the public documents and the API (Hono, src/server)
- *   /mcp           the API as tools for agents (also Hono)
- *   cron           the hourly look at sources nobody asked about
+ *   cron           the look at the sources that are due, every five minutes
  *   /, /blog, ...  the landing page, pricing, blog, about, terms and privacy, if switched on
  *   /docs          the documentation, rendered here, always (the app links to it)
  *   the rest       the app, which the browser renders; the server sends its shell
@@ -42,7 +41,7 @@ const toApp = () =>
 export default {
   async fetch(request, env, ctx) {
     const { pathname, hostname } = new URL(request.url);
-    if (/^\/(api|v|mcp)(\/|$)/.test(pathname)) return api.fetch(request, env, ctx);
+    if (/^\/(api|v)(\/|$)/.test(pathname)) return api.fetch(request, env, ctx);
 
     const enabled = env.PUBLIC_SITE === "true";
     const site = isSitePath(pathname);

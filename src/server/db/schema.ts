@@ -49,36 +49,44 @@ export type ProjectNote =
  * the hash that every served ETag derives from, and the state of keeping it
  * current.
  */
-export const projects = sqliteTable("projects", {
-  id: text("id").primaryKey(),
-  organizationId: text("organization_id")
-    .notNull()
-    .references(() => organization.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  /**
-   * First segment of the public URL: /v/<project>/<variant>. Unique across
-   * the whole deployment, so a public URL never needs to name an organization.
-   */
-  slug: text("slug").notNull().unique(),
+export const projects = sqliteTable(
+  "projects",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    /**
+     * First segment of the public URL: /v/<project>/<variant>. Unique across
+     * the whole deployment, so a public URL never needs to name an organization.
+     */
+    slug: text("slug").notNull().unique(),
 
-  // What assembling the sources last produced.
-  /** OpenAPI version of the assembled document, e.g. "3.1". */
-  specVersion: text("spec_version").notNull(),
-  /** Changes exactly when the assembled document does. */
-  bodyHash: text("body_hash").notNull(),
-  /** Size of the sources together. */
-  bodyBytes: integer("body_bytes").notNull(),
-  opIndex: text("op_index", { mode: "json" }).$type<OperationEntry[]>().notNull(),
-  notes: text("notes", { mode: "json" }).$type<ProjectNote[]>().notNull().default([]),
+    // What assembling the sources last produced.
+    /** OpenAPI version of the assembled document, e.g. "3.1". */
+    specVersion: text("spec_version").notNull(),
+    /** Changes exactly when the assembled document does. */
+    bodyHash: text("body_hash").notNull(),
+    /** Size of the sources together. */
+    bodyBytes: integer("body_bytes").notNull(),
+    opIndex: text("op_index", { mode: "json" }).$type<OperationEntry[]>().notNull(),
+    notes: text("notes", { mode: "json" }).$type<ProjectNote[]>().notNull().default([]),
 
-  /** Last round of checks in which every source answered. The next is due an interval later (schedule.ts). */
-  fetchedAt: integer("fetched_at").notNull(),
-  /** Set while a check is in flight, and left in place after a failure as a backoff. */
-  checkClaimedAt: integer("check_claimed_at"),
-  lastStatus: text("last_status").$type<"ok" | "error">().notNull().default("ok"),
-  lastError: text("last_error"),
-  createdAt: integer("created_at").notNull(),
-});
+    /** Last round of checks in which every source answered. */
+    fetchedAt: integer("fetched_at").notNull(),
+    /**
+     * When the timer looks at the sources next (schedule.ts says how that is
+     * decided). A run takes a project by moving this ahead, which is also what
+     * keeps two runs from checking the same project.
+     */
+    nextCheckAt: integer("next_check_at"),
+    lastStatus: text("last_status").$type<"ok" | "error">().notNull().default("ok"),
+    lastError: text("last_error"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [index("projects_next_check").on(table.nextCheckAt)],
+);
 
 /**
  * Project slugs that were given up, by renaming a project or deleting it.
@@ -114,19 +122,6 @@ export const sources = sqliteTable(
     /** Put in front of every path of this document, e.g. "/billing". */
     pathPrefix: text("path_prefix"),
 
-    /**
-     * Optional lightweight endpoint that reports which build is live. While it
-     * reports the version we last saw, a check skips the download.
-     */
-    versionUrl: text("version_url"),
-    lastKnownVersion: text("last_known_version"),
-    /**
-     * When the version endpoint was caught reporting one version for two
-     * different documents. From then on it is not used to skip downloads,
-     * until someone saves the endpoint again.
-     */
-    versionMismatchAt: integer("version_mismatch_at"),
-
     // What the last successful fetch found.
     apiVersion: text("api_version"),
     specVersion: text("spec_version").notNull(),
@@ -139,7 +134,7 @@ export const sources = sqliteTable(
     /** How many operations it defines. */
     operations: integer("operations").notNull(),
 
-    /** Last time the document itself was compared with the source (not just its version). */
+    /** Last time the document was compared with the source. */
     verifiedAt: integer("verified_at").notNull(),
     lastStatus: text("last_status").$type<"ok" | "error">().notNull().default("ok"),
     lastError: text("last_error"),
@@ -160,7 +155,6 @@ export const variants = sqliteTable(
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     selection: text("selection", { mode: "json" }).$type<Selection>().notNull(),
-    /** The OpenAPI version to serve ("3.0" or "3.1"). Null serves the project's own. */
     /** Title, description and servers this variant states instead of the document's. Null: none. */
     overrides: text("overrides", { mode: "json" }).$type<DocumentOverrides>(),
     /** The icon it has in the navigation (src/shared/variant-icons.ts). Null: the plain one. */
@@ -169,12 +163,6 @@ export const variants = sqliteTable(
     visibility: text("visibility").$type<Visibility>().notNull().default("public"),
     /** Incremented whenever what is served can change; part of the served ETag. */
     revision: integer("revision").notNull().default(1),
-    /** Operation keys that existed when the selection was last reviewed. */
-    opsSnapshot: text("ops_snapshot", { mode: "json" }).$type<string[]>().notNull(),
-    acknowledgedMissingOps: text("acknowledged_missing_ops", { mode: "json" })
-      .$type<string[]>()
-      .notNull()
-      .default([]),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },

@@ -1,11 +1,11 @@
 import {
-  computeDrift,
   type DocumentOverrides,
   isValidSlug,
   readOverrides,
   resolveSelection,
   type Selection,
   slugify,
+  unmatchedNames,
 } from "@openapi-proxy/core";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { Hono } from "hono";
@@ -69,20 +69,17 @@ function variantToApi(
   project: Pick<ProjectRow, "slug" | "opIndex">,
   prefix: string,
 ) {
-  const { opsSnapshot, acknowledgedMissingOps, ...rest } = variant;
   const index = asIndex(project.opIndex);
   return {
-    ...rest,
+    ...variant,
     /** Public path of the served document; append .json or .yaml to pin a format. */
     path: `/v/${project.slug}/${variant.slug}`,
     /** The public URL, without a format extension. */
     url: `${prefix}${project.slug}/${variant.slug}`,
     keptOperations: resolveSelection(index, variant.selection).size,
     totalOperations: index.totalOperations,
-    drift: {
-      ...computeDrift(variant.selection, opsSnapshot, index),
-      acknowledged: acknowledgedMissingOps,
-    },
+    /** Names in the selection that the document has nothing for. */
+    notFound: unmatchedNames(index, variant.selection),
   };
 }
 
@@ -191,7 +188,6 @@ variantRoutes.post("/", async (c) => {
         overrides: parseOverrides(payload.overrides),
         icon: parseIcon(payload.icon),
         visibility,
-        opsSnapshot: project.opIndex.map((op) => op.key),
         createdAt: now,
         updatedAt: now,
       })
@@ -248,7 +244,6 @@ variantRoutes.patch("/:id", async (c) => {
   const updates: Partial<VariantRow> = {};
   /** Whether what is served changes, so that its ETag has to. */
   let served = false;
-  const currentKeys = () => project.opIndex.map((op) => op.key);
 
   if (payload.name !== undefined) {
     const name = typeof payload.name === "string" ? payload.name.trim() : "";
@@ -270,12 +265,6 @@ variantRoutes.patch("/:id", async (c) => {
     if (!selection) throw badRequest("selection is malformed.");
     updates.selection = selection;
     served = true;
-    // Saving a selection is a review: reset the baseline for "new operations"
-    // and forget acknowledgements for operations that are no longer selected.
-    updates.opsSnapshot = currentKeys();
-    updates.acknowledgedMissingOps = variant.acknowledgedMissingOps.filter((key) =>
-      selection.operations.includes(key),
-    );
   }
 
   if (payload.overrides !== undefined) {
@@ -291,17 +280,6 @@ variantRoutes.patch("/:id", async (c) => {
   // Who may read it. The document is the same either way, so its ETag is too.
   const visibility = parseVisibility(payload.visibility);
   if (visibility !== undefined) updates.visibility = visibility;
-
-  if (payload.acknowledgedMissingOps !== undefined) {
-    const acknowledged = payload.acknowledgedMissingOps;
-    if (!Array.isArray(acknowledged) || !acknowledged.every((key) => typeof key === "string")) {
-      throw badRequest("acknowledgedMissingOps must be a list of operation keys.");
-    }
-    const selected = new Set((updates.selection ?? variant.selection).operations);
-    updates.acknowledgedMissingOps = (acknowledged as string[]).filter((key) => selected.has(key));
-  }
-
-  if (payload.reviewNewOps === true) updates.opsSnapshot = currentKeys();
 
   if (Object.keys(updates).length === 0) throw badRequest("Nothing to update.");
 

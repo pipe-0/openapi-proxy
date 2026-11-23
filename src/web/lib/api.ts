@@ -1,11 +1,11 @@
 import type {
   DocumentOverrides,
-  Drift,
   MergeNote,
   OperationEntry,
   Selection,
   SpecFormat,
   TargetVersion,
+  UnmatchedNames,
 } from "@openapi-proxy/core";
 import { queryOptions } from "@tanstack/react-query";
 import type { KeyAccess, Visibility } from "../../shared/access";
@@ -121,13 +121,9 @@ export interface Source {
   headerNames: string[];
   /** Put in front of every path of this document, or null. */
   pathPrefix: string | null;
-  versionUrl: string | null;
-  lastKnownVersion: string | null;
-  /** Set when the version endpoint reported one version for two different documents. */
-  versionMismatchAt: number | null;
   /** What the source sends that lets a check skip the download, if anything. */
   validator: "etag" | "last-modified" | null;
-  /** Whether a check can skip the download: by one of those, or by a version endpoint. */
+  /** Whether a check can skip the download. */
   cheap: boolean;
   apiVersion: string | null;
   specVersion: string;
@@ -197,7 +193,8 @@ export interface Variant {
   updatedAt: number;
   keptOperations: number;
   totalOperations: number;
-  drift: Drift & { acknowledged: string[] };
+  /** Names in its selection that the document has nothing for. */
+  notFound: UnmatchedNames;
 }
 
 /**
@@ -344,7 +341,6 @@ export const api = {
     changes: Partial<{
       name: string;
       pathPrefix: string | null;
-      versionUrl: string | null;
       headers: HeaderInput[];
     }>,
   ) => request<Project>(`/api/projects/${projectId}/sources/${sourceId}`, body("PATCH", changes)),
@@ -383,8 +379,6 @@ export const api = {
       overrides: DocumentOverrides | null;
       icon: VariantIconName | null;
       visibility: Visibility;
-      acknowledgedMissingOps: string[];
-      reviewNewOps: boolean;
     }>,
   ) => request<Variant>(`/api/variants/${id}`, body("PATCH", changes)),
   deleteVariant: (id: string) =>

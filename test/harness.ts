@@ -2,6 +2,7 @@ import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test"
 import { env } from "cloudflare:workers";
 import { afterEach, beforeAll, expect, vi } from "vitest";
 import worker from "../src/server/index";
+import { scheduled } from "../src/server/scheduled";
 
 export const ORIGIN = "https://proxy.test";
 
@@ -24,6 +25,13 @@ export async function call(
   const response = await worker.fetch(request, { ...env, ...bindings }, ctx);
   await waitOnExecutionContext(ctx);
   return response;
+}
+
+/** One run of the timer, settled like `call`. */
+export async function runTimer(bindings: Partial<Cloudflare.Env> = {}): Promise<void> {
+  const ctx = createExecutionContext();
+  await scheduled({} as ScheduledController, { ...env, ...bindings }, ctx);
+  await waitOnExecutionContext(ctx);
 }
 
 /** The `Cookie` header a browser would send back after this response. */
@@ -250,9 +258,6 @@ export interface ApiSource {
   url: string;
   headerNames: string[];
   pathPrefix: string | null;
-  versionUrl: string | null;
-  lastKnownVersion: string | null;
-  versionMismatchAt: number | null;
   validator: "etag" | "last-modified" | null;
   operations: number;
   lastStatus: "ok" | "error";
@@ -280,10 +285,9 @@ export interface ApiVariant {
   path: string;
   url: string;
   keptOperations: number;
-  drift: {
-    missingSelectedOperations: string[];
-    newOperations: string[];
-    acknowledged: string[];
+  notFound: {
+    include: { operations: string[]; tags: string[] };
+    exclude: { operations: string[]; tags: string[] };
   };
 }
 
@@ -349,6 +353,14 @@ export const sql = (query: string, ...params: unknown[]) =>
   env.DB.prepare(query)
     .bind(...params)
     .run();
+
+/** Rows straight from the database. */
+export async function rows<T>(query: string, ...params: unknown[]): Promise<T[]> {
+  const { results } = await env.DB.prepare(query)
+    .bind(...params)
+    .all<T>();
+  return results;
+}
 
 // ---- API keys ----
 

@@ -27,7 +27,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { UserMenu } from "@/components/user-menu";
 import { VariantIcon } from "@/components/variant-icon";
 import { type Project, queries, type Variant } from "@/lib/api";
-import { driftOf, lastProjectId, rememberProject, sourceStatus } from "@/lib/hooks";
+import { lastProjectId, notFoundCount, rememberProject, sourceStatus } from "@/lib/hooks";
 import { cn, isTyping, MOD_KEY } from "@/lib/utils";
 
 const navItem =
@@ -227,7 +227,7 @@ function SidebarBody({
           </div>
           <div className="scroll-quiet mt-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
             {variants.map((variant) => {
-              const drift = driftOf(variant);
+              const missing = notFoundCount(variant);
               return (
                 <Link
                   key={variant.id}
@@ -244,16 +244,14 @@ function SidebarBody({
                     )}
                   />
                   <span className="min-w-0 flex-1 truncate">{variant.name}</span>
-                  {drift.missing > 0 ? (
-                    <StatusChip tone="warn" className={chipOnActive}>
-                      {drift.missing} gone
+                  {missing > 0 && (
+                    <StatusChip
+                      tone="warn"
+                      className={chipOnActive}
+                      title="Names in its selection that the document does not have"
+                    >
+                      {missing} not found
                     </StatusChip>
-                  ) : (
-                    drift.added > 0 && (
-                      <StatusChip tone="accent" className={chipOnActive}>
-                        {drift.added} new
-                      </StatusChip>
-                    )
                   )}
                 </Link>
               );
