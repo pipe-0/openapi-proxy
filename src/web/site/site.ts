@@ -4,7 +4,7 @@ export const SITE_NAME = "openapi-proxy";
 export const GITHUB_URL = "https://github.com/pipe-0/openapi-proxy";
 export const SITE_TITLE = "openapi-proxy: filter, merge and convert OpenAPI documents on the edge";
 export const SITE_DESCRIPTION =
-  "An open source OpenAPI toolchain on the edge. Filter, merge and convert the OpenAPI documents your backends generate, and serve each result at a stable URL that stays current with your APIs.";
+  "An open source OpenAPI toolchain on the edge. Filter, merge and convert the OpenAPI documents your backends generate, and serve each result at a stable URL that stays current with your APIs. Set it up in a browser, or from a file in your repository.";
 
 /** What the server knows about this deployment. See site.server.ts. */
 export interface SiteInfo {

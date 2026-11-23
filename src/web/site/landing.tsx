@@ -47,7 +47,7 @@ const POINTS: Array<{ title: string; body: string; href?: string }> = [
   },
   {
     title: "Current by itself",
-    body: "The service keeps reading your document's URL and serves the newest one it has. A failing API never turns into an error for your readers: they get the last good copy.",
+    body: "The service keeps reading your document's URL, or takes the document your pipeline uploads with each deploy. A failing API never turns into an error for your readers: they get the last good copy.",
     href: "/docs/following-a-url",
   },
   {
@@ -317,6 +317,15 @@ export function Landing() {
           Start with the document you already have.
         </h2>
         <UrlForm id="closing-url" className="mx-auto mt-8 max-w-xl" />
+        <p className="mt-4 text-[13.5px] text-muted-foreground">
+          Or keep it in a file next to your code and deploy it from CI.{" "}
+          <a
+            href="/docs/in-your-repository"
+            className="text-foreground underline decoration-border underline-offset-4 hover:decoration-foreground"
+          >
+            In your repository
+          </a>
+        </p>
       </section>
     </>
   );

@@ -13,6 +13,15 @@ Your backend generates one OpenAPI document for everything it does. openapi-prox
 
 Both make the same thing: a project with variants at the same URLs. A project that started in the app can move into a repository later, without rebuilding anything.
 
+## How a project stays current
+
+A project serves the documents the service has stored. They get there in one of two ways.
+
+- **The service follows a URL.** It reads the address again every few minutes and stores a newer document when there is one. This is what the app sets up. See [Following a URL](/docs/following-a-url).
+- **A deploy uploads them.** `openapi-proxy deploy` reads the documents where it runs, in your pipeline, and uploads them with the file. Nothing is checked afterwards: what is served changes with the next deploy. A source can ask for both with `follow: true`.
+
+A project that is deployed from a file is shown in the app and changed by deploying, so the file and the project cannot drift apart.
+
 ## Which guide is yours
 
 | You have | You want | Guide |
