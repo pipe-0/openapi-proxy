@@ -26,8 +26,9 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { UserMenu } from "@/components/user-menu";
 import { VariantIcon } from "@/components/variant-icon";
-import { type Project, queries, type Variant } from "@/lib/api";
-import { lastProjectId, notFoundCount, rememberProject, sourceStatus } from "@/lib/hooks";
+import { type Project, queries } from "@/lib/api";
+import { checkStatus, lastProject, notFoundCount, rememberProject } from "@/lib/hooks";
+import { projectName, projectSlug, variantsOf } from "@/lib/project";
 import { cn, isTyping, MOD_KEY } from "@/lib/utils";
 
 const navItem =
@@ -45,9 +46,8 @@ const chipOnActive =
  * you are (which project, which variant) and a main area that is all content.
  */
 export function AppShell() {
-  const { projectId } = useParams({ strict: false });
+  const { project: slug } = useParams({ strict: false });
   const projects = useQuery(queries.projects);
-  const variants = useQuery(queries.variants);
   const [commandOpen, setCommandOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const navigate = useNavigate();
@@ -55,14 +55,15 @@ export function AppShell() {
   // On a page that is about no project in particular (the workspace), the
   // sidebar stays on the one you were in, so its variants are still one click away.
   const project =
-    projects.data?.find((candidate) => candidate.id === projectId) ??
-    (projectId
+    projects.data?.find((candidate) => projectSlug(candidate) === slug) ??
+    (slug
       ? undefined
-      : (projects.data?.find((candidate) => candidate.id === lastProjectId()) ??
+      : (projects.data?.find((candidate) => projectSlug(candidate) === lastProject()) ??
         projects.data?.[0]));
+  const current = project ? projectSlug(project) : undefined;
   useEffect(() => {
-    if (project) rememberProject(project.id);
-  }, [project]);
+    if (current) rememberProject(current);
+  }, [current]);
 
   // ⌘K opens the command menu from anywhere; "n" starts a variant when not typing.
   useEffect(() => {
@@ -72,25 +73,24 @@ export function AppShell() {
         setCommandOpen((open) => !open);
       } else if (
         event.key === "n" &&
-        project &&
+        current &&
         !isTyping(event.target) &&
         !event.metaKey &&
         !event.ctrlKey &&
         !event.altKey
       ) {
         event.preventDefault();
-        void navigate({ to: "/p/$projectId/new", params: { projectId: project.id } });
+        void navigate({ to: "/p/$project/new", params: { project: current } });
       }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [navigate, project]);
+  }, [navigate, current]);
 
   const sidebar = (
     <SidebarBody
       projects={projects.data ?? []}
       project={project}
-      variants={(variants.data ?? []).filter((variant) => variant.projectId === project?.id)}
       onSearch={() => setCommandOpen(true)}
       onNavigate={() => setDrawerOpen(false)}
     />
@@ -135,18 +135,18 @@ export function AppShell() {
 function SidebarBody({
   projects,
   project,
-  variants,
   onSearch,
   onNavigate,
 }: {
   projects: Project[];
   project: Project | undefined;
-  variants: Variant[];
   onSearch: () => void;
   onNavigate: () => void;
 }) {
-  const { variantId } = useParams({ strict: false });
+  const { variant: openVariant } = useParams({ strict: false });
   const me = useQuery(queries.me);
+  const variants = project ? variantsOf(project) : [];
+  const check = project?.state.check;
 
   return (
     <nav className="flex h-full flex-col" aria-label="Main">
@@ -177,8 +177,8 @@ function SidebarBody({
         <>
           <div className="mt-3 flex flex-col gap-0.5 px-2">
             <Link
-              to="/p/$projectId/settings"
-              params={{ projectId: project.id }}
+              to="/p/$project/settings"
+              params={{ project: projectSlug(project) }}
               activeProps={{ className: navItemActive }}
               className={navItem}
               onClick={onNavigate}
@@ -190,54 +190,56 @@ function SidebarBody({
                 )}
               />
               <span className="flex-1">Project settings</span>
-              {project.lastStatus === "error" && (
+              {check?.lastStatus === "error" && (
                 <StatusChip tone="bad" className={chipOnActive}>
-                  {sourceStatus(project).label}
+                  {checkStatus(check).label}
                 </StatusChip>
               )}
             </Link>
           </div>
 
-          <div className="mt-5 flex items-center justify-between pr-2 pl-4">
+          <div className="mt-5 flex h-6 items-center justify-between pr-2 pl-4">
             <h2 className="text-[11.5px] font-medium text-muted-foreground">Variants</h2>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label="New variant"
-                    nativeButton={false}
-                    render={
-                      <Link
-                        to="/p/$projectId/new"
-                        params={{ projectId: project.id }}
-                        onClick={onNavigate}
-                      />
-                    }
-                  />
-                }
-              >
-                <PlusIcon />
-              </TooltipTrigger>
-              <TooltipContent side="right">
-                New variant <Kbd>N</Kbd>
-              </TooltipContent>
-            </Tooltip>
+            {project.state.can.edit && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label="New variant"
+                      nativeButton={false}
+                      render={
+                        <Link
+                          to="/p/$project/new"
+                          params={{ project: projectSlug(project) }}
+                          onClick={onNavigate}
+                        />
+                      }
+                    />
+                  }
+                >
+                  <PlusIcon />
+                </TooltipTrigger>
+                <TooltipContent side="right">
+                  New variant <Kbd>N</Kbd>
+                </TooltipContent>
+              </Tooltip>
+            )}
           </div>
           <div className="scroll-quiet mt-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
             {variants.map((variant) => {
-              const missing = notFoundCount(variant);
+              const missing = notFoundCount(variant.state.notFound);
               return (
                 <Link
-                  key={variant.id}
-                  to="/p/$projectId/v/$variantId"
-                  params={{ projectId: project.id, variantId: variant.id }}
-                  className={cn(navItem, variant.id === variantId && navItemActive)}
+                  key={variant.slug}
+                  to="/p/$project/v/$variant"
+                  params={{ project: projectSlug(project), variant: variant.slug }}
+                  className={cn(navItem, variant.slug === openVariant && navItemActive)}
                   onClick={onNavigate}
                 >
                   <VariantIcon
-                    name={variant.icon}
+                    name={variant.definition.icon ?? null}
                     className={cn(
                       "text-muted-foreground group-hover/nav:text-foreground",
                       onActive,
@@ -314,9 +316,9 @@ function ProjectSwitcher({
   onNavigate: () => void;
 }) {
   const navigate = useNavigate();
-  const go = (projectId: string) => {
+  const go = (slug: string) => {
     onNavigate();
-    void navigate({ to: "/p/$projectId", params: { projectId } });
+    void navigate({ to: "/p/$project", params: { project: slug } });
   };
 
   if (projects.length === 0) return null;
@@ -328,8 +330,8 @@ function ProjectSwitcher({
       >
         {project ? (
           <>
-            <ProjectTile name={project.name} />
-            <span className="min-w-0 flex-1 truncate">{project.name}</span>
+            <ProjectTile name={projectName(project)} />
+            <span className="min-w-0 flex-1 truncate">{projectName(project)}</span>
           </>
         ) : (
           <span className="flex-1 text-muted-foreground">Choose a project</span>
@@ -338,10 +340,10 @@ function ProjectSwitcher({
       </DropdownMenuTrigger>
       <DropdownMenuContent className="min-w-56">
         {projects.map((candidate) => (
-          <DropdownMenuItem key={candidate.id} onClick={() => go(candidate.id)}>
-            <ProjectTile name={candidate.name} />
-            <span className="min-w-0 flex-1 truncate">{candidate.name}</span>
-            {candidate.id === project?.id && <CheckIcon className="text-muted-foreground" />}
+          <DropdownMenuItem key={projectSlug(candidate)} onClick={() => go(projectSlug(candidate))}>
+            <ProjectTile name={projectName(candidate)} />
+            <span className="min-w-0 flex-1 truncate">{projectName(candidate)}</span>
+            {candidate === project && <CheckIcon className="text-muted-foreground" />}
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />

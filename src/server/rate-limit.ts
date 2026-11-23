@@ -74,3 +74,17 @@ export const charge = (cost: number, ifUnavailable = true) =>
  * request. Refused while the limiter cannot be asked.
  */
 export const contactsSource = charge(SOURCE_COST - REQUEST_COST, false);
+
+/** Thrown where a request turns out to need more of the budget than is left. */
+export class RateLimited extends Error {}
+
+/**
+ * The same charge for a request that only sometimes fetches: an apply reads
+ * a source's address when it has no copy of the document, and otherwise
+ * costs what any request does. Called at the moment it is about to fetch.
+ */
+export const chargeForFetching = (c: Context<AppContext>) => async (): Promise<void> => {
+  if (!(await spend(c.env, c.var.organizationId, SOURCE_COST - REQUEST_COST, false))) {
+    throw new RateLimited();
+  }
+};

@@ -3,11 +3,17 @@ import { describe, expect, it } from "vitest";
 import { createDb } from "../src/server/db/client";
 import { claimDue } from "../src/server/scheduled";
 import {
-  type ApiProject,
+  applied,
+  apply,
   call,
   callsTo,
+  createKey,
   createProject,
-  createVariant,
+  definitionOf,
+  deploy,
+  document,
+  getProject,
+  googleLogin,
   login,
   MAIL,
   mailbox,
@@ -22,34 +28,40 @@ import {
 } from "./harness";
 
 const MINUTE = 60_000;
-const project = async (cookie: string, id: string) =>
-  (await (await call(`/api/projects/${id}`, { headers: { cookie } })).json()) as ApiProject;
-/** In how many minutes the timer looks at the project next. */
-async function nextCheckIn(id: string): Promise<number> {
-  const [row] = await rows<{ next_check_at: number }>(
-    "SELECT next_check_at FROM projects WHERE id = ?",
-    id,
+/** In how many minutes the timer looks at the project next. NaN: never. */
+async function nextCheckIn(slug = "test"): Promise<number> {
+  const [row] = await rows<{ next_check_at: number | null }>(
+    "SELECT next_check_at FROM projects WHERE slug = ?",
+    slug,
   );
   return ((row?.next_check_at ?? Number.NaN) - Date.now()) / MINUTE;
 }
-/** Make every project due, as if its time had come. */
-const due = () => sql("UPDATE projects SET next_check_at = ?", Date.now() - 1);
-const check = (cookie: string, id: string) =>
-  call(`/api/projects/${id}/check`, { method: "POST", headers: { cookie } });
+/** Make every project that is checked at all due, as if its time had come. */
+const due = () =>
+  sql("UPDATE projects SET next_check_at = ? WHERE next_check_at IS NOT NULL", Date.now() - 1);
+const check = (cookie: string, slug = "test") =>
+  call(`/api/projects/${slug}/check`, { method: "POST", headers: { cookie } });
+/** The main fixture with one more path. */
+const withOwners = () => {
+  const next = structuredClone(SPEC) as typeof SPEC & { paths: Record<string, unknown> };
+  next.paths["/owners"] = {
+    get: { tags: ["pets"], responses: { "200": { description: "ok" } } },
+  };
+  return next;
+};
 
 describe("how often the timer looks at a source", () => {
   it("is about hourly for a source that has to send its whole document", async () => {
-    const { project: created } = await publish();
-    const minutes = await nextCheckIn(created.id);
+    await publish();
+    const minutes = await nextCheckIn();
     expect(minutes).toBeGreaterThan(50);
     expect(minutes).toBeLessThanOrEqual(60);
   });
 
   it("is every run for a source that can say that nothing changed", async () => {
-    const { cookie, project: created } = await publish();
     serveSpec(SPEC, { etag: '"v1"' });
-    await check(cookie, created.id);
-    const minutes = await nextCheckIn(created.id);
+    await publish({ serve: false });
+    const minutes = await nextCheckIn();
     expect(minutes).toBeGreaterThan(3);
     expect(minutes).toBeLessThanOrEqual(5);
   });
@@ -64,45 +76,128 @@ describe("how often the timer looks at a source", () => {
       paths: { "/invoices": { get: { responses: { "200": { description: "ok" } } } } },
     };
     serveSpec(billing);
-    const created = await createProject(cookie, { sources: [{ url: cheap }, { url: SPEC_URL }] });
-    await check(cookie, created.id);
-    expect(await nextCheckIn(created.id)).toBeGreaterThan(50);
+    await createProject(cookie, {
+      sources: [
+        { name: "cheap", url: cheap, follow: true, main: true },
+        { name: "billing", url: SPEC_URL, follow: true },
+      ],
+    });
+    await check(cookie);
+    expect(await nextCheckIn()).toBeGreaterThan(50);
   });
 
   it("comes back to a source that just failed at the next run, and to one that keeps failing hourly", async () => {
-    const { cookie, project: created } = await publish();
+    const { cookie } = await publish();
     upstream("GET", SPEC_URL, () => new Response("boom", { status: 500 }));
 
-    await check(cookie, created.id);
-    expect(await nextCheckIn(created.id)).toBeLessThanOrEqual(5);
+    await check(cookie);
+    expect(await nextCheckIn()).toBeLessThanOrEqual(5);
 
-    await check(cookie, created.id);
-    expect(await nextCheckIn(created.id)).toBeGreaterThan(50);
+    await check(cookie);
+    expect(await nextCheckIn()).toBeGreaterThan(50);
+  });
+
+  it("is never for a project whose documents are uploaded, or one that stops following", async () => {
+    const cookie = await login();
+    const uploaded = definitionOf({ sources: [{ file: "openapi.json" }], variants: { all: {} } });
+    await applied(apply(cookie, uploaded, { documents: { main: document() } }));
+    expect(await nextCheckIn()).toBeNaN();
+    await sql("UPDATE projects SET next_check_at = 0");
+    await runTimer();
+    expect(await nextCheckIn()).toBeNaN();
+
+    // A source that is followed is checked, until the definition stops saying so.
+    serveSpec();
+    const followed = definitionOf({ project: "second", variants: { all: {} } });
+    await applied(apply(cookie, followed));
+    expect(await nextCheckIn("second")).toBeGreaterThan(50);
+    await applied(apply(cookie, { ...followed, sources: [{ url: SPEC_URL }] }));
+    expect(await nextCheckIn("second")).toBeNaN();
+    const before = callsTo("GET", SPEC_URL);
+    await sql("UPDATE projects SET next_check_at = 0");
+    await runTimer();
+    expect(callsTo("GET", SPEC_URL)).toBe(before);
+  });
+});
+
+describe("after a deploy to a project with a followed source", () => {
+  /** A project deployed from a file whose one source the service follows. */
+  async function deployed() {
+    const cookie = await googleLogin("ada@example.com", "Ada");
+    const { key } = await createKey(cookie);
+    const definition = definitionOf({ variants: { public: {} } });
+    await applied(deploy(key, definition, { documents: { main: document() } }));
+    return { cookie, key, definition };
+  }
+  const watching = async () =>
+    (await rows<{ watch_until: number | null }>("SELECT watch_until FROM projects"))[0]
+      ?.watch_until ?? null;
+
+  it("the timer looks at every run for a quarter of an hour, because the API is about to change", async () => {
+    await deployed();
+    // The deploy uploaded what the pipeline read. The service has not asked yet.
+    expect(callsTo("GET", SPEC_URL)).toBe(0);
+    expect(await nextCheckIn()).toBeLessThanOrEqual(0);
+    expect(((await watching()) as number) - Date.now()).toBeGreaterThan(14 * MINUTE);
+
+    // The API is not live yet: the document is still the old one.
+    serveSpec();
+    await runTimer();
+    expect(callsTo("GET", SPEC_URL)).toBe(1);
+    // A source without validators is otherwise looked at hourly. Not now.
+    expect(await nextCheckIn()).toBeLessThanOrEqual(5);
+    expect(await watching()).not.toBeNull();
+
+    await due();
+    await runTimer();
+    expect(callsTo("GET", SPEC_URL)).toBe(2);
+    expect(await nextCheckIn()).toBeLessThanOrEqual(5);
+  });
+
+  it("the first new document ends that, and the usual pace returns", async () => {
+    const { cookie } = await deployed();
+    serveSpec(withOwners());
+    await runTimer();
+    expect((await getProject(cookie)).state.operations.map((op) => op.key)).toContain(
+      "GET /owners",
+    );
+    expect(await watching()).toBeNull();
+    expect(await nextCheckIn()).toBeGreaterThan(50);
+  });
+
+  it("so does the quarter of an hour running out", async () => {
+    await deployed();
+    serveSpec();
+    await sql("UPDATE projects SET watch_until = ?", Date.now() - 1);
+    await runTimer();
+    expect(await nextCheckIn()).toBeGreaterThan(50);
+  });
+
+  it("a save in the app opens no such window", async () => {
+    const { cookie } = await publish();
+    expect(await watching()).toBeNull();
+    await applied(apply(cookie, definitionOf({ name: "Renamed", variants: { public: {} } })));
+    expect(await watching()).toBeNull();
+    expect(await nextCheckIn()).toBeGreaterThan(50);
   });
 });
 
 describe("a run of the timer", () => {
   it("notices a change nobody asked about, and says so", async () => {
-    const { googleLogin } = await import("./harness");
     const cookie = await googleLogin("ada@example.com", "Ada");
     serveSpec();
-    const created = await createProject(cookie);
-    await createVariant(cookie, created.id);
+    await createProject(cookie, { variants: { public: {} } });
     const sent = mailbox();
-    const next = structuredClone(SPEC) as typeof SPEC & { paths: Record<string, unknown> };
-    next.paths["/owners"] = {
-      get: { tags: ["pets"], responses: { "200": { description: "ok" } } },
-    };
-    serveSpec(next);
+    serveSpec(withOwners());
     await due();
 
     await runTimer({ ...MAIL, APP_URL: "https://proxy.example.com/" });
 
-    expect((await project(cookie, created.id)).operations.map((op) => op.key)).toContain(
+    expect((await getProject(cookie)).state.operations.map((op) => op.key)).toContain(
       "GET /owners",
     );
     expect(sent).toHaveLength(1);
-    expect(sent[0]?.text).toContain(`https://proxy.example.com/p/${created.id}`);
+    expect(sent[0]?.text).toContain("https://proxy.example.com/p/test");
   });
 
   it("leaves alone what is not due and what nobody serves anything from", async () => {
@@ -113,7 +208,7 @@ describe("a run of the timer", () => {
 
     const other = "https://api.example.com/unused.json";
     serveSpec(SPEC, {}, other);
-    await createProject(cookie, { url: other });
+    await createProject(cookie, { project: "unused", sources: [{ url: other, follow: true }] });
     await due();
     const unusedBefore = callsTo("GET", other);
     await runTimer();
@@ -130,43 +225,51 @@ describe("a run of the timer", () => {
   });
 
   it("gives a project to one of two runs that both saw it as due", async () => {
-    const { project: created } = await publish();
+    await publish();
     const seen = Date.now() - 1;
     await sql("UPDATE projects SET next_check_at = ?", seen);
+    const [{ id } = { id: "" }] = await rows<{ id: string }>("SELECT id FROM projects");
     const db = createDb(env.DB);
     const taken = await Promise.all([
-      claimDue(db, created.id, seen, Date.now()),
-      claimDue(db, created.id, seen, Date.now()),
+      claimDue(db, id, seen, Date.now()),
+      claimDue(db, id, seen, Date.now()),
     ]);
     expect(taken.filter(Boolean)).toHaveLength(1);
   });
 
   it("records a failing source and moves on", async () => {
-    const { cookie, project: created } = await publish();
+    const { cookie } = await publish();
     const sent = mailbox();
     await due();
     serveSpec("not json at all");
     await runTimer(MAIL);
-    expect(await project(cookie, created.id)).toMatchObject({ lastStatus: "error" });
+    expect((await getProject(cookie)).state.check).toMatchObject({ lastStatus: "error" });
     expect(sent).toEqual([]);
   });
 
   it("is not held up by sources that are down: everyone gets their turn", async () => {
     const cookie = await login();
-    const connect = async (url: string) => {
+    const connect = async (slug: string, url: string) => {
       serveSpec(SPEC, {}, url);
-      const created = await createProject(cookie, { url });
-      await createVariant(cookie, created.id);
-      return created;
+      await applied(
+        apply(
+          cookie,
+          definitionOf({
+            project: slug,
+            sources: [{ url, follow: true }],
+            variants: { public: {} },
+          }),
+        ),
+      );
     };
     // More broken projects than one run takes, all due for longer than the healthy one.
     const dead = Array.from({ length: 62 }, (_, n) => `https://dead-${n}.example.com/openapi.json`);
-    for (const url of dead) await connect(url);
+    for (const [n, url] of dead.entries()) await connect(`dead-${n}`, url);
     const healthy = "https://healthy.example.com/openapi.json";
-    const last = await connect(healthy);
+    await connect("healthy", healthy);
     for (const url of dead) upstream("GET", url, () => new Response("down", { status: 500 }));
     await sql("UPDATE projects SET next_check_at = ?", Date.now() - 60 * MINUTE);
-    await sql("UPDATE projects SET next_check_at = ? WHERE id = ?", Date.now() - MINUTE, last.id);
+    await sql("UPDATE projects SET next_check_at = ? WHERE slug = 'healthy'", Date.now() - MINUTE);
 
     const before = callsTo("GET", healthy);
     await runTimer();
@@ -181,16 +284,20 @@ describe("a run of the timer", () => {
     const cookie = await login();
     // More than a run stores, with room for the checks already under way when it stops.
     const urls = Array.from({ length: 16 }, (_, n) => `https://api-${n}.example.com/openapi.json`);
-    for (const url of urls) {
+    for (const [n, url] of urls.entries()) {
       serveSpec(SPEC, {}, url);
-      const created = await createProject(cookie, { url });
-      await createVariant(cookie, created.id);
+      await applied(
+        apply(
+          cookie,
+          definitionOf({
+            project: `api-${n}`,
+            sources: [{ url, follow: true }],
+            variants: { public: {} },
+          }),
+        ),
+      );
     }
-    const next = structuredClone(SPEC) as typeof SPEC & { paths: Record<string, unknown> };
-    next.paths["/owners"] = {
-      get: { tags: ["pets"], responses: { "200": { description: "ok" } } },
-    };
-    for (const url of urls) serveSpec(next, {}, url);
+    for (const url of urls) serveSpec(withOwners(), {}, url);
     const changed = async () =>
       (
         await rows<{ n: number }>(

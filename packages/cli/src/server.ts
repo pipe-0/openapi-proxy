@@ -86,7 +86,7 @@ export function createServer(options: ServerOptions): Hono {
     const loaded = await loadProject(options.config, options.sources);
     const { definition } = loaded.config;
     const path = `/v/${project}/${asked.slug}`;
-    if (definition.project !== project || !(asked.slug in definition.variants)) {
+    if (definition.project !== project || !Object.hasOwn(definition.variants, asked.slug)) {
       const known = Object.keys(definition.variants).map(
         (slug) => `/v/${definition.project}/${slug}`,
       );

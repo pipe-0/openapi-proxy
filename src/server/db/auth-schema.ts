@@ -105,7 +105,7 @@ export const organization = sqliteTable(
     logo: text("logo"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     metadata: text("metadata"),
-    /** Ours, not better-auth's: whether a new variant starts public or private. */
+    /** Ours, not better-auth's: who may read a variant when neither it nor its project says. */
     defaultVisibility: text("default_visibility")
       .$type<"public" | "private">()
       .notNull()

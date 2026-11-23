@@ -1,4 +1,5 @@
 import { parseArgs } from "node:util";
+import { deploy, HOSTED, KEY_VARIABLE } from "./commands/deploy.js";
 import { DEFAULT_PORT, dev } from "./commands/dev.js";
 import { init } from "./commands/init.js";
 import { operations } from "./commands/operations.js";
@@ -22,6 +23,7 @@ Commands
   dev                  Serve the variants on localhost, as the service would
   validate             Check the file, and its names against the documents
   operations           List the operations and tags of the documents
+  deploy               Send the file and its documents to the service
 
 Options for every command
   --config <file>      The definition file (default: ${DEFAULT_CONFIG})
@@ -30,6 +32,7 @@ Options for every command
 Start
   npx @pipe0/openapi-proxy init https://api.example.com/openapi.json
   npx @pipe0/openapi-proxy dev
+  npx @pipe0/openapi-proxy deploy
 
 Docs: https://openapi-proxy.app/docs
 `;
@@ -94,6 +97,28 @@ Options
 Example
   openapi-proxy operations --tag Billing --variant public
 `,
+  deploy: `openapi-proxy deploy
+
+Read the documents the definition file names, here, and send them with the
+file to the service. The project with the file's slug becomes what the file
+says: it is created if it is not there, variants the file does not list are
+deleted, and from then on it is changed by deploying, not in the app.
+
+A source with follow: true is also kept current by the service. Every other
+document stays as deployed until the next deploy.
+
+Needs a deploy API key in ${KEY_VARIABLE}. The owner of the workspace creates
+one in the app, under Workspace.
+
+Options
+  --config <file>   The definition file (default: ${DEFAULT_CONFIG})
+  --dry-run         Say what would change, and change nothing
+
+Deploys to ${HOSTED}, or to the instance the file names.
+
+Example
+  ${KEY_VARIABLE}=oap_... openapi-proxy deploy --dry-run
+`,
 };
 
 /** What to say when there is no definition file: where to start. */
@@ -140,6 +165,7 @@ async function main(argv: string[]): Promise<number> {
       tag: { type: "string" },
       variant: { type: "string" },
       json: { type: "boolean", default: false },
+      "dry-run": { type: "boolean", default: false },
     },
   });
   if (values.help) {
@@ -165,6 +191,13 @@ async function main(argv: string[]): Promise<number> {
     }
     case "validate":
       return validate(common);
+    case "deploy":
+      if (values.source.length > 0) {
+        throw new Error(
+          "deploy takes no --source: it reads what the file says, so that what is deployed is what is in the repository.",
+        );
+      }
+      return deploy({ config: values.config, dryRun: values["dry-run"] });
     default:
       return operations({
         ...common,

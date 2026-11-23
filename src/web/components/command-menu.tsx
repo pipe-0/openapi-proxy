@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/command";
 import { signOut } from "@/components/user-menu";
 import { type Project, queries } from "@/lib/api";
+import { projectName, projectSlug, variantsOf } from "@/lib/project";
 import { setTheme, useTheme } from "@/lib/theme";
 
 /**
@@ -37,14 +38,15 @@ export function CommandMenu({
 }) {
   const navigate = useNavigate();
   const projects = useQuery(queries.projects);
-  const variants = useQuery(queries.variants);
   const { resolved } = useTheme();
+  const variants = (projects.data ?? []).flatMap((owner) =>
+    variantsOf(owner).map((variant) => ({ owner, variant })),
+  );
 
   const run = (action: () => void) => () => {
     onOpenChange(false);
     action();
   };
-  const projectName = (id: string) => projects.data?.find((p) => p.id === id)?.name ?? "";
 
   return (
     <CommandDialog
@@ -58,47 +60,48 @@ export function CommandMenu({
       <CommandList>
         <CommandEmpty>Nothing matches.</CommandEmpty>
 
-        {(variants.data?.length ?? 0) > 0 && (
+        {variants.length > 0 && (
           <CommandGroup heading="Variants">
-            {variants.data?.map((variant) => (
-              <CommandItem
-                key={variant.id}
-                value={`${variant.name} ${variant.path} ${projectName(variant.projectId)}`}
-                onSelect={run(() =>
-                  navigate({
-                    to: "/p/$projectId/v/$variantId",
-                    params: { projectId: variant.projectId, variantId: variant.id },
-                  }),
-                )}
-              >
-                <FileTextIcon />
-                <span className="truncate">{variant.name}</span>
-                <span className="ml-auto truncate text-[12px] text-muted-foreground">
-                  {variant.path}
-                </span>
-              </CommandItem>
-            ))}
+            {variants.map(({ owner, variant }) => {
+              const path = new URL(variant.state.url).pathname;
+              return (
+                <CommandItem
+                  key={path}
+                  value={`${variant.name} ${path} ${projectName(owner)}`}
+                  onSelect={run(() =>
+                    navigate({
+                      to: "/p/$project/v/$variant",
+                      params: { project: projectSlug(owner), variant: variant.slug },
+                    }),
+                  )}
+                >
+                  <FileTextIcon />
+                  <span className="truncate">{variant.name}</span>
+                  <span className="ml-auto truncate text-[12px] text-muted-foreground">{path}</span>
+                </CommandItem>
+              );
+            })}
           </CommandGroup>
         )}
 
         <CommandGroup heading="Actions">
+          {project?.state.can.edit && (
+            <CommandItem
+              onSelect={run(() =>
+                navigate({ to: "/p/$project/new", params: { project: projectSlug(project) } }),
+              )}
+            >
+              <PlusIcon /> New variant in {projectName(project)}
+            </CommandItem>
+          )}
           {project && (
-            <>
-              <CommandItem
-                onSelect={run(() =>
-                  navigate({ to: "/p/$projectId/new", params: { projectId: project.id } }),
-                )}
-              >
-                <PlusIcon /> New variant in {project.name}
-              </CommandItem>
-              <CommandItem
-                onSelect={run(() =>
-                  navigate({ to: "/p/$projectId/settings", params: { projectId: project.id } }),
-                )}
-              >
-                <Settings2Icon /> Settings of {project.name}
-              </CommandItem>
-            </>
+            <CommandItem
+              onSelect={run(() =>
+                navigate({ to: "/p/$project/settings", params: { project: projectSlug(project) } }),
+              )}
+            >
+              <Settings2Icon /> Settings of {projectName(project)}
+            </CommandItem>
           )}
           <CommandItem onSelect={run(() => navigate({ to: "/connect" }))}>
             <PlusIcon /> New project
@@ -122,13 +125,13 @@ export function CommandMenu({
           <CommandGroup heading="Projects">
             {projects.data?.map((candidate) => (
               <CommandItem
-                key={candidate.id}
-                value={`project ${candidate.name} ${candidate.slug}`}
+                key={projectSlug(candidate)}
+                value={`project ${projectName(candidate)} ${projectSlug(candidate)}`}
                 onSelect={run(() =>
-                  navigate({ to: "/p/$projectId", params: { projectId: candidate.id } }),
+                  navigate({ to: "/p/$project", params: { project: projectSlug(candidate) } }),
                 )}
               >
-                <LayoutListIcon /> {candidate.name}
+                <LayoutListIcon /> {projectName(candidate)}
               </CommandItem>
             ))}
           </CommandGroup>

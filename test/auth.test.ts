@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   type ApiProject,
+  apply,
   call,
   cookiesFrom,
   createProject,
-  createVariant,
+  getProject,
   googleCallback,
   googleLogin,
   json,
@@ -24,7 +25,7 @@ const me = async (cookie: string) =>
 describe("the admin API", () => {
   it("is closed without a session", async () => {
     expect((await call("/api/projects")).status).toBe(401);
-    expect((await call("/api/variants")).status).toBe(401);
+    expect((await call("/api/workspace/keys")).status).toBe(401);
     expect((await call("/api/me")).status).toBe(401);
   });
 
@@ -170,58 +171,48 @@ describe("organizations", () => {
     const grace = await googleLogin("grace@example.org");
 
     serveSpec();
-    const project = await createProject(ada);
-    const variant = await createVariant(ada, project.id);
+    const project = await createProject(ada, { variants: { public: {} } });
 
     const listed = (await (
       await call("/api/projects", { headers: { cookie: grace } })
     ).json()) as ApiProject[];
     expect(listed).toEqual([]);
-    expect(await (await call("/api/variants", { headers: { cookie: grace } })).json()).toEqual([]);
 
     for (const [method, path] of [
-      ["GET", `/api/projects/${project.id}`],
-      ["GET", `/api/projects/${project.id}/spec`],
-      ["POST", `/api/projects/${project.id}/check`],
-      ["DELETE", `/api/projects/${project.id}?cascade=true`],
-      ["GET", `/api/variants/${variant.id}`],
-      ["DELETE", `/api/variants/${variant.id}`],
-      ["GET", `/api/variants/slug-check?projectId=${project.id}&slug=x1`],
+      ["GET", "/api/projects/test"],
+      ["GET", "/api/projects/test/document"],
+      ["GET", "/api/projects/test/notifications"],
+      ["POST", "/api/projects/test/check"],
+      ["DELETE", "/api/projects/test"],
     ] as const) {
       const response = await call(path, { method, headers: { cookie: grace } });
       expect(response.status, `${method} ${path}`).toBe(404);
     }
-    expect(
-      (await call(`/api/projects/${project.id}`, json("PATCH", { name: "mine now" }, grace)))
-        .status,
-    ).toBe(404);
-    expect(
-      (
-        await call(
-          "/api/variants",
-          json(
-            "POST",
-            {
-              projectId: project.id,
-              name: "x",
-              selection: {},
-            },
-            grace,
-          ),
-        )
-      ).status,
-    ).toBe(404);
+    const credentials = await call(
+      "/api/projects/test/credentials",
+      json("PUT", { source: "main", headers: [] }, grace),
+    );
+    expect(credentials.status).toBe(404);
+    // Its slug is taken, and saying so gives nothing of it away.
+    const taken = await apply(grace, { ...project.definition, name: "mine now" });
+    expect(taken.status).toBe(409);
+    expect(await taken.json()).toEqual({ code: "slug-taken", error: '"test" is already taken.' });
+    const key = await call(
+      "/api/workspace/keys",
+      json(
+        "POST",
+        { name: "x", access: "read", variant: { project: "test", variant: "public" } },
+        grace,
+      ),
+    );
+    expect(key.status).toBe(404);
 
     // The same source can be a project in both organizations, under different public names.
-    const theirs = await createProject(grace);
-    expect(theirs.id).not.toBe(project.id);
-    expect(theirs.slug).toBe("test-2");
-    expect(
-      (await call(`/api/projects/${theirs.id}`, json("PATCH", { slug: project.slug }, grace)))
-        .status,
-    ).toBe(409);
+    const theirs = await createProject(grace, { project: "test-2" });
+    expect(theirs.definition.sources).toEqual(project.definition.sources);
 
     // Public URLs need no organization: project slugs are unique across the deployment.
-    expect((await call(variant.path)).status).toBe(200);
+    expect((await call("/v/test/public")).status).toBe(200);
+    expect((await getProject(ada)).definition).toEqual(project.definition);
   });
 });

@@ -87,16 +87,19 @@ test("the hero carries a pasted URL through sign-in and connects it", async ({ p
   await page.getByLabel("Password").fill(ADMIN_PASSWORD);
   await page.getByLabel("Password").press("Enter");
 
-  // The connect step takes the URL from there and connects it. This document
-  // already is a project (the journeys before made it), so it opens that one.
-  await expect(page).toHaveURL(/\/p\/prj_[a-z0-9]+\/new$/, { timeout: 30_000 });
+  // The connect step has the URL from there. What is left to say is what the
+  // project is called in its URLs.
+  await expect(page.getByLabel("OpenAPI document URL")).toHaveValue(url);
+  await page.getByLabel("Project URL slug").fill("from-the-hero");
+  await page.getByRole("button", { name: "Connect" }).click();
+  await expect(page).toHaveURL(/\/p\/from-the-hero\/new$/, { timeout: 30_000 });
   await expect(page.getByLabel("Variant name")).toBeVisible();
 });
 
 test("someone who is signed in gets the app at /, not the landing page", async ({ page }) => {
   await signIn(page);
   await page.goto("/");
-  await expect(page).toHaveURL(/\/(p\/prj_|connect)/);
+  await expect(page).toHaveURL(/\/(p\/|connect)/);
 });
 
 test("the blog lists published posts, and drafts only while developing", async ({
@@ -262,14 +265,15 @@ test("the docs explain checks, and the Source page points to the right page", as
   // The fixture API sends no ETag, so the Source page says what that costs and links here.
   await signIn(page);
   const projects = (await (await page.request.get("/api/projects")).json()) as Array<{
-    id: string;
-    sources: Array<{ validator: string | null }>;
+    definition: { project: string };
+    state: { check: object | null; sources: Array<{ validator: string | null }> };
   }>;
-  // A project of one document that sends no validator.
+  // A project of one followed document that sends no validator.
   const project = projects.find(
-    (candidate) => candidate.sources.length === 1 && candidate.sources[0]?.validator === null,
+    ({ state }) =>
+      state.check !== null && state.sources.length === 1 && state.sources[0]?.validator === null,
   );
-  await page.goto(`/p/${project?.id}/settings`);
+  await page.goto(`/p/${project?.definition.project}/settings`);
   await page.getByRole("table").getByRole("button").first().click();
   await expect(page.getByText(/Each check downloads the whole document/)).toBeVisible();
   await expect(page.getByRole("link", { name: "How to send one" })).toHaveAttribute(

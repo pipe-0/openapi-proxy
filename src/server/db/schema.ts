@@ -1,9 +1,12 @@
 import type {
+  AppliedRecord,
   DocumentOverrides,
-  MergeNote,
   OperationEntry,
+  ProjectNote,
   Selection,
   TargetVersion,
+  VariantIconName,
+  Visibility,
 } from "@openapi-proxy/core";
 import { sql } from "drizzle-orm";
 import {
@@ -14,9 +17,8 @@ import {
   text,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
-import type { KeyAccess, Visibility } from "../../shared/access";
+import type { KeyAccess } from "../../shared/access";
 import type { Plan } from "../../shared/plans";
-import type { VariantIconName } from "../../shared/variant-icons";
 import { organization, user } from "./auth-schema";
 
 /**
@@ -25,6 +27,13 @@ import { organization, user } from "./auth-schema";
  * Users, sessions and organizations belong to better-auth (see
  * auth-schema.ts). Everyone who signs in gets an organization, every project
  * belongs to one, and every query on the tables below filters by it.
+ *
+ * A project is described by a definition (the format of an
+ * `openapi-proxy.yaml`, see packages/core/src/definition). These tables are
+ * that definition stored, next to what the service has found out about it:
+ * the documents, their operations, the state of checks. The definition is
+ * read back from the rows by definition-rows.ts, and written to them by
+ * apply.ts, which is the only thing that does.
  */
 export * from "./auth-schema";
 
@@ -33,15 +42,6 @@ export interface StoredHeader {
   name: string;
   value: string;
 }
-
-/**
- * Something that assembling a project's document did and its owner should
- * know: an operation two sources both define, a component that had to be
- * renamed, a source that was converted to another OpenAPI version.
- */
-export type ProjectNote =
-  | MergeNote
-  | { kind: "source-converted"; source: string; from: string; to: string };
 
 /**
  * One API as its readers know it. Its document is assembled from one or more
@@ -56,12 +56,42 @@ export const projects = sqliteTable(
     organizationId: text("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    name: text("name").notNull(),
     /**
-     * First segment of the public URL: /v/<project>/<variant>. Unique across
-     * the whole deployment, so a public URL never needs to name an organization.
+     * First segment of the public URL: /v/<project>/<variant>, and the
+     * project's identity in a definition. Unique across the whole deployment,
+     * so a public URL never needs to name an organization.
      */
     slug: text("slug").notNull().unique(),
+
+    // The definition's own keys.
+    /** What it is called. Null: by its slug. */
+    name: text("name"),
+    /** Who may read its variants unless they say otherwise. Null: the workspace's default. */
+    visibility: text("visibility").$type<Visibility>(),
+    /** Title, description and servers for every variant that does not state its own. */
+    overrides: text("overrides", { mode: "json" }).$type<DocumentOverrides>(),
+
+    /**
+     * Where the definition is edited: in the app, or in a file that is
+     * deployed. A project that a file was deployed to is not edited in the
+     * app until someone says so there.
+     */
+    managedBy: text("managed_by").$type<"app" | "file">().notNull().default("app"),
+    applied: text("applied", { mode: "json" }).$type<AppliedRecord>(),
+    /**
+     * Counts the definitions applied to the project. A save in the app says
+     * which revision it started from, and is refused if the project has moved
+     * on. (Its documents can change without it: `bodyHash` says so.)
+     */
+    revision: integer("revision").notNull().default(0),
+    /**
+     * A value an apply makes up for itself and writes with the first statement
+     * of its transaction. Every other statement of that apply runs only where
+     * this is still its own, so that an apply which came too late writes
+     * nothing at all. (The revision cannot say that: another apply may have
+     * moved it to the same number.)
+     */
+    writer: text("writer"),
 
     // What assembling the sources last produced.
     /** OpenAPI version of the assembled document, e.g. "3.1". */
@@ -73,14 +103,22 @@ export const projects = sqliteTable(
     opIndex: text("op_index", { mode: "json" }).$type<OperationEntry[]>().notNull(),
     notes: text("notes", { mode: "json" }).$type<ProjectNote[]>().notNull().default([]),
 
-    /** Last round of checks in which every source answered. */
-    fetchedAt: integer("fetched_at").notNull(),
+    // Keeping followed sources current.
+    /** Last round of checks in which every followed source answered. Null: none yet, or nothing is followed. */
+    checkedAt: integer("checked_at"),
     /**
-     * When the timer looks at the sources next (schedule.ts says how that is
-     * decided). A run takes a project by moving this ahead, which is also what
-     * keeps two runs from checking the same project.
+     * When the timer looks at the followed sources next (schedule.ts says how
+     * that is decided). Null: never, because nothing is followed. A run takes
+     * a project by moving this ahead, which is also what keeps two runs from
+     * checking the same project.
      */
     nextCheckAt: integer("next_check_at"),
+    /**
+     * Set by a deploy to a project with a followed source: until then the
+     * timer looks at every run, because the API behind the source is about
+     * to change. The first new document ends it.
+     */
+    watchUntil: integer("watch_until"),
     lastStatus: text("last_status").$type<"ok" | "error">().notNull().default("ok"),
     lastError: text("last_error"),
     createdAt: integer("created_at").notNull(),
@@ -102,10 +140,8 @@ export const releasedSlugs = sqliteTable("released_slugs", {
 });
 
 /**
- * One OpenAPI document, fetched from a URL: where it is, how to fetch it, and
- * the last good copy of it. A project has at least one. Their order matters:
- * the first is the main document, and where two define the same thing, the
- * earlier one wins.
+ * One OpenAPI document of a project: where it comes from, how it is merged
+ * in, and the copy that is served from. A project has at least one.
  */
 export const sources = sqliteTable(
   "sources",
@@ -114,15 +150,25 @@ export const sources = sqliteTable(
     projectId: text("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
+    /** Its place in the definition's list. */
     position: integer("position").notNull(),
-    /** What people call it. Also names components that had to be renamed. */
-    name: text("name").notNull(),
-    url: text("url").notNull(),
-    headers: text("headers", { mode: "json" }).$type<StoredHeader[]>().notNull().default([]),
+    /** What the definition calls it. Null for a project's only source without a name. */
+    name: text("name"),
+    /** A document at an address, */
+    url: text("url"),
+    /** or in a file of whoever deployed it: the path as the definition has it. */
+    file: text("file"),
+    /** The service keeps reading the URL. Otherwise the document changes only with an apply. */
+    follow: integer("follow", { mode: "boolean" }).notNull().default(false),
+    /** With several sources: the one whose title and servers describe the whole, and that wins a clash. */
+    main: integer("main", { mode: "boolean" }).notNull().default(false),
     /** Put in front of every path of this document, e.g. "/billing". */
     pathPrefix: text("path_prefix"),
+    /** Request headers sent when the service fetches it. Not part of the definition. */
+    headers: text("headers", { mode: "json" }).$type<StoredHeader[]>().notNull().default([]),
 
-    // What the last successful fetch found.
+    // What the document that is stored says about itself.
+    title: text("title"),
     apiVersion: text("api_version"),
     specVersion: text("spec_version").notNull(),
     upstreamEtag: text("upstream_etag"),
@@ -134,14 +180,15 @@ export const sources = sqliteTable(
     /** How many operations it defines. */
     operations: integer("operations").notNull(),
 
-    /** Last time the document was compared with the source. */
+    /** When this copy was read: fetched by the service, or uploaded. */
     verifiedAt: integer("verified_at").notNull(),
     lastStatus: text("last_status").$type<"ok" | "error">().notNull().default("ok"),
     lastError: text("last_error"),
   },
   (table) => [
-    uniqueIndex("sources_project_url").on(table.projectId, table.url),
     index("sources_project").on(table.projectId),
+    // A definition's sources have names of their own. (A project's only source may have none.)
+    uniqueIndex("sources_project_name").on(table.projectId, table.name),
   ],
 );
 
@@ -152,18 +199,28 @@ export const variants = sqliteTable(
     projectId: text("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
-    name: text("name").notNull(),
+    /** Second segment of the public URL, and its key in the definition. */
     slug: text("slug").notNull(),
+    /** Its place among the project's variants. */
+    position: integer("position").notNull().default(0),
+    /** What it is called. Null: by its slug. */
+    name: text("name"),
     selection: text("selection", { mode: "json" }).$type<Selection>().notNull(),
-    /** Title, description and servers this variant states instead of the document's. Null: none. */
+    /** Title, description and servers this variant states itself, over the project's. Null: none. */
     overrides: text("overrides", { mode: "json" }).$type<DocumentOverrides>(),
-    /** The icon it has in the navigation (src/shared/variant-icons.ts). Null: the plain one. */
+    /** The icon it has in the navigation. Null: the plain one. */
     icon: text("icon").$type<VariantIconName>(),
-    /** Who may read it at its URL: anyone, or only an API key of its workspace. */
-    visibility: text("visibility").$type<Visibility>().notNull().default("public"),
-    /** Incremented whenever what is served can change; part of the served ETag. */
-    revision: integer("revision").notNull().default(1),
+    /** Who may read it at its URL. Null: what the project says, and then the workspace. */
+    visibility: text("visibility").$type<Visibility>(),
+    /**
+     * A hash of everything about the variant that decides what is served: its
+     * selection, and the overrides it ends up with once the project's are
+     * filled in. Part of the served ETag, so a change to a project default
+     * changes exactly the ETags it affects.
+     */
+    servedHash: text("served_hash").notNull(),
     createdAt: integer("created_at").notNull(),
+    /** When its own entry in the definition last changed. */
     updatedAt: integer("updated_at").notNull(),
   },
   (table) => [uniqueIndex("variants_project_slug").on(table.projectId, table.slug)],
@@ -276,10 +333,15 @@ export const subscriptions = sqliteTable(
 );
 
 /**
- * API keys, for scripts, agents and the readers of private variants, sent as
- * `Authorization: Bearer <key>`. A key acts as the person who made it, in
- * their workspace, for as long as they are in it. Only its SHA-256 is stored;
- * the key itself is shown once, when it is created.
+ * API keys, sent as `Authorization: Bearer <key>`. Only a key's SHA-256 is
+ * stored; the key itself is shown once, when it is created. There are two
+ * kinds (src/shared/access.ts):
+ *
+ * - A deploy API key belongs to the workspace and applies definitions, which
+ *   is what `openapi-proxy deploy` does from a pipeline. It keeps working
+ *   when whoever made it leaves.
+ * - A user API key reads private variants, all of them or one. It acts for
+ *   the person who made it, for as long as they are in the workspace.
  */
 export const apiKeys = sqliteTable(
   "api_keys",
@@ -288,20 +350,18 @@ export const apiKeys = sqliteTable(
     organizationId: text("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+    /** Who made it. A user API key is theirs; for a deploy API key this only says who. */
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
     name: text("name").notNull(),
     /** Hex SHA-256 of the whole key. */
     keyHash: text("key_hash").notNull().unique(),
     /** The first characters, to tell keys apart in a list. */
     prefix: text("prefix").notNull(),
-    /** What it may do (src/shared/access.ts): everything a key can, or only read private variants. */
-    access: text("access").$type<KeyAccess>().notNull().default("full"),
+    access: text("access").$type<KeyAccess>().notNull(),
     /**
-     * For a key that only reads: the one variant it reads, or null for every
-     * private variant of the workspace. The key goes when the variant does,
-     * so that it never comes to read more than it was made for.
+     * For a user API key: the one variant it reads, or null for every private
+     * variant of the workspace. The key goes when the variant does, so that
+     * it never comes to read more than it was made for.
      */
     variantId: text("variant_id").references(() => variants.id, { onDelete: "cascade" }),
     createdAt: integer("created_at").notNull(),

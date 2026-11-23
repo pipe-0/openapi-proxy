@@ -83,7 +83,7 @@ workspaceRoutes.get("/", async (c) => {
       .select({
         id: organization.id,
         name: organization.name,
-        /** Whether a new variant starts public or private. */
+        /** Who may read a variant when neither it nor its project says. */
         defaultVisibility: organization.defaultVisibility,
       })
       .from(organization)
@@ -516,11 +516,16 @@ workspaceRoutes.delete("/members/:id", async (c) => {
 
   await db.batch([
     db.delete(member).where(eq(member.id, target.id)),
-    // Their API keys acted for them in this workspace, and go with them.
+    // Their user API keys acted for them in this workspace, and go with them.
+    // Deploy API keys are the workspace's and stay.
     db
       .delete(apiKeys)
       .where(
-        and(eq(apiKeys.userId, target.userId), eq(apiKeys.organizationId, c.var.organizationId)),
+        and(
+          eq(apiKeys.createdBy, target.userId),
+          eq(apiKeys.organizationId, c.var.organizationId),
+          eq(apiKeys.access, "read"),
+        ),
       ),
   ]);
   return c.json({ ok: true });
@@ -656,8 +661,8 @@ invitationRoutes.post("/:id/accept", async (c) => {
       createdAt: new Date(),
     }),
     db.update(invitation).set({ status: "accepted" }).where(eq(invitation.id, row.id)),
-    // Keys made in the workspace being left do not come along.
-    db.delete(apiKeys).where(eq(apiKeys.userId, me.id)),
+    // User API keys made in the workspace being left do not come along.
+    db.delete(apiKeys).where(and(eq(apiKeys.createdBy, me.id), eq(apiKeys.access, "read"))),
     // Kept in step for better-auth; requests read the member table, not this.
     db
       .update(session)

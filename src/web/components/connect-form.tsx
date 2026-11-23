@@ -1,6 +1,8 @@
+import { isValidSlug, type ProjectDefinition, slugify } from "@openapi-proxy/core";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowRightIcon, KeyRoundIcon, MergeIcon, PlusIcon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { firstFree, nameFromUrl } from "@/components/documents";
 import {
   type HeaderDraft,
   HeaderEditor,
@@ -9,60 +11,99 @@ import {
   toHeaderInput,
 } from "@/components/header-editor";
 import { Notice } from "@/components/page";
+import { SLUG_HELP, SlugInput, useSlugStatus } from "@/components/slug-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { api, type NewSource, type Project, queries, RequestError } from "@/lib/api";
+import { api, bareUrl, errorMessage, type HeaderInput, queries, RequestError } from "@/lib/api";
 import { cn, looksLikeUrl } from "@/lib/utils";
 
 /** One more document to merge in, while it is being typed. */
 interface Extra {
   id: number;
   url: string;
+  name: string;
+  /** The name was typed, so it no longer follows the address. */
+  named: boolean;
   headers: HeaderDraft[];
 }
 let nextExtra = 1;
-const blank = (): Extra => ({ id: nextExtra++, url: "", headers: [] });
+const blank = (): Extra => ({ id: nextExtra++, url: "", name: "", named: false, headers: [] });
+
+/** A project slug to start from: "https://api.pipe0.com/doc" gives "pipe0". */
+function slugFromUrl(url: string): string {
+  const slug = slugify(nameFromUrl(url));
+  return isValidSlug(slug) ? slug : "";
+}
 
 /**
- * Point at an OpenAPI document. One field. Two things appear only when they
- * are needed: credentials, if the source turns us away, and more fields, if
- * several documents are to be merged into one project.
+ * Point at an OpenAPI document, and say what the project is called in its
+ * URLs. Two things appear only when they are needed: credentials, if the
+ * source turns us away, and more fields, if several documents are to be
+ * merged into one project.
+ *
+ * What it makes is a definition like any other, applied like any other: one
+ * followed source per document, and no variants yet.
  */
 export function ConnectForm({
   onConnected,
   initialUrl = "",
+  urlPrefix,
 }: {
-  onConnected: (project: Project) => void;
-  /** Fetched straight away when given. */
+  /** Called with the new project's slug. */
+  onConnected: (project: string) => void;
+  /** Connected straight away when given, if the slug it suggests is free. */
   initialUrl?: string;
+  /** Everything before a project's slug in its public URLs. */
+  urlPrefix: string;
 }) {
   const queryClient = useQueryClient();
   const [url, setUrl] = useState(initialUrl);
+  const [slug, setSlug] = useState(() => slugFromUrl(initialUrl));
+  const [slugEdited, setSlugEdited] = useState(false);
   const [headers, setHeaders] = useState<HeaderDraft[]>([]);
   /** The documents after the first, once "merge several" was chosen. */
   const [extras, setExtras] = useState<Extra[]>([]);
   const merging = extras.length > 0;
   const more = extras.filter((extra) => extra.url.trim() !== "");
+  const slugStatus = useSlugStatus(slug, api.checkProjectSlug, "projects");
 
   const connect = useMutation({
-    mutationFn: () => {
-      const document = (address: string, drafts: HeaderDraft[]): NewSource => ({
-        url: address.trim(),
-        ...(drafts.length > 0 ? { headers: toHeaderInput(drafts) } : {}),
+    mutationFn: async () => {
+      const credentials: Record<string, HeaderInput[]> = {};
+      const with_ = (name: string, drafts: HeaderDraft[]) => {
+        if (drafts.length > 0) credentials[name] = toHeaderInput(drafts);
+      };
+      let sources: ProjectDefinition["sources"];
+      if (more.length === 0) {
+        sources = [{ url: url.trim(), follow: true }];
+        with_("main", headers);
+      } else {
+        // With several, every document has a name, and the first one leads.
+        const main = firstFree(
+          nameFromUrl(url) || "main",
+          more.map((extra) => extra.name),
+        );
+        sources = [
+          { name: main, url: url.trim(), main: true, follow: true },
+          ...more.map((extra) => ({
+            name: extra.name.trim(),
+            url: extra.url.trim(),
+            follow: true,
+          })),
+        ];
+        with_(main, headers);
+        for (const extra of more) with_(extra.name.trim(), extra.headers);
+      }
+      await api.applyProject({
+        definition: { version: 1, project: slug, sources, variants: {} },
+        // Only if there is no such project: this form makes one, and never changes one.
+        ifRevision: 0,
+        ...(Object.keys(credentials).length > 0 ? { credentials } : {}),
       });
-      return api.createProject([
-        document(url, headers),
-        ...more.map((extra) => document(extra.url, extra.headers)),
-      ]);
+      await queryClient.invalidateQueries({ queryKey: queries.projects.queryKey });
+      return slug;
     },
-    onSuccess: (project) => {
-      queryClient.setQueryData<Project[]>(queries.projects.queryKey, (current) =>
-        current?.some((existing) => existing.id === project.id)
-          ? current
-          : [...(current ?? []), project],
-      );
-      onConnected(project);
-    },
+    onSuccess: onConnected,
     onError: (error) => {
       // Turned away: the source most likely wants credentials. With one
       // document it is clear which; offer the field.
@@ -72,17 +113,28 @@ export function ConnectForm({
     },
   });
 
-  const started = useRef(false);
-  useEffect(() => {
-    if (started.current || !looksLikeUrl(initialUrl)) return;
-    started.current = true;
-    connect.mutate();
-  }, [initialUrl, connect]);
-
+  const names = more.map((extra) => extra.name.trim().toLowerCase());
   const ready =
     looksLikeUrl(url) &&
+    slugStatus === "available" &&
     headersComplete(headers) &&
-    more.every((extra) => looksLikeUrl(extra.url) && headersComplete(extra.headers));
+    more.every(
+      (extra) =>
+        looksLikeUrl(extra.url) && extra.name.trim() !== "" && headersComplete(extra.headers),
+    ) &&
+    new Set(names).size === names.length;
+
+  // An address handed over from the landing page is connected without another
+  // click, if the slug it suggests is free. Once someone types a slug, the
+  // button is theirs to press.
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current || slugEdited) return;
+    if (!looksLikeUrl(initialUrl) || slugStatus !== "available") return;
+    started.current = true;
+    connect.mutate();
+  }, [initialUrl, slugStatus, slugEdited, connect]);
+
   const error = connect.error instanceof RequestError ? connect.error : undefined;
   const change = (id: number, next: Partial<Extra>) =>
     setExtras((current) =>
@@ -103,11 +155,12 @@ export function ConnectForm({
         )}
       >
         <input
-          // biome-ignore lint/a11y/noAutofocus: this field is the only thing to do on the screen
+          // biome-ignore lint/a11y/noAutofocus: this field is the first thing to do on the screen
           autoFocus
           value={url}
           onChange={(event) => {
             setUrl(event.target.value);
+            if (!slugEdited) setSlug(slugFromUrl(event.target.value));
             connect.reset();
           }}
           placeholder="https://api.example.com/openapi.json"
@@ -123,10 +176,30 @@ export function ConnectForm({
         </Button>
       </div>
 
-      {error && (
+      <div className="flex flex-col gap-1.5">
+        <SlugInput
+          label="Project URL slug"
+          prefix={bareUrl(urlPrefix)}
+          value={slug}
+          onChange={(next) => {
+            setSlug(next);
+            setSlugEdited(true);
+            connect.reset();
+          }}
+          status={slugStatus}
+          className="max-w-md"
+        />
+        <p className="text-[12.5px] leading-[18px] text-muted-foreground" aria-live="polite">
+          {slugStatus === "taken" || slugStatus === "invalid"
+            ? SLUG_HELP[slugStatus]
+            : "What the project is called in its URLs. Every variant is served under it, and it stays."}
+        </p>
+      </div>
+
+      {(error || connect.isError) && (
         <Notice tone="bad">
-          <span className="font-medium">{error.message}</span>
-          {error.detail && <span className="opacity-90"> {error.detail}</span>}
+          <span className="font-medium">{error?.message ?? errorMessage(connect.error)}</span>
+          {error?.detail && <span className="opacity-90"> {error.detail}</span>}
         </Notice>
       )}
 
@@ -143,7 +216,8 @@ export function ConnectForm({
         <div className="mt-2 flex flex-col gap-3">
           <p className="max-w-prose text-[13px] leading-5 text-muted-foreground">
             The document above is the main one: its title and servers describe the project. These
-            are merged into it. Where two define the same operation, the earlier one is kept.
+            are merged into it. Where two define the same operation, the main one's is kept, then
+            the earlier one's. Each has a name, shown next to its operations.
           </p>
           {extras.map((extra, index) => (
             <div key={extra.id} className="flex flex-col gap-2">
@@ -152,12 +226,36 @@ export function ConnectForm({
                   autoFocus={index === extras.length - 1}
                   value={extra.url}
                   onChange={(event) => {
-                    change(extra.id, { url: event.target.value });
+                    const next = event.target.value;
+                    change(extra.id, {
+                      url: next,
+                      ...(extra.named
+                        ? {}
+                        : {
+                            name: firstFree(
+                              nameFromUrl(next),
+                              extras
+                                .filter((other) => other.id !== extra.id)
+                                .map((other) => other.name),
+                            ),
+                          }),
+                    });
                     connect.reset();
                   }}
                   placeholder="https://billing.example.com/openapi.json"
                   aria-label={`Document ${index + 2} URL`}
-                  className="h-9 text-[13px] md:text-[13px]"
+                  className="h-9 min-w-0 flex-1 text-[13px] md:text-[13px]"
+                  spellCheck={false}
+                  autoComplete="off"
+                  disabled={connect.isPending}
+                />
+                <Input
+                  value={extra.name}
+                  onChange={(event) => change(extra.id, { name: event.target.value, named: true })}
+                  placeholder="Name"
+                  aria-label={`Document ${index + 2} name`}
+                  className="h-9 w-32 shrink-0 text-[13px] md:text-[13px]"
+                  maxLength={100}
                   spellCheck={false}
                   autoComplete="off"
                   disabled={connect.isPending}

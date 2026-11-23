@@ -5,14 +5,12 @@ import type { Db } from "./db/client";
 import { apiKeys, member, user } from "./db/schema";
 
 /**
- * API keys: the second door into the API, for scripts and agents, and the
- * way a private variant is read. A key is `oap_` and 40 random characters,
- * sent as `Authorization: Bearer <key>`. It acts as the person who made it,
- * in their workspace, for as long as they are in it. Only its SHA-256 is
- * stored.
+ * API keys. A key is `oap_` and 40 random characters, sent as
+ * `Authorization: Bearer <key>`. Only its SHA-256 is stored.
  *
- * A key has full access (the API, the MCP endpoint, every private variant)
- * or only reads private variants: all of the workspace's, or one.
+ * A deploy API key applies definitions and belongs to the workspace. A user
+ * API key reads private variants (all of the workspace's, or one) and acts
+ * for the person who made it, for as long as they are in the workspace.
  */
 const KEY_PREFIX = "oap_";
 const KEY_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz";
@@ -54,20 +52,28 @@ export function bearerCredential(header: string | undefined): string | undefined
 
 export interface KeyPrincipal {
   keyId: string;
+  name: string;
   organizationId: string;
-  role: "owner" | "member";
-  user: { id: string; name: string; email: string; image: string | null };
   access: KeyAccess;
-  /** For a key that only reads: the one variant it reads, or null for all of the workspace's. */
+  /** For a user API key: the one variant it reads, or null for all of the workspace's. */
   variantId: string | null;
+  /** For a user API key: the person it acts for. */
+  user?: {
+    id: string;
+    name: string;
+    email: string;
+    image: string | null;
+    role: "owner" | "member";
+  };
   /** Set when `lastUsedAt` is due for an update; run it without holding the response. */
   touch?: () => Promise<unknown>;
 }
 
 /**
  * Who a bearer credential stands for, or undefined if it stands for no one:
- * malformed, unknown, revoked, or made by someone who is no longer in the
- * workspace it was made for (the join on `member` is what ends it).
+ * malformed, unknown, revoked, or a user API key made by someone who is no
+ * longer in the workspace it was made for (the join on `member` is what
+ * ends it). A deploy API key stands for the workspace itself.
  */
 export async function principalForKey(
   db: Db,
@@ -79,6 +85,7 @@ export async function principalForKey(
   const row = await db
     .select({
       keyId: apiKeys.id,
+      keyName: apiKeys.name,
       lastUsedAt: apiKeys.lastUsedAt,
       organizationId: apiKeys.organizationId,
       access: apiKeys.access,
@@ -90,23 +97,34 @@ export async function principalForKey(
       image: user.image,
     })
     .from(apiKeys)
-    .innerJoin(
+    .leftJoin(
       member,
-      and(eq(member.userId, apiKeys.userId), eq(member.organizationId, apiKeys.organizationId)),
+      and(eq(member.userId, apiKeys.createdBy), eq(member.organizationId, apiKeys.organizationId)),
     )
-    .innerJoin(user, eq(user.id, apiKeys.userId))
+    .leftJoin(user, eq(user.id, member.userId))
     .where(eq(apiKeys.keyHash, await sha256Hex(credential)))
     .get();
   if (!row) return undefined;
+  const maker =
+    row.userId !== null && row.name !== null && row.email !== null
+      ? {
+          id: row.userId,
+          name: row.name,
+          email: row.email,
+          image: row.image,
+          role: row.role === "owner" ? ("owner" as const) : ("member" as const),
+        }
+      : undefined;
+  if (row.access === "read" && !maker) return undefined;
 
   const due = row.lastUsedAt === null || now - row.lastUsedAt >= LAST_USED_RESOLUTION_MS;
   return {
     keyId: row.keyId,
+    name: row.keyName,
     organizationId: row.organizationId,
-    role: row.role === "owner" ? "owner" : "member",
-    user: { id: row.userId, name: row.name, email: row.email, image: row.image },
     access: row.access,
     variantId: row.variantId,
+    ...(row.access === "read" && maker ? { user: maker } : {}),
     ...(due
       ? {
           touch: () => db.update(apiKeys).set({ lastUsedAt: now }).where(eq(apiKeys.id, row.keyId)),
@@ -120,10 +138,8 @@ export function reads(
   principal: Pick<KeyPrincipal, "organizationId" | "access" | "variantId">,
   variant: { id: string; organizationId: string },
 ): boolean {
-  if (principal.organizationId !== variant.organizationId) return false;
-  return (
-    principal.access === "full" ||
-    principal.variantId === null ||
-    principal.variantId === variant.id
-  );
+  if (principal.access !== "read" || principal.organizationId !== variant.organizationId) {
+    return false;
+  }
+  return principal.variantId === null || principal.variantId === variant.id;
 }

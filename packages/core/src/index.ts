@@ -2,15 +2,26 @@
 
 // A project as a definition
 export type {
+  AppliedRecord,
+  ApplyRequest,
+  ApplyResult,
+  DocumentInput,
   EffectiveVisibility,
   Problem,
   ProjectDefinition,
+  ProjectNote,
+  ProjectState,
+  ProjectView,
   ReadDefinition,
   ReadSelection,
   Shape,
   SourceDefinition,
+  SourceReport,
+  SourceState,
   VariantDefinition,
   VariantIconName,
+  VariantReport,
+  VariantState,
   Visibility,
 } from "./definition/index.js";
 export {

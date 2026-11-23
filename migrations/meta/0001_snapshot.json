@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "00869595-2673-4b61-b959-27dfac46864e",
+  "id": "5e7cbb29-2406-4f77-b45e-41673048bd23",
   "prevId": "4c061696-af1f-47cc-854d-9c929847c3c8",
   "tables": {
     "api_keys": {
@@ -21,11 +21,11 @@
           "notNull": true,
           "autoincrement": false
         },
-        "user_id": {
-          "name": "user_id",
+        "created_by": {
+          "name": "created_by",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "name": {
@@ -54,8 +54,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false,
-          "default": "'full'"
+          "autoincrement": false
         },
         "variant_id": {
           "name": "variant_id",
@@ -116,17 +115,17 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "api_keys_user_id_user_id_fk": {
-          "name": "api_keys_user_id_user_id_fk",
+        "api_keys_created_by_user_id_fk": {
+          "name": "api_keys_created_by_user_id_fk",
           "tableFrom": "api_keys",
           "tableTo": "user",
           "columnsFrom": [
-            "user_id"
+            "created_by"
           ],
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "set null",
           "onUpdate": "no action"
         },
         "api_keys_variant_id_variants_id_fk": {
@@ -263,18 +262,62 @@
           "notNull": true,
           "autoincrement": false
         },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
         "slug": {
           "name": "slug",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "visibility": {
+          "name": "visibility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "overrides": {
+          "name": "overrides",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "managed_by": {
+          "name": "managed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'app'"
+        },
+        "applied": {
+          "name": "applied",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "writer": {
+          "name": "writer",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         },
         "spec_version": {
@@ -313,15 +356,22 @@
           "autoincrement": false,
           "default": "'[]'"
         },
-        "fetched_at": {
-          "name": "fetched_at",
+        "checked_at": {
+          "name": "checked_at",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "next_check_at": {
           "name": "next_check_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "watch_until": {
+          "name": "watch_until",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,
@@ -444,14 +494,44 @@
           "name": "name",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "url": {
           "name": "url",
           "type": "text",
           "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "file": {
+          "name": "file",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "follow": {
+          "name": "follow",
+          "type": "integer",
+          "primaryKey": false,
           "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "main": {
+          "name": "main",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "path_prefix": {
+          "name": "path_prefix",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         },
         "headers": {
@@ -462,8 +542,8 @@
           "autoincrement": false,
           "default": "'[]'"
         },
-        "path_prefix": {
-          "name": "path_prefix",
+        "title": {
+          "name": "title",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -549,20 +629,20 @@
         }
       },
       "indexes": {
-        "sources_project_url": {
-          "name": "sources_project_url",
-          "columns": [
-            "project_id",
-            "url"
-          ],
-          "isUnique": true
-        },
         "sources_project": {
           "name": "sources_project",
           "columns": [
             "project_id"
           ],
           "isUnique": false
+        },
+        "sources_project_name": {
+          "name": "sources_project_name",
+          "columns": [
+            "project_id",
+            "name"
+          ],
+          "isUnique": true
         }
       },
       "foreignKeys": {
@@ -812,18 +892,26 @@
           "notNull": true,
           "autoincrement": false
         },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
         "slug": {
           "name": "slug",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
+          "autoincrement": false
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         },
         "selection": {
@@ -851,17 +939,15 @@
           "name": "visibility",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'public'"
+          "notNull": false,
+          "autoincrement": false
         },
-        "revision": {
-          "name": "revision",
-          "type": "integer",
+        "served_hash": {
+          "name": "served_hash",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false,
-          "default": 1
+          "autoincrement": false
         },
         "created_at": {
           "name": "created_at",

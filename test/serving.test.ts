@@ -1,10 +1,12 @@
+import type { VariantDefinition } from "@openapi-proxy/core";
 import { describe, expect, it } from "vitest";
 import { edgeCacheKey } from "../src/server/serve";
 import {
+  applied,
   call,
   createProject,
-  createVariant,
-  json,
+  edit,
+  getProject,
   login,
   publish,
   SPEC,
@@ -12,6 +14,11 @@ import {
   sql,
   textOf,
 } from "./harness";
+
+/** Change one variant of the project `test`, like a save in the app. */
+const setVariant = (cookie: string, slug: string, variant: VariantDefinition) =>
+  edit(cookie, "test", (d) => ({ ...d, variants: { ...d.variants, [slug]: variant } }));
+const etagOf = async (path: string) => (await call(path)).headers.get("etag");
 
 describe("serving a variant", () => {
   it("serves the filtered document with caching headers", async () => {
@@ -38,14 +45,16 @@ describe("serving a variant", () => {
     const cookie = await login();
 
     serveSpec(JSON.stringify(SPEC));
-    const minified = await createProject(cookie);
-    const a = await createVariant(cookie, minified.id);
-    expect(await (await call(`${a.path}.json`)).text()).not.toContain("\n");
+    await createProject(cookie, { variants: { public: {} } });
+    expect(await (await call("/v/test/public.json")).text()).not.toContain("\n");
 
     serveSpec(JSON.stringify(SPEC, null, 2), {}, "https://pretty.example.com/openapi.json");
-    const pretty = await createProject(cookie, { url: "https://pretty.example.com/openapi.json" });
-    const b = await createVariant(cookie, pretty.id);
-    expect(await (await call(`${b.path}.json`)).text()).toContain('\n  "openapi": "3.1.0"');
+    await createProject(cookie, {
+      project: "pretty",
+      sources: [{ url: "https://pretty.example.com/openapi.json", follow: true }],
+      variants: { public: {} },
+    });
+    expect(await (await call("/v/pretty/public.json")).text()).toContain('\n  "openapi": "3.1.0"');
   });
 
   it("serves YAML by extension or Accept header, with its own ETag", async () => {
@@ -98,11 +107,7 @@ describe("serving a variant", () => {
     const { cookie, variant } = await publish();
     const before = await call(variant.path);
 
-    const patch = await call(
-      `/api/variants/${variant.id}`,
-      json("PATCH", { selection: { include: { operations: ["GET /pets"] } } }, cookie),
-    );
-    expect(patch.status).toBe(200);
+    await applied(setVariant(cookie, "public", { include: { operations: ["GET /pets"] } }));
 
     const after = await call(variant.path);
     expect(after.headers.get("etag")).not.toBe(before.headers.get("etag"));
@@ -111,24 +116,18 @@ describe("serving a variant", () => {
   });
 
   it("serves the title, description and servers a variant states instead of the source's", async () => {
-    const { cookie, project, variant } = await publish();
+    const { cookie, variant } = await publish({ variant: {} });
     const before = await call(variant.path);
     const source = (await before.json()) as { info: { title: string }; servers?: unknown };
 
-    const saved = await call(
-      `/api/variants/${variant.id}`,
-      json(
-        "PATCH",
-        {
-          overrides: {
-            title: "Petstore, staging",
-            servers: [{ url: "https://staging.example.com", description: "Staging" }],
-          },
+    await applied(
+      setVariant(cookie, "public", {
+        overrides: {
+          title: "Petstore, staging",
+          servers: [{ url: "https://staging.example.com", description: "Staging" }],
         },
-        cookie,
-      ),
+      }),
     );
-    expect(saved.status).toBe(200);
     const after = await call(variant.path);
     expect(after.headers.get("etag")).not.toBe(before.headers.get("etag"));
     expect(await after.json()).toMatchObject({
@@ -137,43 +136,96 @@ describe("serving a variant", () => {
     });
 
     // Another variant of the same project is a different audience: it says what the source says.
-    const other = await createVariant(cookie, project.id, { name: "Production" });
-    expect(((await (await call(other.path)).json()) as typeof source).info.title).toBe(
+    await applied(setVariant(cookie, "production", {}));
+    expect(((await (await call("/v/test/production")).json()) as typeof source).info.title).toBe(
       source.info.title,
     );
     // Taking the overrides away serves the source's own again.
-    await call(`/api/variants/${variant.id}`, json("PATCH", { overrides: null }, cookie));
+    await applied(setVariant(cookie, "public", {}));
     expect(await (await call(variant.path)).json()).toEqual(source);
+    expect((await call(variant.path)).headers.get("etag")).toBe(before.headers.get("etag"));
 
-    const refused = await call(
-      `/api/variants/${variant.id}`,
-      json("PATCH", { overrides: { servers: [{ url: "staging.example.com" }] } }, cookie),
-    );
+    const refused = await setVariant(cookie, "public", {
+      overrides: { servers: [{ url: "staging.example.com" }] },
+    });
     expect(refused.status).toBe(400);
   });
 
-  it("gives a variant an icon for the navigation, which changes nothing that is served", async () => {
+  it("fills in what a variant does not state from its project, key by key", async () => {
+    const cookie = await login();
+    serveSpec();
+    await createProject(cookie, {
+      variants: { plain: {}, titled: { overrides: { title: "For partners" } } },
+    });
+    const doc = async (slug: string) =>
+      (await (await call(`/v/test/${slug}.json`)).json()) as {
+        info: { title: string; description?: string };
+        servers?: Array<{ url: string }>;
+      };
+    const sourceTitle = (await doc("plain")).info.title;
+
+    // The project says what every variant has at the top.
+    await applied(
+      edit(cookie, "test", (d) => ({
+        ...d,
+        overrides: {
+          title: "Pets",
+          description: "Everything about pets.",
+          servers: [{ url: "https://api.example.com" }],
+        },
+      })),
+    );
+    expect(await doc("plain")).toMatchObject({
+      info: { title: "Pets", description: "Everything about pets." },
+      servers: [{ url: "https://api.example.com" }],
+    });
+    // A variant's own title stays. The rest it did not state comes from the project.
+    expect(await doc("titled")).toMatchObject({
+      info: { title: "For partners", description: "Everything about pets." },
+      servers: [{ url: "https://api.example.com" }],
+    });
+
+    // A change to the project's title changes what `plain` serves, and its ETag.
+    // `titled` never served that title: its ETag stays, and nothing is rendered again.
+    const etags = {
+      plain: await etagOf("/v/test/plain.json"),
+      titled: await etagOf("/v/test/titled.json"),
+    };
+    const result = await applied(
+      edit(cookie, "test", (d) => ({ ...d, overrides: { ...d.overrides, title: "Pets, v2" } })),
+    );
+    expect(result.variants.map((variant) => variant.action)).toEqual(["unchanged", "unchanged"]);
+    expect(await etagOf("/v/test/plain.json")).not.toBe(etags.plain);
+    expect(await etagOf("/v/test/titled.json")).toBe(etags.titled);
+    expect((await doc("plain")).info.title).toBe("Pets, v2");
+
+    // Without them, the document speaks for itself again.
+    await applied(edit(cookie, "test", ({ overrides: _, ...d }) => d));
+    expect((await doc("plain")).info.title).toBe(sourceTitle);
+    expect((await doc("titled")).info.title).toBe("For partners");
+  });
+
+  it("gives a variant an icon and a name for the navigation, which change nothing that is served", async () => {
     const { cookie, variant } = await publish();
     const before = await call(variant.path);
-    const patch = (icon: unknown) =>
-      call(`/api/variants/${variant.id}`, json("PATCH", { icon }, cookie));
 
-    const versionOf = async () =>
-      (
-        (await (await call("/api/variants", { headers: { cookie } })).json()) as Array<{
-          id: string;
-          revision: number;
-        }>
-      ).find((each) => each.id === variant.id)?.revision;
-    const version = await versionOf();
-    expect(await (await patch("book")).json()).toMatchObject({ icon: "book" });
-    expect(await versionOf()).toBe(version);
+    const result = await applied(
+      setVariant(cookie, "public", {
+        name: "Public API",
+        icon: "book",
+        include: { tags: ["pets"] },
+      }),
+    );
+    expect(result.variants).toMatchObject([{ slug: "public", action: "changed" }]);
+    expect((await getProject(cookie)).definition.variants.public).toMatchObject({
+      name: "Public API",
+      icon: "book",
+    });
     expect((await call(variant.path)).headers.get("etag")).toBe(before.headers.get("etag"));
-    // Only the ones the app can draw.
-    const refused = await patch("unicorn");
+    // Only the icons the app can draw.
+    const refused = await setVariant(cookie, "public", { icon: "unicorn" as never });
     expect(refused.status).toBe(400);
-    expect(((await refused.json()) as { error: string }).error).toContain("book");
-    expect(await (await patch(null)).json()).toMatchObject({ icon: null });
+    expect(JSON.stringify(await refused.json())).toContain("book");
   });
 
   it("renders once and then serves the stored output", async () => {
@@ -219,11 +271,12 @@ describe("webhooks", () => {
         },
       },
     });
-    const project = await createProject(cookie);
-    expect(project.operations.map((op) => op.key)).toContain("POST webhook:petAdopted");
+    const project = await createProject(cookie, {
+      variants: { public: { include: { tags: ["pets"] } } },
+    });
+    expect(project.state.operations.map((op) => op.key)).toContain("POST webhook:petAdopted");
 
-    const publicDocs = await createVariant(cookie, project.id);
-    const doc = (await (await call(publicDocs.path)).json()) as {
+    const doc = (await (await call("/v/test/public")).json()) as {
       webhooks: object;
       components: { schemas: object };
     };

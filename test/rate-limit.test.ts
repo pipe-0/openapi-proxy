@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  apply,
   bearer,
   call,
   callAsProgram,
   callsTo,
   createKey,
   createProject,
+  createReadKey,
+  definitionOf,
+  deploy,
+  document,
   googleLogin,
   json,
-  mainSource,
   SPEC,
   SPEC_URL,
   serveSpec,
@@ -55,49 +59,75 @@ describe("a workspace's budget of requests", () => {
     serveSpec();
     serveSpec({ ...SPEC, info: { title: "Billing API", version: "1" } }, {}, BILLING_URL);
     const meter = limiter();
-    const priced = async (path: string, init: RequestInit) => {
+    const priced = async (response: Promise<Response>) => {
       const before = meter.spent();
-      const response = await call(path, init, meter.bindings);
-      expect(response.status, await response.clone().text()).toBeLessThan(300);
-      return { cost: meter.spent() - before, response };
+      const settled = await response;
+      expect(settled.status, await settled.clone().text()).toBeLessThan(300);
+      return meter.spent() - before;
     };
+    const definition = definitionOf();
+    const at = "/api/projects/test";
+    const save = (changed: object, more = {}) =>
+      apply(ada, { ...definition, ...changed }, more, meter.bindings);
 
-    const connected = await priced(
-      "/api/projects",
-      json("POST", { url: "https://api.example.com/openapi.json" }, ada),
-    );
-    expect(connected.cost).toBe(10);
-    const project = (await connected.response.json()) as { id: string; sources: [{ id: string }] };
-    const at = `/api/projects/${project.id}`;
-
-    expect((await priced(`${at}/check`, { method: "POST", headers: { cookie: ada } })).cost).toBe(
-      10,
-    );
-    expect((await priced(`${at}/sources`, json("POST", { url: BILLING_URL }, ada))).cost).toBe(10);
+    // Connecting a URL: the service reads it.
+    expect(await priced(save({}))).toBe(10);
     expect(
-      (await priced(`${at}/sources/${project.sources[0].id}`, json("PATCH", { headers: [] }, ada)))
-        .cost,
+      await priced(
+        call(`${at}/check`, { method: "POST", headers: { cookie: ada } }, meter.bindings),
+      ),
+    ).toBe(10);
+    // Another document to read.
+    const both = {
+      sources: [
+        { name: "core", url: SPEC_URL, follow: true, main: true },
+        { name: "billing", url: BILLING_URL, follow: true },
+      ],
+    };
+    expect(await priced(save(both))).toBe(10);
+    // New credentials are tried against the source.
+    expect(
+      await priced(
+        call(
+          `${at}/credentials`,
+          json("PUT", { source: "billing", headers: [{ name: "X-Key", value: "k" }] }, ada),
+          meter.bindings,
+        ),
+      ),
     ).toBe(10);
 
-    // Everything else costs one.
-    expect((await priced(at, { headers: { cookie: ada } })).cost).toBe(1);
-    expect((await priced(at, json("PATCH", { name: "Renamed" }, ada))).cost).toBe(1);
-    expect((await priced("/api/variants", { headers: { cookie: ada } })).cost).toBe(1);
+    // Everything else costs one: reading, and a save that has every document it needs.
+    expect(await priced(call(at, { headers: { cookie: ada } }, meter.bindings))).toBe(1);
+    expect(await priced(save({ ...both, name: "Renamed" }))).toBe(1);
+    expect(await priced(save({ ...both, variants: { public: {} } }, { dryRun: true }))).toBe(1);
+    expect(await priced(call("/api/projects", { headers: { cookie: ada } }, meter.bindings))).toBe(
+      1,
+    );
+    // So does a deploy that brings its documents along.
+    expect(
+      await priced(
+        save(
+          { project: "uploaded", sources: [{ file: "openapi.json" }] },
+          { documents: { main: document() } },
+        ),
+      ),
+    ).toBe(1);
   });
 
-  it("belongs to the workspace: tokens and agents spend from it, other workspaces do not", async () => {
+  it("belongs to the workspace: a session and a deploy API key spend from it, other workspaces do not", async () => {
     const ada = await googleLogin("ada@example.com", "Ada");
     const bob = await googleLogin("bob@example.com", "Bob");
-    serveSpec();
-    const project = await createProject(ada);
-    const { key: token } = await createKey(ada);
+    const { key } = await createKey(ada);
     const meter = limiter(4);
+    const uploaded = definitionOf({ sources: [{ file: "openapi.json" }] });
+    const deployed = () =>
+      deploy(key, uploaded, { documents: { main: document() }, dryRun: true }, meter.bindings);
 
-    // A session and a token are one budget.
+    // A session and a key are one budget.
     await call("/api/projects", { headers: { cookie: ada } }, meter.bindings);
-    await callAsProgram("/api/projects", { headers: bearer(token) }, meter.bindings);
-    await call(`/api/projects/${project.id}`, { headers: { cookie: ada } }, meter.bindings);
-    await callAsProgram(`/api/projects/${project.id}`, { headers: bearer(token) }, meter.bindings);
+    expect((await deployed()).status).toBe(200);
+    await call("/api/projects", { headers: { cookie: ada } }, meter.bindings);
+    expect((await deployed()).status).toBe(200);
     expect(new Set(meter.charges.map((charge) => charge.key)).size).toBe(1);
     expect(meter.spent()).toBe(4);
 
@@ -105,45 +135,39 @@ describe("a workspace's budget of requests", () => {
     expect((await call("/api/projects", { headers: { cookie: ada } }, meter.bindings)).status).toBe(
       429,
     );
-    expect(
-      (await callAsProgram("/api/projects", { headers: bearer(token) }, meter.bindings)).status,
-    ).toBe(429);
+    expect((await deployed()).status).toBe(429);
     // Bob's is untouched.
     expect((await call("/api/projects", { headers: { cookie: bob } }, meter.bindings)).status).toBe(
       200,
     );
   });
 
-  it("is not spent by signing in, by a request that is refused, or by reading a public document", async () => {
+  it("is not spent by signing in, by a request that is refused, or by reading a variant", async () => {
     const ada = await googleLogin("ada@example.com", "Ada");
     serveSpec();
-    const project = await createProject(ada);
-    await call(
-      "/api/variants",
-      json(
-        "POST",
-        {
-          projectId: project.id,
-          name: "Public",
-          selection: {},
-        },
-        ada,
-      ),
-    );
+    await createProject(ada, { variants: { public: {}, internal: { visibility: "private" } } });
+    const reader = await createReadKey(ada);
     const meter = limiter();
     await call("/api/auth-config", {}, meter.bindings);
     await call("/api/projects", {}, meter.bindings); // nobody signed in: 401
     await callAsProgram("/api/projects", { headers: bearer("oap_nonsense") }, meter.bindings);
-    const served = await call(`/v/${project.slug}/public.json`, {}, meter.bindings);
+    // A user API key is refused by the API before anything is charged.
+    await callAsProgram("/api/projects", { headers: bearer(reader.key) }, meter.bindings);
+    const served = await call("/v/test/public.json", {}, meter.bindings);
     expect(served.status).toBe(200);
+    const read = await callAsProgram(
+      "/v/test/internal.json",
+      { headers: bearer(reader.key) },
+      meter.bindings,
+    );
+    expect(read.status).toBe(200);
     expect(meter.charges).toEqual([]);
-    expect(mainSource(project).url).toBeTruthy();
   });
 
-  it("does not take the API down when the limiter itself fails, but stops fetching for anyone", async () => {
+  it("does not take the app down when the limiter itself fails, but stops fetching for anyone", async () => {
     const ada = await googleLogin("ada@example.com", "Ada");
     serveSpec();
-    const project = await createProject(ada);
+    await createProject(ada);
     const broken = {
       API_RATE_LIMIT: {
         limit: async () => {
@@ -153,25 +177,27 @@ describe("a workspace's budget of requests", () => {
     } as object;
     // Reading and editing go on.
     expect((await call("/api/projects", { headers: { cookie: ada } }, broken)).status).toBe(200);
-    expect(
-      (await call(`/api/projects/${project.id}`, json("PATCH", { name: "Renamed" }, ada), broken))
-        .status,
-    ).toBe(200);
+    expect((await apply(ada, definitionOf({ name: "Renamed" }), {}, broken)).status).toBe(200);
 
     // What would make the instance fetch a URL does not, with nothing counting it.
     const before = callsTo("GET", SPEC_URL);
     const refresh = await call(
-      `/api/projects/${project.id}/check`,
+      "/api/projects/test/check",
       { method: "POST", headers: { cookie: ada } },
       broken,
     );
     expect(refresh.status).toBe(429);
-    const connect = await call(
-      "/api/projects",
-      json("POST", { url: "https://elsewhere.example.com/openapi.json" }, ada),
+    const elsewhere = "https://elsewhere.example.com/openapi.json";
+    serveSpec(SPEC, {}, elsewhere);
+    const connect = await apply(
+      ada,
+      definitionOf({ project: "second", sources: [{ url: elsewhere, follow: true }] }),
+      {},
       broken,
     );
     expect(connect.status).toBe(429);
+    expect(connect.headers.get("retry-after")).toBe("60");
     expect(callsTo("GET", SPEC_URL)).toBe(before);
+    expect(callsTo("GET", elsewhere)).toBe(0);
   });
 });

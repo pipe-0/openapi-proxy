@@ -59,8 +59,11 @@ export type AppContext = {
     organizationId: string;
     /** "owner" for whoever created the workspace, "member" for everyone invited into it. */
     role: "owner" | "member";
-    /** Which door the request came through: a signed-in browser, or an API key. */
+    /** Which door the request came through: a signed-in browser, or a deploy API key. */
     via: "session" | "key";
+    /** Who is acting, in a form that can be written down: a person, or a key by its name. */
+    actor: { kind: "person" | "key"; id: string; name: string };
+    /** The person, on a request with a session. A deploy API key reaches one route, which does not read this. */
     user: { id: string; name: string; email: string; image?: string | null | undefined };
   };
 };

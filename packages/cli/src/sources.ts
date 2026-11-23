@@ -8,6 +8,7 @@ import {
   mergeOrder,
   type ProjectDefinition,
   parseSpec,
+  type SourceDefinition,
   type SourceText,
   SpecParseError,
   sourceLabel,
@@ -24,6 +25,8 @@ export interface ReadSource extends SourceText {
   from: string;
   /** Whether that is an address, not a file. */
   remote: boolean;
+  /** The document as it was read, byte for byte. `text` is this, decoded. */
+  raw: Uint8Array;
   bytes: number;
   /** SHA-256 of the bytes, in hex. */
   hash: string;
@@ -108,71 +111,81 @@ async function fileBytes(label: string, path: string): Promise<Uint8Array> {
 }
 
 /**
+ * Read one source's document, from where the definition says or from
+ * `override` instead, and hold it to what the service holds a document to,
+ * so that what works here deploys.
+ */
+export async function readSource(
+  config: Config,
+  source: SourceDefinition,
+  override?: string,
+): Promise<ReadSource> {
+  const label = sourceLabel(source);
+  // What the file names is relative to the file; what a flag names, to where the command runs.
+  const location = override ?? source.url ?? (source.file as string);
+  const remote = isAddress(location);
+  const from = remote
+    ? location
+    : isAbsolute(location)
+      ? location
+      : resolve(override === undefined ? config.dir : process.cwd(), location);
+  const bytes = remote ? await fetchText(label, from) : await fileBytes(label, from);
+  const text = new TextDecoder().decode(bytes);
+
+  try {
+    const external = withBudget(() => findExternalRefs(parseSpec(text).doc));
+    if (external.length > 0) {
+      throw new SourceError(
+        label,
+        from,
+        `${from} references other files (${external.slice(0, 3).join(", ")}), which is not supported. Bundle it into one file first.`,
+      );
+    }
+  } catch (error) {
+    if (error instanceof SpecParseError || error instanceof DocumentTooComplexError) {
+      throw new SourceError(label, from, `${from} is not an OpenAPI document: ${error.message}`);
+    }
+    throw error;
+  }
+  return {
+    name: label,
+    pathPrefix: source.pathPrefix,
+    text,
+    from,
+    remote,
+    raw: bytes,
+    bytes: bytes.byteLength,
+    hash: createHash("sha256").update(bytes).digest("hex"),
+    readAt: Date.now(),
+  };
+}
+
+/** Why a set of documents is more than one project may hold, if it is. */
+export function tooLarge(sources: Array<Pick<ReadSource, "bytes">>): string | undefined {
+  const total = sources.reduce((sum, source) => sum + source.bytes, 0);
+  if (total <= DEFINITION_LIMITS.documentBytes) return undefined;
+  return sources.length === 1
+    ? `The document is ${megabytes(total)}. The limit is ${megabytes(DEFINITION_LIMITS.documentBytes)}.`
+    : `The documents are ${megabytes(total)} together. The limit for one project is ${megabytes(DEFINITION_LIMITS.documentBytes)}.`;
+}
+
+/**
  * Read every source of a project, in the order they are merged, from where
- * the definition says or from where `--source` says instead. Each document is
- * held to what the service holds it to, so that what works here deploys.
+ * the definition says or from where `--source` says instead.
  */
 export async function readSources(
   config: Config,
   overrides: Map<string, string> = new Map(),
 ): Promise<ReadSource[]> {
   const sources = await Promise.all(
-    mergeOrder(config.definition).map(async (source): Promise<ReadSource> => {
-      const label = sourceLabel(source);
-      const override = overrides.get(label);
-      // What the file names is relative to the file; what a flag names, to where the command runs.
-      const location = override ?? source.url ?? (source.file as string);
-      const remote = isAddress(location);
-      const from = remote
-        ? location
-        : isAbsolute(location)
-          ? location
-          : resolve(override === undefined ? config.dir : process.cwd(), location);
-      const bytes = remote ? await fetchText(label, from) : await fileBytes(label, from);
-      const text = new TextDecoder().decode(bytes);
-
-      try {
-        const external = withBudget(() => findExternalRefs(parseSpec(text).doc));
-        if (external.length > 0) {
-          throw new SourceError(
-            label,
-            from,
-            `${from} references other files (${external.slice(0, 3).join(", ")}), which is not supported. Bundle it into one file first.`,
-          );
-        }
-      } catch (error) {
-        if (error instanceof SpecParseError || error instanceof DocumentTooComplexError) {
-          throw new SourceError(
-            label,
-            from,
-            `${from} is not an OpenAPI document: ${error.message}`,
-          );
-        }
-        throw error;
-      }
-      return {
-        name: label,
-        pathPrefix: source.pathPrefix,
-        text,
-        from,
-        remote,
-        bytes: bytes.byteLength,
-        hash: createHash("sha256").update(bytes).digest("hex"),
-        readAt: Date.now(),
-      };
-    }),
+    mergeOrder(config.definition).map((source) =>
+      readSource(config, source, overrides.get(sourceLabel(source))),
+    ),
   );
-
-  const total = sources.reduce((sum, source) => sum + source.bytes, 0);
-  if (total > DEFINITION_LIMITS.documentBytes) {
+  const problem = tooLarge(sources);
+  if (problem) {
     const [first] = sources;
-    throw new SourceError(
-      first?.name ?? "",
-      first?.from ?? "",
-      sources.length === 1
-        ? `The document is ${megabytes(total)}. The limit is ${megabytes(DEFINITION_LIMITS.documentBytes)}.`
-        : `The documents are ${megabytes(total)} together. The limit for one project is ${megabytes(DEFINITION_LIMITS.documentBytes)}.`,
-    );
+    throw new SourceError(first?.name ?? "", first?.from ?? "", problem);
   }
   return sources;
 }

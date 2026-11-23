@@ -8,6 +8,7 @@ import { organization as organizationPlugin } from "better-auth/plugins";
 import { and, eq, gt, sql } from "drizzle-orm";
 import type { Context, Next } from "hono";
 import { z } from "zod";
+import type { KeyAccess } from "../shared/access";
 import { createDb, type Db } from "./db/client";
 import * as schema from "./db/schema";
 import { sendEmail } from "./email";
@@ -125,6 +126,23 @@ async function stillWelcome(
   // Whoever is in someone else's workspace was let in by its owner.
   if (role === "member") return true;
   return isInvited(db, email);
+}
+
+/**
+ * The same question for a deploy API key, which acts for a workspace and not
+ * for a person: the workspace may use this instance for as long as its owner
+ * may. Without it, taking someone off the list would leave their pipeline
+ * publishing here.
+ */
+async function workspaceWelcome(db: Db, env: Env, organizationId: string): Promise<boolean> {
+  if (isAllowed("", env.ALLOWED_EMAILS)) return true;
+  const owner = await db
+    .select({ email: schema.user.email })
+    .from(schema.member)
+    .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+    .where(and(eq(schema.member.organizationId, organizationId), eq(schema.member.role, "owner")))
+    .get();
+  return owner ? stillWelcome(db, env, owner.email, "owner") : false;
 }
 
 export interface Membership {
@@ -403,12 +421,15 @@ export function keyRefused(c: Context<AppContext>): Response {
   return c.json({ code: "unauthorized", error: "This API key is not valid." }, 401);
 }
 
-/** A key that only reads private variants, used for something else. */
-export function readOnlyKey(c: Context<AppContext>): Response {
+/** A key used for something its kind is not for. */
+export function wrongKey(c: Context<AppContext>, access: KeyAccess): Response {
   return c.json(
     {
       code: "forbidden",
-      error: "This API key only reads private variants. This takes a key with full access.",
+      error:
+        access === "read"
+          ? "This is a user API key: it reads private variants and does nothing else."
+          : "This is a deploy API key: it applies a definition (PUT /api/projects/<slug>) and does nothing else.",
     },
     403,
   );
@@ -416,9 +437,10 @@ export function readOnlyKey(c: Context<AppContext>): Response {
 
 /**
  * Who the API key in a request stands for, or undefined if it stands for no
- * one: not a key, revoked, made by someone who has left the workspace, or by
- * someone who may no longer sign in here. The one place a key is accepted,
- * for the API, the MCP endpoint and the readers of private variants alike.
+ * one: not a key, revoked, a user API key made by someone who has left the
+ * workspace or may no longer sign in here, or a deploy API key of a
+ * workspace whose owner may not. The one place a key is
+ * accepted, for deploys and for the readers of private variants alike.
  */
 export async function keyPrincipal(
   c: Context<AppContext>,
@@ -427,10 +449,17 @@ export async function keyPrincipal(
 ): Promise<KeyPrincipal | undefined> {
   const principal = await principalForKey(db, credential, Date.now());
   if (!principal) return undefined;
-  if (!(await stillWelcome(db, c.env, principal.user.email, principal.role))) return undefined;
+  const welcome = principal.user
+    ? await stillWelcome(db, c.env, principal.user.email, principal.user.role)
+    : await workspaceWelcome(db, c.env, principal.organizationId);
+  if (!welcome) return undefined;
   if (principal.touch) c.executionCtx.waitUntil(principal.touch());
   return principal;
 }
+
+/** The one request a deploy API key may make: apply a definition to a project. */
+export const isApply = (c: Context) =>
+  c.req.method === "PUT" && /^\/api\/projects\/[^/]+$/.test(new URL(c.req.url).pathname);
 
 /**
  * Auth middleware for the API: the one place a request gets its principal.
@@ -443,8 +472,9 @@ export async function keyPrincipal(
  *
  * Every other request needs a session cookie, as a browser has.
  *
- * Either way the result is the same: the user and the organization every
- * handler scopes its queries by.
+ * A session stands for a person in a workspace. A deploy API key stands for
+ * the workspace and may do one thing, apply a definition, so every other
+ * route can count on a person. A user API key is not for the API at all.
  */
 export async function requireSession(
   c: Context<AppContext>,
@@ -458,10 +488,9 @@ export async function requireSession(
   if (credential !== undefined) {
     const principal = await keyPrincipal(c, db, credential);
     if (!principal) return keyRefused(c);
-    if (principal.access !== "full") return readOnlyKey(c);
-    c.set("user", principal.user);
+    if (principal.access !== "deploy" || !isApply(c)) return wrongKey(c, principal.access);
     c.set("organizationId", principal.organizationId);
-    c.set("role", principal.role);
+    c.set("actor", { kind: "key", id: principal.keyId, name: principal.name });
     c.set("via", "key");
     await next();
     return;
@@ -485,6 +514,7 @@ export async function requireSession(
   c.set("user", { id: user.id, name: user.name, email: user.email, image: user.image });
   c.set("organizationId", membership.organizationId);
   c.set("role", membership.role);
+  c.set("actor", { kind: "person", id: user.id, name: user.name });
   c.set("via", "session");
 
   await next();
@@ -499,7 +529,7 @@ export async function requireSession(
  */
 export async function sessionOnly(c: Context<AppContext>, next: Next): Promise<void> {
   if (c.var.via !== "session") {
-    throw forbidden("API keys work with projects and variants. Sign in to manage a workspace.");
+    throw forbidden("Sign in to manage a workspace.");
   }
   await next();
 }

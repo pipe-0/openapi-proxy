@@ -18,7 +18,7 @@ export async function operations(options: {
   const { definition } = project.config;
   const { index, entries } = describe(project);
 
-  if (options.variant !== undefined && !(options.variant in definition.variants)) {
+  if (options.variant !== undefined && !Object.hasOwn(definition.variants, options.variant)) {
     const known = Object.keys(definition.variants);
     throw new Error(
       `There is no variant "${options.variant}" in ${options.config}. ${known.length > 0 ? `It has ${known.join(", ")}.` : "It has none yet."}`,

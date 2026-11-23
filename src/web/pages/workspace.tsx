@@ -17,7 +17,7 @@ import {
   type Visibility,
   type Workspace,
 } from "@/lib/api";
-import { cn, formatBytes } from "@/lib/utils";
+import { cn, formatBytes, plural } from "@/lib/utils";
 import { PLAN_LIMITS, PLAN_PRICES } from "../../shared/plans";
 
 export function WorkspacePage() {
@@ -421,36 +421,63 @@ const formatDate = (epochMs: number, withYear = false) =>
   });
 
 /**
- * Whether a new variant starts public or private. A team that works on
- * internal APIs sets this once, and nothing it makes is public by accident.
+ * Who may read a variant when neither it nor its project says. Variants
+ * follow this as it changes, so a team that works on internal APIs sets it
+ * once and nothing it makes is public by accident.
  */
 function NewVariants({ workspace, onDone }: { workspace: Workspace; onDone: () => void }) {
   const queryClient = useQueryClient();
+  const projects = useQuery(queries.projects);
+  // The variants that say nothing themselves, in projects that say nothing either.
+  const following = (projects.data ?? [])
+    .flatMap((project) => Object.values(project.state.variants))
+    .filter((variant) => variant.visibility.from === "workspace").length;
   const save = useMutation({
     mutationFn: (next: Visibility) => api.setDefaultVisibility(next),
-    onSuccess: () => {
+    onSuccess: (_, next) => {
       onDone();
       void queryClient.invalidateQueries({ queryKey: queries.me.queryKey });
+      void queryClient.invalidateQueries({ queryKey: queries.projects.queryKey });
+      if (following > 0) {
+        toast.success(
+          `${plural(following, "variant")} ${following === 1 ? "is" : "are"} ${next} now`,
+        );
+      }
     },
     onError: (error) => toast.error(errorMessage(error)),
   });
   const value = save.isPending && save.variables ? save.variables : workspace.defaultVisibility;
+  const pick = (next: Visibility) => {
+    if (next === value) return;
+    const sure =
+      next === "private" ||
+      following === 0 ||
+      window.confirm(
+        `Make ${plural(following, "variant")} public? Anyone with ${following === 1 ? "its URL" : "their URLs"} will be able to read ${following === 1 ? "it" : "them"}.`,
+      );
+    if (sure) save.mutate(next);
+  };
   return (
     <Section
-      title="New variants"
-      description="Who can read a variant when it is created. Each variant can be changed on its own, next to its URL."
+      title="Default visibility"
+      description="Who can read a variant when neither it nor its project says. A project can say for its variants, and a variant for itself."
     >
       <Field
         hint={
-          value === "private"
-            ? "A new variant is read with an API key of this workspace."
-            : "A new variant can be read by anyone with its URL."
+          <>
+            {value === "private"
+              ? "Such a variant is read with a user API key of this workspace."
+              : "Such a variant can be read by anyone with its URL."}{" "}
+            {following === 0
+              ? "No variant follows this at the moment."
+              : `${plural(following, "variant")} ${following === 1 ? "follows" : "follow"} this, and ${following === 1 ? "changes" : "change"} with it at once.`}
+          </>
         }
       >
         <Segmented
-          aria-label="New variants are"
+          aria-label="Variants are"
           value={value}
-          onValueChange={(next) => save.mutate(next)}
+          onValueChange={pick}
           options={[
             { value: "public", label: VISIBILITY.public.label },
             { value: "private", label: VISIBILITY.private.label },

@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { Field, Notice, Section } from "@/components/page";
 import { Segmented } from "@/components/segmented";
 import { api, errorMessage, type NotificationScope, type Project, queries } from "@/lib/api";
+import { projectName, projectSlug } from "@/lib/project";
 
 const SCOPES: ReadonlyArray<{ value: NotificationScope; label: string }> = [
   { value: "off", label: "Nothing" },
@@ -25,10 +26,11 @@ const SCOPE_HINTS: Record<NotificationScope, string> = {
 export function ProjectNotifications({ project }: { project: Project }) {
   const queryClient = useQueryClient();
   const me = useQuery(queries.me);
-  const key = ["project-notifications", project.id];
-  const own = useQuery({ queryKey: key, queryFn: () => api.projectNotifications(project.id) });
+  const slug = projectSlug(project);
+  const key = ["project-notifications", slug];
+  const own = useQuery({ queryKey: key, queryFn: () => api.projectNotifications(slug) });
   const save = useMutation({
-    mutationFn: (scope: NotificationScope) => api.setProjectNotifications(project.id, scope),
+    mutationFn: (scope: NotificationScope) => api.setProjectNotifications(slug, scope),
     onMutate: (scope) => queryClient.setQueryData(key, { scope }),
     onError: (error) => {
       toast.error(errorMessage(error));
@@ -40,7 +42,7 @@ export function ProjectNotifications({ project }: { project: Project }) {
   return (
     <Section
       title="Email about changes"
-      description={`When ${project.name} adds, changes or removes operations, we can tell you. This setting is yours alone, and for this project.`}
+      description={`When ${projectName(project)} adds, changes or removes operations, we can tell you. This setting is yours alone, and for this project.`}
     >
       {me.data?.emailConfigured === false ? (
         <Notice tone="neutral">

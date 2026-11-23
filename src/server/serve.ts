@@ -4,14 +4,15 @@ import {
   noSuchVersion,
   readRepresentation,
   type SpecFormat,
+  type Visibility,
   versionFor,
 } from "@openapi-proxy/core";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import { keyPrincipal } from "./auth";
 import { createDb, type Db } from "./db/client";
-import { projects, variants } from "./db/schema";
+import { organization, projects, variants } from "./db/schema";
 import type { AppContext } from "./env";
 import { bearerCredential, reads } from "./keys";
 import { type RenderTarget, renderVariant, variantEtag } from "./render";
@@ -71,9 +72,9 @@ serveRoutes.on(["GET", "HEAD"], "/:project/:variant/:version", (c) =>
 );
 
 /**
- * A private variant is read with an API key of its workspace: one with full
- * access, or one that only reads (this variant, or all of them). The answer
- * to anyone else, or nothing when the reader may read.
+ * A private variant is read with a user API key of its workspace, one for
+ * this variant or for all of them. The answer to anyone else, or nothing when
+ * the reader may read.
  */
 async function refused(
   c: Context<AppContext>,
@@ -125,10 +126,9 @@ export async function serveVariant(
   const row = await db
     .select({
       variantId: variants.id,
-      selection: variants.selection,
-      overrides: variants.overrides,
-      revision: variants.revision,
-      visibility: variants.visibility,
+      servedHash: variants.servedHash,
+      // Who may read it: what the variant says, or else its project, or else the workspace.
+      visibility: sql<Visibility>`coalesce(${variants.visibility}, ${projects.visibility}, ${organization.defaultVisibility})`,
       projectId: projects.id,
       organizationId: projects.organizationId,
       specVersion: projects.specVersion,
@@ -137,6 +137,7 @@ export async function serveVariant(
     })
     .from(variants)
     .innerJoin(projects, eq(variants.projectId, projects.id))
+    .innerJoin(organization, eq(organization.id, projects.organizationId))
     .where(and(eq(projects.slug, projectSlug), eq(variants.slug, slug)))
     .get();
 
@@ -175,10 +176,8 @@ export async function serveVariant(
     projectId: row.projectId,
     bodyHash: row.bodyHash,
     variantId: row.variantId,
-    selection: row.selection,
+    servedHash: row.servedHash,
     version,
-    overrides: row.overrides,
-    revision: row.revision,
   };
   let etag = await variantEtag(target, format);
   const headers: Record<string, string> = {
@@ -233,7 +232,7 @@ export async function serveVariant(
 
   const { body, store } = rendered;
   if (rendered.etag !== etag) {
-    // The documents changed between reading the project and reading them.
+    // The documents or the variant changed between reading the project and reading them.
     // The validator has to describe the bytes that are actually sent.
     etag = rendered.etag;
     headers.etag = etag;

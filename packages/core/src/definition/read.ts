@@ -3,6 +3,7 @@ import { isValidPathPrefix, normalizePathPrefix } from "../transforms/merge.js";
 import { type DocumentOverrides, readOverrides } from "../transforms/override.js";
 import { isJsonObject, type JsonObject, type Selection } from "../types.js";
 import {
+  DEFINITION_LIMITS,
   DEFINITION_SHAPE,
   DEFINITION_VERSIONS,
   type ProjectDefinition,
@@ -235,7 +236,18 @@ export function readDefinition(input: unknown): ReadDefinition {
   if (isJsonObject(raw.variants)) {
     for (const [slug, variant] of Object.entries(raw.variants)) {
       if (isJsonObject(variant)) {
-        definition.variants[slug] = variantAt(variant, `variants.${slug}`, problems);
+        const entry = variantAt(variant, `variants.${slug}`, problems);
+        definition.variants[slug] = entry;
+        // Each list fits on its own. Together they can still be more than is kept for one variant.
+        if (
+          new TextEncoder().encode(JSON.stringify(entry)).length > DEFINITION_LIMITS.variantBytes
+        ) {
+          problems.push({
+            path: `variants.${slug}`,
+            message:
+              "names more than can be kept for one variant. Name tags where a whole tag is meant, or leave include out to serve everything.",
+          });
+        }
       }
     }
   }

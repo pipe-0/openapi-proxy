@@ -7,12 +7,16 @@
 export { isVisibility, type Visibility } from "@openapi-proxy/core";
 
 /**
- * What an API key may do. "full": everything a key can, which is the API, the
- * MCP endpoint and reading every private variant. "read": reading private
- * variants and nothing else, all of the workspace's or one.
+ * The two kinds of API key, by what they may do.
+ *
+ * "deploy": apply a definition to a project, and nothing else. It belongs to
+ * the workspace, and only its owner makes and revokes such keys.
+ *
+ * "read": read private variants and nothing else, all of the workspace's or
+ * one. It belongs to the person who made it.
  */
-export type KeyAccess = "full" | "read";
+export type KeyAccess = "deploy" | "read";
 
 export function isKeyAccess(value: unknown): value is KeyAccess {
-  return value === "full" || value === "read";
+  return value === "deploy" || value === "read";
 }

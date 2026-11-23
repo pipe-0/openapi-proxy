@@ -174,7 +174,10 @@ export async function notifyOfChanges(
       .where(eq(organization.id, project.organizationId))
       .get(),
     db
-      .select({ name: variants.name, selection: variants.selection })
+      .select({
+        name: sql<string>`coalesce(${variants.name}, ${variants.slug})`,
+        selection: variants.selection,
+      })
       .from(variants)
       .where(eq(variants.projectId, project.id)),
   ]);
@@ -204,10 +207,10 @@ export async function notifyOfChanges(
     const email = changesEmail({
       to: recipient.email,
       scope: recipient.scope === "all" ? "all" : "served",
-      projectName: project.name,
+      projectName: project.name ?? project.slug,
       workspaceName: workspace?.name ?? "your team",
       report,
-      projectUrl: base ? `${base}/p/${project.id}` : undefined,
+      projectUrl: base ? `${base}/p/${project.slug}` : undefined,
       settingsUrl: base ? `${base}/workspace` : undefined,
     });
     if (email && (await sendEmail(env, email))) sent += 1;

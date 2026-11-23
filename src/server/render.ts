@@ -4,41 +4,39 @@ import {
   DocumentTooComplexError,
   MergeError,
   renderVariantText,
-  type Selection,
   type SpecFormat,
   SpecParseError,
   type TargetVersion,
   TRANSFORM_VERSION,
 } from "@openapi-proxy/core";
 import { and, eq } from "drizzle-orm";
+import { inMergeOrder, labelOf } from "./assemble";
 import { MAX_PACKED_LENGTH, pack, sha256Hex, unpack } from "./codec";
 import type { Db } from "./db/client";
-import { projects, sources, variantOutputs } from "./db/schema";
+import { projects, sources, variantOutputs, variants } from "./db/schema";
 
 export interface RenderTarget {
   projectId: string;
   bodyHash: string;
   variantId: string;
-  selection: Selection;
+  /** The hash of what the variant serves: its selection and the overrides it ends up with. */
+  servedHash: string;
   /** The OpenAPI version to serve; null serves the document's own. */
   version: TargetVersion | null;
-  /** Title, description and servers the variant states itself; null for none. */
-  overrides: DocumentOverrides | null;
-  revision: number;
 }
 
 /**
  * Strong validator for one representation of a variant. It changes when, and
  * only when, the bytes can: a new document, a change to what the variant
- * serves (its selection, what it states at the top), another format or
- * OpenAPI version, or an upgrade of the engine.
+ * serves (its selection, what it or its project states at the top), another
+ * format or OpenAPI version, or an upgrade of the engine.
  */
 export async function variantEtag(target: RenderTarget, format: SpecFormat): Promise<string> {
   const identity = [
     TRANSFORM_VERSION,
     target.bodyHash,
     target.variantId,
-    target.revision,
+    target.servedHash,
     format,
     target.version ?? "own",
   ].join(":");
@@ -103,25 +101,45 @@ export async function renderVariant(
     return { body: await unpack(stored.body), etag };
   }
 
-  // The sources together with the hash that describes them, in one read. A
-  // check can replace both between the caller's query and this one; the ETag
-  // is derived from the hash that belongs to the documents rendered here.
-  const rows = await db
-    .select({
-      name: sources.name,
-      pathPrefix: sources.pathPrefix,
-      body: sources.body,
-      bodyHash: projects.bodyHash,
-    })
-    .from(sources)
-    .innerJoin(projects, eq(projects.id, sources.projectId))
-    .where(eq(sources.projectId, target.projectId))
-    .orderBy(sources.position);
+  // The documents and the variant together with the two hashes that describe
+  // them, in one read. A check or an apply can replace them between the
+  // caller's query and this one; the ETag is derived from the hashes that
+  // belong to what is rendered here.
+  const [sourceRows, [variant]] = await db.batch([
+    db
+      .select({
+        name: sources.name,
+        pathPrefix: sources.pathPrefix,
+        main: sources.main,
+        position: sources.position,
+        body: sources.body,
+        bodyHash: projects.bodyHash,
+        defaults: projects.overrides,
+      })
+      .from(sources)
+      .innerJoin(projects, eq(projects.id, sources.projectId))
+      .where(eq(sources.projectId, target.projectId)),
+    db
+      .select({
+        selection: variants.selection,
+        overrides: variants.overrides,
+        servedHash: variants.servedHash,
+      })
+      .from(variants)
+      .where(eq(variants.id, target.variantId)),
+  ]);
+  const rows = inMergeOrder(sourceRows);
   const [first] = rows;
-  if (!first) return undefined;
-  if (first.bodyHash !== target.bodyHash) {
-    etag = await variantEtag({ ...target, bodyHash: first.bodyHash }, format);
+  if (!first || !variant) return undefined;
+  if (first.bodyHash !== target.bodyHash || variant.servedHash !== target.servedHash) {
+    etag = await variantEtag(
+      { ...target, bodyHash: first.bodyHash, servedHash: variant.servedHash },
+      format,
+    );
   }
+  // What the variant states at the top, key by key over what its project states.
+  const stated = { ...first.defaults, ...variant.overrides };
+  const overrides: DocumentOverrides | null = Object.keys(stated).length > 0 ? stated : null;
 
   const finalEtag = etag;
   const remember = (outcome: { body: string; error: string | null }) => async () => {
@@ -138,13 +156,12 @@ export async function renderVariant(
   try {
     const texts = await Promise.all(rows.map((row) => unpack(row.body)));
     const body = renderVariantText(
-      rows.map((row, i) => ({ name: row.name, pathPrefix: row.pathPrefix, text: texts[i] ?? "" })),
-      {
-        selection: target.selection,
-        version: target.version,
-        overrides: target.overrides,
-        format,
-      },
+      rows.map((row, i) => ({
+        name: labelOf(row),
+        pathPrefix: row.pathPrefix,
+        text: texts[i] ?? "",
+      })),
+      { selection: variant.selection, version: target.version, overrides, format },
     );
     // Compressed before it is answered with, not after: a document that does
     // not fit in a row could never be stored, and would be rendered again for

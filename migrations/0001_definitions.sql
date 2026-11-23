@@ -20,15 +20,22 @@ DROP TABLE IF EXISTS `projects`;
 CREATE TABLE `projects` (
 	`id` text PRIMARY KEY NOT NULL,
 	`organization_id` text NOT NULL,
-	`name` text NOT NULL,
 	`slug` text NOT NULL,
+	`name` text,
+	`visibility` text,
+	`overrides` text,
+	`managed_by` text DEFAULT 'app' NOT NULL,
+	`applied` text,
+	`revision` integer DEFAULT 0 NOT NULL,
+	`writer` text,
 	`spec_version` text NOT NULL,
 	`body_hash` text NOT NULL,
 	`body_bytes` integer NOT NULL,
 	`op_index` text NOT NULL,
 	`notes` text DEFAULT '[]' NOT NULL,
-	`fetched_at` integer NOT NULL,
+	`checked_at` integer,
 	`next_check_at` integer,
+	`watch_until` integer,
 	`last_status` text DEFAULT 'ok' NOT NULL,
 	`last_error` text,
 	`created_at` integer NOT NULL,
@@ -49,10 +56,14 @@ CREATE TABLE `sources` (
 	`id` text PRIMARY KEY NOT NULL,
 	`project_id` text NOT NULL,
 	`position` integer NOT NULL,
-	`name` text NOT NULL,
-	`url` text NOT NULL,
-	`headers` text DEFAULT '[]' NOT NULL,
+	`name` text,
+	`url` text,
+	`file` text,
+	`follow` integer DEFAULT false NOT NULL,
+	`main` integer DEFAULT false NOT NULL,
 	`path_prefix` text,
+	`headers` text DEFAULT '[]' NOT NULL,
+	`title` text,
 	`api_version` text,
 	`spec_version` text NOT NULL,
 	`upstream_etag` text,
@@ -67,20 +78,21 @@ CREATE TABLE `sources` (
 	FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `sources_project_url` ON `sources` (`project_id`,`url`);
---> statement-breakpoint
 CREATE INDEX `sources_project` ON `sources` (`project_id`);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `sources_project_name` ON `sources` (`project_id`,`name`);
 --> statement-breakpoint
 CREATE TABLE `variants` (
 	`id` text PRIMARY KEY NOT NULL,
 	`project_id` text NOT NULL,
-	`name` text NOT NULL,
 	`slug` text NOT NULL,
+	`position` integer DEFAULT 0 NOT NULL,
+	`name` text,
 	`selection` text NOT NULL,
 	`overrides` text,
 	`icon` text,
-	`visibility` text DEFAULT 'public' NOT NULL,
-	`revision` integer DEFAULT 1 NOT NULL,
+	`visibility` text,
+	`served_hash` text NOT NULL,
 	`created_at` integer NOT NULL,
 	`updated_at` integer NOT NULL,
 	FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE cascade
@@ -112,16 +124,16 @@ CREATE TABLE `project_notifications` (
 CREATE TABLE `api_keys` (
 	`id` text PRIMARY KEY NOT NULL,
 	`organization_id` text NOT NULL,
-	`user_id` text NOT NULL,
+	`created_by` text,
 	`name` text NOT NULL,
 	`key_hash` text NOT NULL,
 	`prefix` text NOT NULL,
-	`access` text DEFAULT 'full' NOT NULL,
+	`access` text NOT NULL,
 	`variant_id` text,
 	`created_at` integer NOT NULL,
 	`last_used_at` integer,
 	FOREIGN KEY (`organization_id`) REFERENCES `organization`(`id`) ON UPDATE no action ON DELETE cascade,
-	FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (`created_by`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE set null,
 	FOREIGN KEY (`variant_id`) REFERENCES `variants`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint

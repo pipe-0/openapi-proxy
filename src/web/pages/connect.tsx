@@ -14,6 +14,7 @@ export function ConnectPage() {
   const navigate = useNavigate();
   const { url } = useSearch({ from: "/_client/_app/connect" });
   const projects = useQuery(queries.projects);
+  const me = useQuery(queries.me);
   const first = projects.data?.length === 0;
 
   return (
@@ -30,9 +31,8 @@ export function ConnectPage() {
         <div className="mt-8">
           <ConnectForm
             initialUrl={url ?? ""}
-            onConnected={(project) =>
-              navigate({ to: "/p/$projectId/new", params: { projectId: project.id } })
-            }
+            urlPrefix={me.data?.urlPrefix ?? `${window.location.origin}/v/`}
+            onConnected={(project) => navigate({ to: "/p/$project/new", params: { project } })}
           />
         </div>
         <p className="mt-6 text-[12.5px] text-faint">

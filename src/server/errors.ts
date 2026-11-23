@@ -4,6 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { PLAN_NAMES, type Plan } from "../shared/plans";
 import type { AppContext } from "./env";
+import { RateLimited, tooManyRequests } from "./rate-limit";
 import { UpstreamError } from "./upstream";
 
 /** An error a handler throws to answer with a specific status and machine-readable code. */
@@ -49,6 +50,7 @@ export function errorResponse(error: unknown, c: Context<AppContext>): Response 
   if (error instanceof DocumentTooComplexError) {
     return c.json({ code: "too-complex", error: error.message }, 422);
   }
+  if (error instanceof RateLimited) return tooManyRequests(c);
   if (error instanceof HTTPException) {
     // Raised by middleware (the CSRF check).
     return c.json({ code: "forbidden", error: "This request was refused." }, error.status);
@@ -69,5 +71,13 @@ export async function readJson(c: Context<AppContext>): Promise<Record<string, u
 export function isUniqueViolation(error: unknown): boolean {
   return (
     error instanceof Error && /UNIQUE constraint failed/i.test(`${error.message} ${error.cause}`)
+  );
+}
+
+/** And like this, a row whose parent was deleted while it was on its way. */
+export function isMissingParent(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /FOREIGN KEY constraint failed/i.test(`${error.message} ${error.cause}`)
   );
 }

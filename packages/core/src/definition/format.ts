@@ -29,6 +29,8 @@ export const DEFINITION_LIMITS = {
   documentBytes: 5_000_000,
   /** One operation key, tag, URL or path. */
   text: 2_000,
+  /** One variant's entry, as JSON: what a row of the service's database holds with room to spare. */
+  variantBytes: 1_000_000,
   pathPrefix: 200,
 } as const;
 

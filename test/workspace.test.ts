@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  type ApiProject,
+  bearer,
   call,
+  callAsProgram,
+  createKey,
   createProject,
+  createReadKey,
   createVariant,
+  definitionOf,
+  deploy,
+  document,
   googleCallback,
   googleLogin,
   json,
@@ -30,7 +38,7 @@ interface Invitation {
 const get = async <T>(path: string, cookie: string) =>
   (await (await call(path, { headers: { cookie } })).json()) as T;
 const workspace = (cookie: string) => get<Workspace>("/api/workspace", cookie);
-const projectsOf = (cookie: string) => get<Array<{ id: string }>>("/api/projects", cookie);
+const projectsOf = (cookie: string) => get<ApiProject[]>("/api/projects", cookie);
 
 async function invite(cookie: string, email: string, bindings = {}) {
   const response = await call(
@@ -59,11 +67,14 @@ describe("inviting someone", () => {
   it("brings them into the workspace, where they see and can change the same projects", async () => {
     const { ada, bob, project } = await team();
 
-    expect((await projectsOf(bob)).map((p) => p.id)).toEqual([project.id]);
-    const variant = await createVariant(bob, project.id);
-    expect((await get<Array<{ id: string }>>("/api/variants", ada)).map((v) => v.id)).toEqual([
-      variant.id,
-    ]);
+    expect(await projectsOf(bob)).toEqual([project]);
+    const variant = await createVariant(bob, project);
+    expect((await projectsOf(ada))[0]?.state.variants.public?.id).toBe(variant.id);
+    // The project says who changed it last.
+    expect((await projectsOf(ada))[0]?.state.applied?.by).toMatchObject({
+      kind: "person",
+      name: "Bob",
+    });
 
     const seenByBob = await workspace(bob);
     expect(seenByBob.role).toBe("member");
@@ -227,9 +238,10 @@ describe("leaving and being removed", () => {
 
     // Bob's session still works, but it now leads to a new, empty workspace of his own.
     expect(await projectsOf(bob)).toEqual([]);
-    expect((await call(`/api/projects/${project.id}`, { headers: { cookie: bob } })).status).toBe(
-      404,
-    );
+    expect(
+      (await call(`/api/projects/${project.definition.project}`, { headers: { cookie: bob } }))
+        .status,
+    ).toBe(404);
     expect((await workspace(bob)).role).toBe("owner");
     expect((await workspace(ada)).members).toHaveLength(1);
   });
@@ -360,18 +372,27 @@ describe("a closed instance", () => {
     expect((await sql("SELECT count(*) AS n FROM organization")).results[0]).toEqual({ n: 1 });
   });
 
-  it("ends the access of someone who is taken off the list, token included", async () => {
+  it("ends the access of someone who is taken off the list, keys included", async () => {
     const open = { ALLOWED_EMAILS: "ada@example.com, carol@example.com" };
     const carol = await googleLogin("carol@example.com", "Carol", open);
-    const made = await call("/api/workspace/keys", json("POST", { name: "CI" }, carol), open);
-    const { key: token } = (await made.json()) as { key: string };
-    const withKey = (bindings: object) =>
-      call("/api/projects", { headers: { authorization: `Bearer ${token}` } }, bindings);
+    const definition = definitionOf({
+      sources: [{ file: "openapi.json" }],
+      variants: { internal: { visibility: "private" } },
+    });
+    const documents = { documents: { main: document() } };
+    const pipeline = await createKey(carol);
+    const reader = await createReadKey(carol);
+    const deployed = (bindings: object) => deploy(pipeline.key, definition, documents, bindings);
+    const read = (bindings: object) =>
+      callAsProgram("/v/test/internal.json", { headers: bearer(reader.key) }, bindings);
     expect((await call("/api/projects", { headers: { cookie: carol } }, open)).status).toBe(200);
-    expect((await withKey(open)).status).toBe(200);
+    expect((await deployed(open)).status).toBe(201);
+    expect((await read(open)).status).toBe(200);
 
+    // Her session, the key that reads for her, and the pipeline of her workspace.
     expect((await call("/api/projects", { headers: { cookie: carol } }, closed)).status).toBe(401);
-    expect((await withKey(closed)).status).toBe(401);
+    expect((await read(closed)).status).toBe(401);
+    expect((await deployed(closed)).status).toBe(401);
   });
 });
 

@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  applied,
+  apply,
   call,
   callsTo,
+  createKey,
   createProject,
-  createVariant,
+  definitionOf,
+  deploy,
+  document,
   googleLogin,
   json,
   MAIL,
@@ -37,25 +42,30 @@ function nextRelease(): Spec {
 async function published(bindings = {}) {
   const cookie = await googleLogin("ada@example.com", "Ada", bindings);
   serveSpec();
-  const project = await createProject(cookie);
-  const variant = await createVariant(cookie, project.id, { name: "Public docs" });
-  return { cookie, project, variant };
+  const project = await createProject(cookie, PUBLISHED);
+  return { cookie, project };
 }
-const refresh = async (cookie: string, id: string, bindings = {}) =>
+const PUBLISHED = {
+  name: "Test API",
+  variants: { docs: { name: "Public docs", include: { tags: ["pets"] } } },
+};
+const refresh = async (cookie: string, bindings = {}) =>
   (await (
-    await call(`/api/projects/${id}/check`, { method: "POST", headers: { cookie } }, bindings)
+    await call("/api/projects/test/check", { method: "POST", headers: { cookie } }, bindings)
   ).json()) as { changed: boolean; addedOps: string[]; removedOps: string[]; changedOps: string[] };
 /** What a person wants to be emailed about for one project. */
-const setScope = (cookie: string, projectId: string, scope: string) =>
-  call(`/api/projects/${projectId}/notifications`, json("PUT", { scope }, cookie));
+const setScope = (cookie: string, scope: string) =>
+  call("/api/projects/test/notifications", json("PUT", { scope }, cookie));
 
 describe("what changed", () => {
   it("is worked out per operation, including changes that arrive through a schema", async () => {
     const { cookie, project } = await published();
-    expect(project.operations.every((entry) => typeof entry.fingerprint === "string")).toBe(true);
+    expect(project.state.operations.every((entry) => typeof entry.fingerprint === "string")).toBe(
+      true,
+    );
 
     serveSpec(nextRelease());
-    expect(await refresh(cookie, project.id)).toMatchObject({
+    expect(await refresh(cookie)).toMatchObject({
       changed: true,
       addedOps: ["GET /pets/{id}", "GET /audit"],
       removedOps: ["POST /internal/flush"],
@@ -65,14 +75,14 @@ describe("what changed", () => {
   });
 
   it("is nothing when only something unrelated moved", async () => {
-    const { cookie, project } = await published();
+    const { cookie } = await published();
     const next = structuredClone(SPEC);
     next.info.version = "2.0.0";
     (next.components.schemas.Secret.properties as Record<string, unknown>).extra = {
       type: "string",
     };
     serveSpec(next);
-    expect(await refresh(cookie, project.id)).toMatchObject({
+    expect(await refresh(cookie)).toMatchObject({
       changed: true,
       addedOps: [],
       removedOps: [],
@@ -83,14 +93,13 @@ describe("what changed", () => {
 
 describe("fingerprints from before an upgrade of the engine", () => {
   it("are made again from the stored document, so a change that comes with the upgrade is reported as what it is", async () => {
-    const { cookie, project } = await published();
+    const { cookie } = await published();
     // As another version of the engine stored them: computed some other way.
     await sql(
-      `UPDATE projects SET op_index = replace(op_index, '"fingerprint":"3:', '"fingerprint":"1:') WHERE id = ?`,
-      project.id,
+      `UPDATE projects SET op_index = replace(op_index, '"fingerprint":"3:', '"fingerprint":"1:')`,
     );
     serveSpec(nextRelease());
-    const result = await refresh(cookie, project.id);
+    const result = await refresh(cookie);
     // Not every operation, as comparing old fingerprints with new ones would
     // say, and not none, as refusing to compare them would.
     expect(result.addedOps.sort()).toEqual(["GET /audit", "GET /pets/{id}"]);
@@ -101,10 +110,10 @@ describe("fingerprints from before an upgrade of the engine", () => {
 
 describe("the email about it", () => {
   it("lists new operations, and changes and removals that touch what a variant serves", async () => {
-    const { cookie, project } = await published();
+    const { cookie } = await published();
     const sent = mailbox();
     serveSpec(nextRelease());
-    await refresh(cookie, project.id, MAIL);
+    await refresh(cookie, MAIL);
 
     expect(sent).toHaveLength(1);
     const [email] = sent;
@@ -116,23 +125,23 @@ describe("the email about it", () => {
     expect(email?.text).toContain("GET /pets: served by Public docs");
     // Nobody served POST /internal/flush, so its removal is not news at this setting.
     expect(email?.text).not.toContain("/internal/flush");
-    expect(email?.text).toContain(`https://proxy.test/p/${project.id}`);
+    expect(email?.text).toContain("https://proxy.test/p/test");
     expect(email?.text).not.toMatch(/—/);
   });
 
   it("covers everything in the source for someone who asked for that", async () => {
-    const { cookie, project } = await published();
-    await setScope(cookie, project.id, "all");
+    const { cookie } = await published();
+    await setScope(cookie, "all");
     const sent = mailbox();
     serveSpec(nextRelease());
-    await refresh(cookie, project.id, MAIL);
+    await refresh(cookie, MAIL);
 
     expect(sent[0]?.subject).toBe("Test API: 2 new, 1 changed, 1 removed");
     expect(sent[0]?.text).toContain("POST /internal/flush: was not served");
   });
 
   it("goes to each member at their own setting, and not to those who turned it off", async () => {
-    const { cookie: ada, project } = await published();
+    const { cookie: ada } = await published();
     for (const [email, scope] of [
       ["bob@example.com", "all"],
       ["carol@example.com", "off"],
@@ -145,12 +154,12 @@ describe("the email about it", () => {
         method: "POST",
         headers: { cookie },
       });
-      await setScope(cookie, project.id, scope);
+      await setScope(cookie, scope);
     }
 
     const sent = mailbox();
     serveSpec(nextRelease());
-    await refresh(ada, project.id, MAIL);
+    await refresh(ada, MAIL);
 
     expect(sent.map((email) => email.to).sort()).toEqual(["ada@example.com", "bob@example.com"]);
     const to = (address: string) => sent.find((email) => email.to === address);
@@ -159,41 +168,126 @@ describe("the email about it", () => {
   });
 
   it("is not sent when nothing a person follows changed", async () => {
-    const { cookie, project } = await published();
+    const { cookie } = await published();
     const sent = mailbox();
     // Only an operation nobody serves changes.
     const next = structuredClone(SPEC) as Spec;
     (next.paths["/internal/flush"]?.post as Record<string, unknown>).summary = "Flush everything";
     serveSpec(next);
-    await refresh(cookie, project.id, MAIL);
+    await refresh(cookie, MAIL);
     expect(sent).toEqual([]);
 
-    await setScope(cookie, project.id, "all");
+    await setScope(cookie, "all");
     (next.paths["/internal/flush"]?.post as Record<string, unknown>).summary = "Flush it all";
     serveSpec(next);
-    await refresh(cookie, project.id, MAIL);
+    await refresh(cookie, MAIL);
     expect(sent.map((email) => email.subject)).toEqual(["Test API: 1 changed"]);
   });
 
   it("is sent once, whoever notices the change first", async () => {
-    const { cookie, project } = await published();
+    const { cookie } = await published();
     const sent = mailbox();
     serveSpec(nextRelease());
     await sql("UPDATE projects SET next_check_at = ?", Date.now() - DAY);
 
     // The timer and two people pressing "Check now", all at once.
-    await Promise.all([
-      runTimer(MAIL),
-      refresh(cookie, project.id, MAIL),
-      refresh(cookie, project.id, MAIL),
-    ]);
+    await Promise.all([runTimer(MAIL), refresh(cookie, MAIL), refresh(cookie, MAIL)]);
     expect(sent).toHaveLength(1);
   });
 
+  it("is sent when a deploy brings a document that changed, once, and not for a first deploy", async () => {
+    const cookie = await googleLogin("ada@example.com", "Ada");
+    const { key } = await createKey(cookie);
+    const definition = definitionOf({ ...PUBLISHED, sources: [{ file: "openapi.json" }] });
+    const sent = mailbox();
+    // The first deploy: everything is new, and nobody is told so.
+    await applied(deploy(key, definition, { documents: { main: document() } }, MAIL));
+    expect(sent).toEqual([]);
+
+    const result = await applied(
+      deploy(key, definition, { documents: { main: document(nextRelease()) } }, MAIL),
+    );
+    expect(result.operations).toMatchObject({
+      added: ["GET /pets/{id}", "GET /audit"],
+      removed: ["POST /internal/flush"],
+      changed: ["GET /pets"],
+    });
+    expect(sent.map((email) => email.subject)).toEqual(["Test API: 2 new, 1 changed"]);
+
+    // The same document again, and a change to the definition alone: no news.
+    await applied(deploy(key, definition, { documents: { main: document(nextRelease()) } }, MAIL));
+    await applied(
+      deploy(
+        key,
+        { ...definition, variants: { docs: {} } },
+        { documents: { main: document(nextRelease()) } },
+        MAIL,
+      ),
+    );
+    await applied(apply(cookie, { ...definition, name: "Renamed" }, { editInApp: true }, MAIL));
+    // Nor is what an edit to the definition does to the operations: moving every
+    // path under a prefix is the doing of whoever saved it, not something to tell them.
+    const moved = await applied(
+      apply(
+        cookie,
+        { ...definition, sources: [{ file: "openapi.json", pathPrefix: "/v2" }] },
+        { editInApp: true },
+        MAIL,
+      ),
+    );
+    expect(moved.operations.removed.length).toBeGreaterThan(0);
+    expect(sent).toHaveLength(1);
+
+    // The same holds when the edit brings a document along: a document that is
+    // added to the project, or one that comes with a change to how it is merged.
+    const billing = {
+      openapi: "3.1.0",
+      info: { title: "Billing", version: "1" },
+      paths: { "/invoices": { get: { responses: { "200": { description: "ok" } } } } },
+    };
+    const added = await applied(
+      apply(
+        cookie,
+        {
+          ...definition,
+          sources: [
+            { name: "core", file: "openapi.json", main: true, pathPrefix: "/v2" },
+            { name: "billing", file: "billing.json" },
+          ],
+        },
+        { documents: { billing: document(billing) } },
+        MAIL,
+      ),
+    );
+    expect(added.operations.added).toEqual(["GET /invoices"]);
+    expect(sent).toHaveLength(1);
+    // A new document for sources that are merged as before is news again.
+    const next = structuredClone(billing) as typeof billing & { paths: Record<string, unknown> };
+    next.paths["/refunds"] = { post: { responses: { "201": { description: "refunded" } } } };
+    await applied(
+      apply(
+        cookie,
+        {
+          ...definition,
+          sources: [
+            { name: "core", file: "openapi.json", main: true, pathPrefix: "/v2" },
+            { name: "billing", file: "billing.json" },
+          ],
+        },
+        { documents: { billing: document(next) } },
+        MAIL,
+      ),
+    );
+    expect(sent.map((email) => email.subject)).toEqual([
+      "Test API: 2 new, 1 changed",
+      "Test API: 1 new",
+    ]);
+  });
+
   it("is not needed for anything: without an email provider, checks work the same", async () => {
-    const { cookie, project } = await published();
+    const { cookie } = await published();
     serveSpec(nextRelease());
-    expect((await refresh(cookie, project.id)).changed).toBe(true);
+    expect((await refresh(cookie)).changed).toBe(true);
     expect(callsTo("POST", MAIL_URL)).toBe(0);
   });
 

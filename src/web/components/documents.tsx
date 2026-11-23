@@ -39,29 +39,44 @@ import {
   type ProjectNote,
   queries,
   RequestError,
-  type Source,
 } from "@/lib/api";
-import { sourceStatus, useCheckProject } from "@/lib/hooks";
+import { checkStatus, useCheckProject } from "@/lib/hooks";
+import {
+  mainSourceName,
+  projectName,
+  projectSlug,
+  type SourceView,
+  sourcesOf,
+  useApply,
+} from "@/lib/project";
 import { formatBytes, formatInterval, formatRelativeTime, looksLikeUrl, plural } from "@/lib/utils";
-
-/** Put a project the server just returned into the list everything reads from. */
-function useProjectUpdate() {
-  const queryClient = useQueryClient();
-  return (updated: Project) => {
-    queryClient.setQueryData<Project[]>(queries.projects.queryKey, (current) =>
-      current?.map((existing) => (existing.id === updated.id ? updated : existing)),
-    );
-    void queryClient.invalidateQueries({ queryKey: queries.variants.queryKey });
-  };
-}
 
 const sheet = "w-full gap-0 data-[side=right]:sm:max-w-lg";
 
-/** How a check finds out whether this document changed, in a word or two. */
-function checkedBy(source: Source): string {
-  if (source.validator === "etag") return "ETag";
-  if (source.validator === "last-modified") return "Last-Modified";
+/** How the service comes by this document, in a word or two. */
+function keptBy(source: SourceView): string {
+  if (!source.definition.follow) return "Uploaded";
+  if (source.state.validator === "etag") return "ETag";
+  if (source.state.validator === "last-modified") return "Last-Modified";
   return "Full download";
+}
+
+/** Where a document comes from, as people read it. */
+const whereOf = (source: SourceView): string =>
+  source.definition.url ? bareUrl(source.definition.url) : (source.definition.file ?? "");
+
+/**
+ * A name for a document from its address: "https://billing.example.com/openapi.json"
+ * is "billing". An address that names no one (an IP address, localhost) gives nothing.
+ */
+export function nameFromUrl(url: string): string {
+  try {
+    const { hostname } = new URL(url.trim());
+    if (hostname === "localhost" || /^[\d.]+$/.test(hostname) || hostname.includes(":")) return "";
+    return hostname.replace(/^(api|www)\./, "").split(".")[0] ?? "";
+  } catch {
+    return "";
+  }
 }
 
 /**
@@ -74,10 +89,14 @@ export function Documents({ project }: { project: Project }) {
   const refresh = useCheckProject(project);
   const [opened, setOpened] = useState<string>();
   const [adding, setAdding] = useState(false);
-  const several = project.sources.length > 1;
-  const status = sourceStatus(project);
-  const quick = project.sources.every((source) => source.cheap);
-  const current = project.sources.find((source) => source.id === opened);
+  const sources = sourcesOf(project);
+  const several = sources.length > 1;
+  const { check, can } = project.state;
+  const status = check ? checkStatus(check) : undefined;
+  const followed = sources.filter((source) => source.definition.follow);
+  const quick = followed.every((source) => source.state.validator !== null);
+  const current = sources.find((source) => source.label === opened);
+  const name = projectName(project);
 
   return (
     <>
@@ -86,23 +105,33 @@ export function Documents({ project }: { project: Project }) {
         description={
           several ? (
             <>
-              {project.name} is these documents merged into one, in this order. The main one gives
-              it its title, description and servers.{" "}
+              {name} is these documents merged into one. The main one gives it its title,
+              description and servers, and wins where two define the same operation.{" "}
               <DocsLink slug="merging">How merging works</DocsLink>
             </>
           ) : (
-            `The OpenAPI document ${project.name} is built from.`
+            `The OpenAPI document ${name} is built from.`
           )
         }
         action={
           <>
-            <Button variant="outline" onClick={() => refresh.mutate()} loading={refresh.isPending}>
-              {!refresh.isPending && <RefreshCwIcon />}
-              {several ? "Check all documents for updates now" : "Check for updates now"}
-            </Button>
-            <Button onClick={() => setAdding(true)}>
-              <PlusIcon /> Add document
-            </Button>
+            {can.check && (
+              <Button
+                variant="outline"
+                onClick={() => refresh.mutate()}
+                loading={refresh.isPending}
+              >
+                {!refresh.isPending && <RefreshCwIcon />}
+                {followed.length > 1
+                  ? "Check all documents for updates now"
+                  : "Check for updates now"}
+              </Button>
+            )}
+            {can.edit && (
+              <Button onClick={() => setAdding(true)}>
+                <PlusIcon /> Add document
+              </Button>
+            )}
           </>
         }
       >
@@ -111,18 +140,18 @@ export function Documents({ project }: { project: Project }) {
             <TableHeader>
               <TableRow>
                 <TableHead>Document</TableHead>
-                <TableHead className="hidden md:table-cell">URL</TableHead>
+                <TableHead className="hidden md:table-cell">From</TableHead>
                 <TableHead className="text-right">Operations</TableHead>
-                <TableHead className="hidden sm:table-cell">Each check</TableHead>
+                <TableHead className="hidden sm:table-cell">Kept current by</TableHead>
                 <TableHead className="w-8" />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {project.sources.map((source, index) => (
+              {sources.map((source) => (
                 <TableRow
-                  key={source.id}
+                  key={source.label}
                   className="cursor-pointer"
-                  onClick={() => setOpened(source.id)}
+                  onClick={() => setOpened(source.label)}
                 >
                   <TableCell>
                     <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -130,25 +159,27 @@ export function Documents({ project }: { project: Project }) {
                         type="button"
                         className="rounded-sm text-left font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                       >
-                        {source.name}
+                        {source.definition.name ?? source.state.title ?? "Document"}
                       </button>
-                      {several && index === 0 && <StatusChip tone="neutral">Main</StatusChip>}
-                      {source.pathPrefix && (
+                      {several && source.main && <StatusChip tone="neutral">Main</StatusChip>}
+                      {source.definition.pathPrefix && (
                         <span className="text-[13px] text-muted-foreground">
-                          {source.pathPrefix}
+                          {source.definition.pathPrefix}
                         </span>
                       )}
-                      {source.lastStatus === "error" && (
+                      {source.state.lastStatus === "error" && (
                         <StatusChip tone="bad">Check failed</StatusChip>
                       )}
                     </span>
                   </TableCell>
                   <TableCell className="hidden max-w-64 truncate text-muted-foreground md:table-cell">
-                    {bareUrl(source.url)}
+                    {whereOf(source)}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{source.operations}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {source.state.operations}
+                  </TableCell>
                   <TableCell className="hidden text-muted-foreground sm:table-cell">
-                    {checkedBy(source)}
+                    {keptBy(source)}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     <ChevronRightIcon className="size-4" />
@@ -158,24 +189,38 @@ export function Documents({ project }: { project: Project }) {
             </TableBody>
           </Table>
 
-          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] leading-5 text-muted-foreground">
-            <StatusChip tone={status.tone} title={status.detail}>
-              {status.label}
-            </StatusChip>
-            <span>
-              We check {several ? "these documents" : "this document"} for updates every{" "}
-              {formatInterval(project.checkIntervalSeconds)}. The last check was{" "}
-              {formatRelativeTime(project.fetchedAt)}.{" "}
-              {quick ? (
-                <DocsLink slug="keeping-in-sync">How checks work</DocsLink>
-              ) : (
-                <>
-                  For checks every 5 minutes, send an ETag with it.{" "}
-                  <DocsLink slug="etag">How</DocsLink>
-                </>
-              )}
-            </span>
-          </p>
+          {check && status ? (
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] leading-5 text-muted-foreground">
+              <StatusChip tone={status.tone} title={status.detail}>
+                {status.label}
+              </StatusChip>
+              <span>
+                We check {followed.length > 1 ? "the documents we follow" : "this document"} for
+                updates every {formatInterval(check.intervalSeconds)}.{" "}
+                {check.checkedAt === null
+                  ? "It has not been checked yet."
+                  : `The last check was ${formatRelativeTime(check.checkedAt)}.`}{" "}
+                {check.watchUntil !== null && check.watchUntil > Date.now()
+                  ? "It was just deployed, so we look every few minutes for a while. "
+                  : ""}
+                {quick ? (
+                  <DocsLink slug="keeping-in-sync">How checks work</DocsLink>
+                ) : (
+                  <>
+                    For checks every 5 minutes, send an ETag with it.{" "}
+                    <DocsLink slug="etag">How</DocsLink>
+                  </>
+                )}
+              </span>
+            </p>
+          ) : (
+            <p className="text-[13px] leading-5 text-muted-foreground">
+              {several ? "These documents were" : "This document was"} uploaded
+              {project.state.applied ? ` ${formatRelativeTime(project.state.applied.at)}` : ""}, and{" "}
+              {several ? "stay as they are" : "stays as it is"} until the next deploy. Nothing is
+              checked in between.
+            </p>
+          )}
         </div>
 
         <div className="empty:hidden">
@@ -186,7 +231,7 @@ export function Documents({ project }: { project: Project }) {
       {current && (
         <DocumentSheet
           // A new form for each document, and for each state the server holds of it.
-          key={JSON.stringify(current)}
+          key={JSON.stringify([current.definition, current.state])}
           project={project}
           source={current}
           onClose={() => setOpened(undefined)}
@@ -197,81 +242,134 @@ export function Documents({ project }: { project: Project }) {
   );
 }
 
-/** One document's settings: how it is fetched, checked and merged in. */
+/** One document's settings: where it comes from, and how it is merged in. */
 function DocumentSheet({
   project,
   source,
   onClose,
 }: {
   project: Project;
-  source: Source;
+  source: SourceView;
   onClose: () => void;
 }) {
-  const several = project.sources.length > 1;
-  const main = project.sources[0]?.id === source.id;
-  const update = useProjectUpdate();
+  const sources = sourcesOf(project);
+  const several = sources.length > 1;
+  const apply = useApply(project);
+  const queryClient = useQueryClient();
+  const { can } = project.state;
+  const { definition, state } = source;
+  const followed = definition.follow === true;
+  const shown = definition.name ?? state.title ?? "Document";
 
-  const [name, setName] = useState(source.name);
-  const [pathPrefix, setPathPrefix] = useState(source.pathPrefix ?? "");
+  const [name, setName] = useState(definition.name ?? "");
+  const [pathPrefix, setPathPrefix] = useState(definition.pathPrefix ?? "");
   const [headers, setHeaders] = useState<HeaderDraft[]>(() =>
-    source.headerNames.map((headerName) => newHeader(headerName, true)),
+    state.headerNames.map((headerName) => newHeader(headerName, true)),
   );
 
   const headerInput = toHeaderInput(headers);
   const headersChanged =
-    headerInput.length !== source.headerNames.length ||
+    headerInput.length !== state.headerNames.length ||
     headerInput.some(
-      (header, index) => header.value !== undefined || header.name !== source.headerNames[index],
+      (header, index) => header.value !== undefined || header.name !== state.headerNames[index],
     );
-  const changes: Parameters<typeof api.updateSource>[2] = {
-    ...(name.trim() !== source.name ? { name: name.trim() } : {}),
-    ...(pathPrefix.trim() !== (source.pathPrefix ?? "")
-      ? { pathPrefix: pathPrefix.trim() || null }
-      : {}),
-    ...(headersChanged ? { headers: headerInput } : {}),
+  const entryChanged =
+    name.trim() !== (definition.name ?? "") || pathPrefix.trim() !== (definition.pathPrefix ?? "");
+  const dirty = entryChanged || headersChanged;
+  const valid = (!several || name.trim() !== "") && headersComplete(headers);
+
+  /** The definition with this source's entry replaced, or taken out. */
+  const withSource = (next: typeof definition | undefined) => (current: Project["definition"]) => ({
+    ...current,
+    sources: current.sources.flatMap((entry, index) =>
+      index === source.index ? (next ? [next] : []) : [entry],
+    ),
+  });
+  const entry = (): typeof definition => {
+    const { name: _name, pathPrefix: _prefix, ...rest } = definition;
+    return {
+      ...(name.trim() !== "" ? { name: name.trim() } : {}),
+      ...rest,
+      ...(pathPrefix.trim() !== "" ? { pathPrefix: pathPrefix.trim() } : {}),
+    };
   };
-  const dirty = Object.keys(changes).length > 0;
-  const valid = name.trim() !== "" && headersComplete(headers);
 
   const save = useMutation({
-    mutationFn: () => api.updateSource(project.id, source.id, changes),
-    onSuccess: (updated) => {
-      update(updated);
-      toast.success(`${name.trim()} saved`);
+    mutationFn: async () => {
+      // Credentials are not part of the definition. Changed alone, they are
+      // saved on their own, which works for a project that is deployed from a file too.
+      if (!entryChanged) {
+        await api.setCredentials(projectSlug(project), source.label, headerInput);
+        await queryClient.invalidateQueries({ queryKey: queries.projects.queryKey });
+        return;
+      }
+      const next = entry();
+      await apply.mutateAsync({
+        change: withSource(next),
+        more: headersChanged ? { credentials: { [next.name ?? source.label]: headerInput } } : {},
+      });
+    },
+    onSuccess: () => {
+      toast.success(`${name.trim() || shown} saved`);
       onClose();
     },
   });
   const act = useMutation({
     mutationFn: (action: "main" | "remove") =>
-      action === "main"
-        ? api.makeMainSource(project.id, source.id)
-        : api.removeSource(project.id, source.id),
-    onSuccess: (updated, action) => {
-      update(updated);
-      if (action === "remove") toast.success(`${source.name} was taken out`);
-      if (action === "main") toast.success(`${source.name} is the main document now`);
+      apply.mutateAsync(
+        action === "remove"
+          ? (current) => {
+              const next = withSource(undefined)(current);
+              // One document needs no main, and when the main one goes the first takes over.
+              const [only] = next.sources;
+              if (next.sources.length === 1 && only) {
+                const { main: _, ...rest } = only;
+                return { ...next, sources: [rest] };
+              }
+              return next.sources.some((entry) => entry.main)
+                ? next
+                : {
+                    ...next,
+                    sources: next.sources.map((entry, index) =>
+                      index === 0 ? { ...entry, main: true } : entry,
+                    ),
+                  };
+            }
+          : (current) => ({
+              ...current,
+              sources: current.sources.map((entry, index) => {
+                const { main: _, ...rest } = entry;
+                return index === source.index ? { ...rest, main: true } : rest;
+              }),
+            }),
+      ),
+    onSuccess: (_, action) => {
+      if (action === "remove") toast.success(`${shown} was taken out`);
+      if (action === "main") toast.success(`${shown} is the main document now`);
       onClose();
     },
     onError: (error) => toast.error(errorMessage(error)),
   });
   const saveError = save.error instanceof RequestError ? save.error : undefined;
-  const id = (field: string) => `${source.id}-${field}`;
-  const quick = source.cheap;
+  const id = (field: string) => `source-${source.index}-${field}`;
+  const where = definition.url ?? definition.file ?? "";
 
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
       <SheetContent className={sheet}>
         <SheetHeader className="border-b pr-12">
-          <SheetTitle>{source.name}</SheetTitle>
+          <SheetTitle>{shown}</SheetTitle>
           <SheetDescription render={<div />} className="text-[13px]">
             <span className="flex items-center gap-1">
-              <span className="truncate">{source.url}</span>
-              <CopyButton value={source.url} what="URL copied" variant="ghost" size="icon-xs" />
+              <span className="truncate">{where}</span>
+              {definition.url && (
+                <CopyButton value={where} what="URL copied" variant="ghost" size="icon-xs" />
+              )}
             </span>
             <span>
-              {plural(source.operations, "operation")}, {formatBytes(source.bodyBytes)}, OpenAPI{" "}
-              {source.specVersion}
-              {several && main && ". The main document"}
+              {plural(state.operations, "operation")}, {formatBytes(state.bodyBytes)}, OpenAPI{" "}
+              {state.specVersion}
+              {several && source.main && ". The main document"}
             </span>
           </SheetDescription>
         </SheetHeader>
@@ -284,57 +382,70 @@ function DocumentSheet({
           }}
         >
           <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-4">
-            {source.lastStatus === "error" && source.lastError && (
+            {state.lastStatus === "error" && state.lastError && (
               <Notice tone="bad">
-                <span className="font-medium">The last check failed.</span> {source.lastError} Its
+                <span className="font-medium">The last check failed.</span> {state.lastError} Its
                 last good copy is still served.
               </Notice>
             )}
 
             {several && (
-              <>
-                <Field
-                  label="Name"
-                  htmlFor={id("name")}
-                  hint="Shown next to its operations, and used to rename what clashes in the merge."
-                >
-                  <Input
-                    id={id("name")}
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    maxLength={100}
-                  />
-                </Field>
-                <Field
-                  label="Path prefix"
-                  htmlFor={id("prefix")}
-                  hint="Optional. Put in front of every path of this document."
-                >
-                  <Input
-                    id={id("prefix")}
-                    value={pathPrefix}
-                    onChange={(event) => setPathPrefix(event.target.value)}
-                    placeholder="/billing"
-                    spellCheck={false}
-                  />
-                </Field>
-              </>
+              <Field
+                label="Name"
+                htmlFor={id("name")}
+                hint="Shown next to its operations, and used to rename what clashes in the merge."
+              >
+                <Input
+                  id={id("name")}
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  maxLength={100}
+                  readOnly={!can.edit}
+                />
+              </Field>
+            )}
+            {(several || definition.pathPrefix) && (
+              <Field
+                label="Path prefix"
+                htmlFor={id("prefix")}
+                hint="Optional. Put in front of every path of this document."
+              >
+                <Input
+                  id={id("prefix")}
+                  value={pathPrefix}
+                  onChange={(event) => setPathPrefix(event.target.value)}
+                  placeholder="/billing"
+                  spellCheck={false}
+                  readOnly={!can.edit}
+                />
+              </Field>
             )}
 
-            <Field
-              label="Credentials"
-              hint="Request headers sent when fetching this document. Stored encrypted, never shown again."
-            >
-              <HeaderEditor value={headers} onChange={setHeaders} />
-            </Field>
+            {followed && can.credentials && (
+              <Field
+                label="Credentials"
+                hint="Request headers sent when fetching this document. Stored encrypted, never shown again, and not part of a definition file."
+              >
+                <HeaderEditor value={headers} onChange={setHeaders} />
+              </Field>
+            )}
 
             <p className="text-[13px] leading-5 text-muted-foreground">
-              {quick ? (
-                <>A check is quick: it uses the {checkedBy(source).toLowerCase()}.</>
+              {!followed ? (
+                <>
+                  This copy was {definition.url ? "read from its address and " : ""}uploaded{" "}
+                  {formatRelativeTime(state.readAt)}. It stays as it is until the next deploy brings
+                  another.
+                </>
+              ) : state.validator ? (
+                <>
+                  We keep reading this address. A check is quick: it uses the{" "}
+                  {keptBy(source).toLowerCase()}.
+                </>
               ) : (
                 <>
-                  Each check downloads the whole document. An ETag makes it quick.{" "}
-                  <DocsLink slug="etag">How to send one</DocsLink>
+                  We keep reading this address. Each check downloads the whole document. An ETag
+                  makes it quick. <DocsLink slug="etag">How to send one</DocsLink>
                 </>
               )}
             </p>
@@ -357,7 +468,7 @@ function DocumentSheet({
               Cancel
             </Button>
             <span className="flex-1" />
-            {several && !main && (
+            {can.edit && several && !source.main && (
               <Button
                 variant="ghost"
                 loading={act.isPending && act.variables === "main"}
@@ -366,12 +477,12 @@ function DocumentSheet({
                 Make main
               </Button>
             )}
-            {several && (
+            {can.edit && several && (
               <Button
                 variant="destructive-ghost"
                 loading={act.isPending && act.variables === "remove"}
                 onClick={() => {
-                  const question = `Take ${source.name} out of ${project.name}? Its ${plural(source.operations, "operation")} disappear from every variant that serves them.`;
+                  const question = `Take ${shown} out of ${projectName(project)}? Its ${plural(state.operations, "operation")} disappear from every variant that serves them.`;
                   if (window.confirm(question)) act.mutate("remove");
                 }}
               >
@@ -387,21 +498,48 @@ function DocumentSheet({
 
 /** Add one more document to a project. Its operations are merged into the project's. */
 function AddDocumentSheet({ project, onClose }: { project: Project; onClose: () => void }) {
-  const update = useProjectUpdate();
+  const apply = useApply(project);
+  const existing = sourcesOf(project);
   const [url, setUrl] = useState("");
+  const [name, setName] = useState("");
+  const [named, setNamed] = useState(false);
   const [pathPrefix, setPathPrefix] = useState("");
   const [headers, setHeaders] = useState<HeaderDraft[]>([]);
+  const taken = (candidate: string) =>
+    existing.some((source) => source.label.toLowerCase() === candidate.trim().toLowerCase());
 
   const add = useMutation({
     mutationFn: () =>
-      api.addSource(project.id, {
-        url: url.trim(),
-        ...(headers.length > 0 ? { headers: toHeaderInput(headers) } : {}),
-        ...(pathPrefix.trim() !== "" ? { pathPrefix: pathPrefix.trim() } : {}),
+      apply.mutateAsync({
+        change: (definition) => {
+          // With several, every document has a name and one of them leads.
+          const others = definition.sources.map((source, index) => {
+            const state = existing[index]?.state;
+            const base =
+              source.name !== undefined
+                ? source
+                : { name: firstFree(state?.title ?? "main", [name]), ...source };
+            return definition.sources.some((entry) => entry.main) || index > 0
+              ? base
+              : { ...base, main: true };
+          });
+          return {
+            ...definition,
+            sources: [
+              ...others,
+              {
+                name: name.trim(),
+                url: url.trim(),
+                follow: true,
+                ...(pathPrefix.trim() !== "" ? { pathPrefix: pathPrefix.trim() } : {}),
+              },
+            ],
+          };
+        },
+        more: headers.length > 0 ? { credentials: { [name.trim()]: toHeaderInput(headers) } } : {},
       }),
-    onSuccess: (updated) => {
-      update(updated);
-      toast.success(`${updated.sources.at(-1)?.name ?? "The document"} was merged in`);
+    onSuccess: () => {
+      toast.success(`${name.trim()} was merged in`);
       onClose();
     },
     onError: (error) => {
@@ -412,7 +550,9 @@ function AddDocumentSheet({ project, onClose }: { project: Project; onClose: () 
     },
   });
   const error = add.error instanceof RequestError ? add.error : undefined;
-  const ready = looksLikeUrl(url) && headersComplete(headers);
+  const nameProblem =
+    name.trim() !== "" && taken(name) ? "Another document has this name." : undefined;
+  const ready = looksLikeUrl(url) && name.trim() !== "" && !nameProblem && headersComplete(headers);
 
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
@@ -420,8 +560,8 @@ function AddDocumentSheet({ project, onClose }: { project: Project; onClose: () 
         <SheetHeader className="border-b pr-12">
           <SheetTitle>Add document</SheetTitle>
           <SheetDescription className="text-[13px]">
-            Its operations are merged into {project.name}.{" "}
-            <DocsLink slug="merging">How merging works</DocsLink>
+            Its operations are merged into {projectName(project)}, and we keep reading its address
+            for updates. <DocsLink slug="merging">How merging works</DocsLink>
           </SheetDescription>
         </SheetHeader>
         <form
@@ -439,10 +579,36 @@ function AddDocumentSheet({ project, onClose }: { project: Project; onClose: () 
                 value={url}
                 onChange={(event) => {
                   setUrl(event.target.value);
+                  if (!named)
+                    setName(
+                      firstFree(
+                        nameFromUrl(event.target.value),
+                        existing.map((source) => source.label),
+                      ),
+                    );
                   add.reset();
                 }}
                 placeholder="https://billing.example.com/openapi.json"
                 className="text-[13px] md:text-[13px]"
+                spellCheck={false}
+                autoComplete="off"
+              />
+            </Field>
+            <Field
+              label="Name"
+              htmlFor="add-source-name"
+              error={nameProblem}
+              hint="Shown next to its operations, and used to rename what clashes in the merge."
+            >
+              <Input
+                id="add-source-name"
+                value={name}
+                onChange={(event) => {
+                  setName(event.target.value);
+                  setNamed(true);
+                }}
+                placeholder="billing"
+                maxLength={100}
                 spellCheck={false}
                 autoComplete="off"
               />
@@ -474,10 +640,10 @@ function AddDocumentSheet({ project, onClose }: { project: Project; onClose: () 
                 </Button>
               </div>
             )}
-            {error && (
+            {(error || add.isError) && (
               <Notice tone="bad">
-                <span className="font-medium">{error.message}</span>
-                {error.detail && <span className="opacity-90"> {error.detail}</span>}
+                <span className="font-medium">{error?.message ?? errorMessage(add.error)}</span>
+                {error?.detail && <span className="opacity-90"> {error.detail}</span>}
               </Notice>
             )}
           </div>
@@ -493,6 +659,17 @@ function AddDocumentSheet({ project, onClose }: { project: Project; onClose: () 
       </SheetContent>
     </Sheet>
   );
+}
+
+/** A name that none of `taken` has, ignoring case: the one wanted, or that with a number. */
+export function firstFree(wanted: string, taken: string[]): string {
+  const used = new Set(taken.map((entry) => entry.trim().toLowerCase()));
+  const base = wanted.trim();
+  if (base === "") return "";
+  if (!used.has(base.toLowerCase())) return base;
+  for (let n = 2; ; n++) {
+    if (!used.has(`${base}-${n}`.toLowerCase())) return `${base}-${n}`;
+  }
 }
 
 /** One merge note as a sentence. */
@@ -516,9 +693,10 @@ function sentenceFor(note: ProjectNote, main: string): string {
 /** What putting the documents together did, for the owner to check once. */
 function MergeNotes({ project }: { project: Project }) {
   const [all, setAll] = useState(false);
-  if (project.notes.length === 0) return null;
-  const main = project.sources[0]?.name ?? "the main document";
-  const shown = all ? project.notes : project.notes.slice(0, 4);
+  if (project.state.notes.length === 0) return null;
+  const { notes } = project.state;
+  const main = mainSourceName(project) ?? "the main document";
+  const shown = all ? notes : notes.slice(0, 4);
   return (
     <div>
       <p className="text-[13px] leading-5 font-medium">What merging changed</p>
@@ -527,9 +705,9 @@ function MergeNotes({ project }: { project: Project }) {
           <li key={JSON.stringify(note)}>{sentenceFor(note, main)}</li>
         ))}
       </ul>
-      {project.notes.length > shown.length && (
+      {notes.length > shown.length && (
         <Button variant="ghost" size="sm" className="mt-1 -ml-2.5" onClick={() => setAll(true)}>
-          Show all {project.notes.length}
+          Show all {notes.length}
         </Button>
       )}
     </div>

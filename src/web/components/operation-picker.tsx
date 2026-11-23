@@ -87,12 +87,13 @@ interface OperationPickerProps {
   onChange: (selection: Selection) => void;
   view: PickerView;
   onViewChange: (view: PickerView) => void;
-  /** Operations that appeared in the source since the selection was last reviewed. */
   /**
    * In a project merged from several documents, the name of the main one.
    * Operations that came from another are marked with where they came from.
    */
   mainSource?: string | undefined;
+  /** Show what is served without letting it be changed: the selection is edited somewhere else. */
+  readOnly?: boolean;
   className?: string;
 }
 
@@ -122,6 +123,7 @@ export function OperationPicker({
   view,
   onViewChange,
   mainSource,
+  readOnly = false,
   className,
 }: OperationPickerProps) {
   const [query, setQuery] = useState("");
@@ -284,7 +286,12 @@ export function OperationPicker({
           />
         </div>
 
-        {needle !== "" && matching.size > 0 && (
+        {needle !== "" && matching.size > 0 && readOnly && (
+          <span className="text-[13px] text-muted-foreground" aria-live="polite">
+            {plural(matching.size, "match", "matches")}
+          </span>
+        )}
+        {needle !== "" && matching.size > 0 && !readOnly && (
           <div className="flex items-center gap-1.5">
             <span className="flex-1 text-[13px] text-muted-foreground" aria-live="polite">
               {plural(matching.size, "match", "matches")}
@@ -316,6 +323,7 @@ export function OperationPicker({
         {entries.length > 0 && needle === "" && view === "all" && (
           <div className="flex h-10 items-center gap-2.5 border-b px-2">
             <Checkbox
+              readOnly={readOnly}
               checked={servedCount === entries.length}
               indeterminate={servedCount > 0 && servedCount < entries.length}
               onCheckedChange={toggleAll}
@@ -353,6 +361,7 @@ export function OperationPicker({
             <section key={group.id}>
               <div className="group/header sticky top-0 z-10 flex h-10 items-center gap-2.5 bg-background px-2">
                 <Checkbox
+                  readOnly={readOnly}
                   checked={all}
                   indeterminate={!all && servedHere > 0}
                   onCheckedChange={() => toggleGroup(group)}
@@ -388,6 +397,7 @@ export function OperationPicker({
                     title={`When the source adds an operation to ${group.label}, ${including ? "serve" : "hide"} it as well.`}
                   >
                     <Checkbox
+                      readOnly={readOnly}
                       checked={isRule}
                       onCheckedChange={() => follow(group.tag as string, !isRule)}
                       aria-label={`${group.label}: ${including ? "serve" : "hide"} operations added later`}
@@ -421,6 +431,7 @@ export function OperationPicker({
                           className="flex h-8 cursor-default items-center gap-2.5 rounded-md px-2 hover:bg-muted/60"
                         >
                           <Checkbox
+                            readOnly={readOnly}
                             checked={isServed}
                             onCheckedChange={() => toggleEntry(entry)}
                             onClick={(event) => event.stopPropagation()}
@@ -458,18 +469,20 @@ export function OperationPicker({
 
       <div className="flex shrink-0 flex-col gap-1.5 border-t px-5 py-2.5">
         <div className="flex items-center gap-3">
-          <span className="text-[13px] text-muted-foreground">
-            Operations your API adds later are
+          <span className="flex h-8 items-center text-[13px] text-muted-foreground">
+            Operations your API adds later are{readOnly ? ` ${later}.` : ""}
           </span>
-          <Segmented
-            aria-label="Operations your API adds later are"
-            value={later}
-            onValueChange={(next) => onChange(withLaterAdditions(entries, selection, next))}
-            options={[
-              { value: "hidden", label: "Hidden" },
-              { value: "served", label: "Served" },
-            ]}
-          />
+          {!readOnly && (
+            <Segmented
+              aria-label="Operations your API adds later are"
+              value={later}
+              onValueChange={(next) => onChange(withLaterAdditions(entries, selection, next))}
+              options={[
+                { value: "hidden", label: "Hidden" },
+                { value: "served", label: "Served" },
+              ]}
+            />
+          )}
         </div>
         {/* Always a line of its own, said or not: the foot keeps its height. */}
         <p className="text-[12.5px] leading-[18px] text-faint">

@@ -1,17 +1,34 @@
 import type {
-  DocumentOverrides,
-  MergeNote,
-  OperationEntry,
-  Selection,
+  ApplyRequest,
+  ApplyResult,
+  ProjectDefinition,
+  ProjectNote,
+  ProjectView,
+  SourceState,
   SpecFormat,
   TargetVersion,
-  UnmatchedNames,
+  VariantDefinition,
+  VariantState,
 } from "@openapi-proxy/core";
 import { queryOptions } from "@tanstack/react-query";
 import type { KeyAccess, Visibility } from "../../shared/access";
 import type { VariantIconName } from "../../shared/variant-icons";
 
-export type { KeyAccess, VariantIconName, Visibility };
+export type {
+  ApplyRequest,
+  ApplyResult,
+  KeyAccess,
+  ProjectDefinition,
+  ProjectNote,
+  SourceState,
+  VariantDefinition,
+  VariantIconName,
+  VariantState,
+  Visibility,
+};
+
+/** A project as the app reads it: its definition, and what the service knows about it. */
+export type Project = ProjectView;
 
 export type Plan = "free" | "pro";
 /** Which source changes a person is emailed about. */
@@ -33,14 +50,16 @@ export interface Me {
   plansEnabled: boolean;
   limits: Limits;
   emailConfigured: boolean;
-  /** Whether a new variant starts public or private. */
+  /** Who may read a variant when neither it nor its project says. */
   defaultVisibility: Visibility;
+  /** Everything before a project's slug in its public URLs, e.g. `https://proxy.example.com/v/`. */
+  urlPrefix: string;
 }
 
 export interface Workspace {
   id: string;
   name: string;
-  /** Whether a new variant starts public or private. */
+  /** Who may read a variant when neither it nor its project says. */
   defaultVisibility: Visibility;
   /** Your own role in it. */
   role: "owner" | "member";
@@ -111,92 +130,6 @@ export interface AuthConfig {
   legal: boolean;
 }
 
-/** One of the OpenAPI documents a project is assembled from. */
-export interface Source {
-  id: string;
-  /** What people call it. Also names components that had to be renamed in a merge. */
-  name: string;
-  url: string;
-  /** Names of the request headers sent when fetching it. Values never leave the server. */
-  headerNames: string[];
-  /** Put in front of every path of this document, or null. */
-  pathPrefix: string | null;
-  /** What the source sends that lets a check skip the download, if anything. */
-  validator: "etag" | "last-modified" | null;
-  /** Whether a check can skip the download. */
-  cheap: boolean;
-  apiVersion: string | null;
-  specVersion: string;
-  bodyBytes: number;
-  operations: number;
-  lastStatus: "ok" | "error";
-  lastError: string | null;
-}
-
-/** Something that assembling a project's document did and its owner should know. */
-export type ProjectNote =
-  | MergeNote
-  | { kind: "source-converted"; source: string; from: string; to: string };
-
-export interface Project {
-  id: string;
-  name: string;
-  /** First segment of the public URL: /v/<slug>/<variant>. */
-  slug: string;
-  /** Everything before the project's slug in its public URLs, e.g. `https://proxy.example.com/v/`. */
-  urlPrefix: string;
-  /**
-   * How long a copy may age before the service checks again. Decided by the
-   * service: short when every source can be checked cheaply, an hour if not.
-   */
-  checkIntervalSeconds: number;
-  /** The documents it is assembled from, in order. The first is the main one. */
-  sources: Source[];
-  /** OpenAPI version of the assembled document: "3.0", "3.1" or "3.2". */
-  specVersion: string;
-  bodyHash: string;
-  bodyBytes: number;
-  /** Every operation of its document, by key. */
-  operations: OperationEntry[];
-  notes: ProjectNote[];
-  fetchedAt: number;
-  lastStatus: "ok" | "error";
-  lastError: string | null;
-  createdAt: number;
-}
-
-/** A document to connect: where it is, and what to send when fetching it. */
-export interface NewSource {
-  url: string;
-  headers?: HeaderInput[];
-  pathPrefix?: string;
-}
-
-export interface Variant {
-  id: string;
-  projectId: string;
-  name: string;
-  slug: string;
-  /** Public path, without a format extension: /v/<project>/<variant>. */
-  path: string;
-  /** The public URL, without a format extension. Built by the server; never build it here. */
-  url: string;
-  selection: Selection;
-  /** Who may read it at its URL: anyone, or only an API key of its workspace. */
-  visibility: Visibility;
-  /** The title, description and servers it states instead of the document's, or null. */
-  overrides: DocumentOverrides | null;
-  /** The icon it has in the navigation, or null for the plain one. */
-  icon: VariantIconName | null;
-  revision: number;
-  createdAt: number;
-  updatedAt: number;
-  keptOperations: number;
-  totalOperations: number;
-  /** Names in its selection that the document has nothing for. */
-  notFound: UnmatchedNames;
-}
-
 /**
  * What follows a variant's URL for one representation of it: `.json` for the
  * version its document has, `/3.0.json` for one it is converted to.
@@ -211,13 +144,15 @@ export interface HeaderInput {
   value?: string;
 }
 
-export interface RefreshResult {
+/** What "Check now" found. The project itself is read again afterwards. */
+export interface CheckResult {
   changed: boolean;
   addedOps: string[];
   removedOps: string[];
   /** Still there, with a different definition (its own, or of something it references). */
   changedOps: string[];
-  project: Project;
+  lastStatus: "ok" | "error";
+  lastError: string | null;
 }
 
 export interface SlugCheck {
@@ -232,18 +167,22 @@ interface ErrorBody {
   error?: string;
   message?: string;
   detail?: string;
+  /** For a document that was refused: the source it belongs to. */
+  source?: string;
 }
 
 export class RequestError extends Error {
   readonly status: number;
   readonly code: string;
   readonly detail: string | undefined;
+  readonly source: string | undefined;
 
   constructor(status: number, body: ErrorBody) {
     super(body.error || body.message || `The request failed (${status}).`);
     this.status = status;
     this.code = body.code ?? "unknown";
     this.detail = body.detail;
+    this.source = body.source;
   }
 }
 
@@ -304,11 +243,11 @@ export const api = {
     }),
   signOut: () => request<unknown>("/api/auth/sign-out", { ...body("POST", {}), quiet: true }),
   /** Which changes to a project's documents you are emailed about. Yours alone. */
-  projectNotifications: (id: string) =>
-    request<{ scope: NotificationScope }>(`/api/projects/${id}/notifications`),
-  setProjectNotifications: (id: string, scope: NotificationScope) =>
+  projectNotifications: (slug: string) =>
+    request<{ scope: NotificationScope }>(`/api/projects/${slug}/notifications`),
+  setProjectNotifications: (slug: string, scope: NotificationScope) =>
     request<{ scope: NotificationScope }>(
-      `/api/projects/${id}/notifications`,
+      `/api/projects/${slug}/notifications`,
       body("PUT", { scope }),
     ),
 
@@ -330,63 +269,27 @@ export const api = {
     request<{ ok: boolean }>(`/api/invitations/${id}/accept`, { method: "POST" }),
 
   listProjects: () => request<Project[]>("/api/projects"),
-  /** One document, or several that are merged into one project (the first is the main one). */
-  createProject: (documents: NewSource[]) =>
-    request<Project>("/api/projects", body("POST", { sources: documents })),
-  addSource: (projectId: string, source: NewSource) =>
-    request<Project>(`/api/projects/${projectId}/sources`, body("POST", source)),
-  updateSource: (
-    projectId: string,
-    sourceId: string,
-    changes: Partial<{
-      name: string;
-      pathPrefix: string | null;
-      headers: HeaderInput[];
-    }>,
-  ) => request<Project>(`/api/projects/${projectId}/sources/${sourceId}`, body("PATCH", changes)),
-  makeMainSource: (projectId: string, sourceId: string) =>
-    request<Project>(`/api/projects/${projectId}/sources/${sourceId}/main`, { method: "POST" }),
-  removeSource: (projectId: string, sourceId: string) =>
-    request<Project>(`/api/projects/${projectId}/sources/${sourceId}`, { method: "DELETE" }),
-  getProjectSpec: async (id: string) => (await send(`/api/projects/${id}/spec`)).text(),
-  checkProject: (id: string) =>
-    request<RefreshResult>(`/api/projects/${id}/check`, { method: "POST" }),
-  updateProject: (id: string, changes: Partial<{ name: string; slug: string }>) =>
-    request<Project>(`/api/projects/${id}`, body("PATCH", changes)),
-  deleteProject: (id: string) =>
-    request<{ ok: boolean }>(`/api/projects/${id}?cascade=true`, { method: "DELETE" }),
-  checkProjectSlug: (slug: string, except: string) =>
-    request<SlugCheck>(
-      `/api/projects/slug-check?slug=${encodeURIComponent(slug)}&except=${encodeURIComponent(except)}`,
+  getProject: (slug: string) => request<Project>(`/api/projects/${slug}`),
+  /**
+   * Apply a definition: the one way a project is created or changed. With
+   * `dryRun` everything is worked out and nothing is written.
+   */
+  applyProject: (payload: ApplyRequest, options: { dryRun?: boolean } = {}) =>
+    request<ApplyResult>(
+      `/api/projects/${payload.definition.project}${options.dryRun ? "?dryRun=true" : ""}`,
+      body("PUT", payload),
     ),
-
-  listVariants: () => request<Variant[]>("/api/variants"),
-  createVariant: (variant: {
-    projectId: string;
-    name: string;
-    slug?: string;
-    selection: Selection;
-    overrides?: DocumentOverrides | null;
-    icon?: VariantIconName | null;
-    visibility?: Visibility;
-  }) => request<Variant>("/api/variants", body("POST", variant)),
-  updateVariant: (
-    id: string,
-    changes: Partial<{
-      name: string;
-      slug: string;
-      selection: Selection;
-      overrides: DocumentOverrides | null;
-      icon: VariantIconName | null;
-      visibility: Visibility;
-    }>,
-  ) => request<Variant>(`/api/variants/${id}`, body("PATCH", changes)),
-  deleteVariant: (id: string) =>
-    request<{ ok: boolean }>(`/api/variants/${id}`, { method: "DELETE" }),
-  checkVariantSlug: (projectId: string, slug: string) =>
-    request<SlugCheck>(
-      `/api/variants/slug-check?projectId=${encodeURIComponent(projectId)}&slug=${encodeURIComponent(slug)}`,
-    ),
+  /** The project's documents assembled into one, as text. */
+  getProjectDocument: async (slug: string) => (await send(`/api/projects/${slug}/document`)).text(),
+  checkProject: (slug: string) =>
+    request<CheckResult>(`/api/projects/${slug}/check`, { method: "POST" }),
+  /** The request headers the service sends when it fetches a followed source. */
+  setCredentials: (slug: string, source: string, headers: HeaderInput[]) =>
+    request<ApplyResult>(`/api/projects/${slug}/credentials`, body("PUT", { source, headers })),
+  deleteProject: (slug: string) =>
+    request<{ ok: boolean }>(`/api/projects/${slug}`, { method: "DELETE" }),
+  /** Whether a slug is free for a new project. */
+  checkProjectSlug: (slug: string) => request<SlugCheck>(`/api/slugs/${encodeURIComponent(slug)}`),
 };
 
 /**
@@ -397,7 +300,6 @@ export const queries = {
   me: queryOptions({ queryKey: ["me"], queryFn: api.me, staleTime: 5 * 60_000, retry: false }),
   authConfig: queryOptions({ queryKey: ["auth-config"], queryFn: api.authConfig }),
   projects: queryOptions({ queryKey: ["projects"], queryFn: api.listProjects }),
-  variants: queryOptions({ queryKey: ["variants"], queryFn: api.listVariants }),
   workspace: queryOptions({ queryKey: ["workspace"], queryFn: api.workspace }),
   invitation: (id: string) =>
     queryOptions({ queryKey: ["invitation", id], queryFn: () => api.invitation(id), retry: false }),

@@ -1,5 +1,11 @@
 import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
+import type {
+  ApplyResult,
+  ProjectDefinition,
+  ProjectView,
+  VariantDefinition,
+} from "@openapi-proxy/core";
 import { afterEach, beforeAll, expect, vi } from "vitest";
 import worker from "../src/server/index";
 import { scheduled } from "../src/server/scheduled";
@@ -252,102 +258,167 @@ export function json(method: string, body: unknown, cookie?: string): RequestIni
   };
 }
 
-export interface ApiSource {
-  id: string;
-  name: string;
-  url: string;
-  headerNames: string[];
-  pathPrefix: string | null;
-  validator: "etag" | "last-modified" | null;
-  operations: number;
-  lastStatus: "ok" | "error";
-  lastError: string | null;
-}
+// ---- Projects ----
 
-export interface ApiProject {
-  checkIntervalSeconds: number;
-  id: string;
-  name: string;
-  slug: string;
-  specVersion: string;
-  /** The documents it is assembled from. The first is the main one. */
-  sources: ApiSource[];
-  operations: Array<{ key: string; fingerprint?: string; source?: string }>;
-  notes: Array<{ kind: string; source: string } & Record<string, unknown>>;
-  lastStatus: "ok" | "error";
-  lastError: string | null;
-  bodyBytes: number;
-}
+export type ApiProject = ProjectView;
+export type { ApplyResult };
 
-export interface ApiVariant {
-  id: string;
+/** A variant as tests use it: where it is in its project, and what the service says about it. */
+export type ApiVariant = ApiProject["state"]["variants"][string] & {
   slug: string;
+  /** Its public path, without a format extension. */
   path: string;
-  url: string;
-  keptOperations: number;
-  notFound: {
-    include: { operations: string[]; tags: string[] };
-    exclude: { operations: string[]; tags: string[] };
+};
+
+/**
+ * A definition to start from: the project `test`, made of the one document
+ * at `SPEC_URL`, which the service follows, and no variants yet.
+ */
+export function definitionOf(more: Partial<ProjectDefinition> = {}): ProjectDefinition {
+  return {
+    version: 1,
+    project: "test",
+    sources: [{ url: SPEC_URL, follow: true }],
+    variants: {},
+    ...more,
   };
 }
 
-export async function createProject(
+/** Everything that can go with a definition in a request to apply it. */
+export interface ApplyMore {
+  documents?: Record<string, { content: string } | { gzip: string }>;
+  credentials?: Record<string, Array<{ name: string; value?: string }>>;
+  origin?: Record<string, string>;
+  ifRevision?: number;
+  editInApp?: boolean;
+  dryRun?: boolean;
+}
+
+const applyPath = (definition: { project?: unknown }, more: ApplyMore) =>
+  `/api/projects/${String(definition.project)}${more.dryRun ? "?dryRun=true" : ""}`;
+const applyBody = (definition: unknown, { dryRun: _, ...more }: ApplyMore) => ({
+  definition,
+  ...more,
+});
+
+/** Apply a definition as the signed-in person, the way the app does. */
+export function apply(
   cookie: string,
-  body: Record<string, unknown> = { url: SPEC_URL },
-): Promise<ApiProject> {
-  const response = await call("/api/projects", json("POST", body, cookie));
-  expect(response.status, await response.clone().text()).toBe(201);
+  definition: ProjectDefinition | Record<string, unknown>,
+  more: ApplyMore = {},
+  bindings: Partial<Cloudflare.Env> = {},
+): Promise<Response> {
+  return call(
+    applyPath(definition, more),
+    json("PUT", applyBody(definition, more), cookie),
+    bindings,
+  );
+}
+
+/** Apply a definition with a deploy API key, the way `openapi-proxy deploy` does. */
+export function deploy(
+  key: string,
+  definition: ProjectDefinition | Record<string, unknown>,
+  more: ApplyMore = {},
+  bindings: Partial<Cloudflare.Env> = {},
+): Promise<Response> {
+  return callAsProgram(
+    applyPath(definition, more),
+    {
+      method: "PUT",
+      headers: { "content-type": "application/json", ...bearer(key) },
+      body: JSON.stringify(applyBody(definition, more)),
+    },
+    bindings,
+  );
+}
+
+/** The answer to an apply that is expected to go through. */
+export async function applied(response: Response | Promise<Response>): Promise<ApplyResult> {
+  const settled = await response;
+  expect([200, 201], await settled.clone().text()).toContain(settled.status);
+  return settled.json();
+}
+
+export async function getProject(cookie: string, slug = "test"): Promise<ApiProject> {
+  const response = await call(`/api/projects/${slug}`, { headers: { cookie } });
+  expect(response.status, await response.clone().text()).toBe(200);
   return response.json();
 }
 
+/** Create the project a definition describes (by default `definitionOf()`), and read it back. */
+export async function createProject(
+  cookie: string,
+  more: Partial<ProjectDefinition> = {},
+  extras: ApplyMore = {},
+): Promise<ApiProject> {
+  const definition = definitionOf(more);
+  const result = await applied(apply(cookie, definition, extras));
+  expect(result.created).toBe(true);
+  return getProject(cookie, definition.project);
+}
+
+/** Change a project's definition and apply it, like a save in the app. */
+export async function edit(
+  cookie: string,
+  slug: string,
+  change: (definition: ProjectDefinition) => ProjectDefinition | undefined,
+  more: ApplyMore = {},
+  bindings: Partial<Cloudflare.Env> = {},
+): Promise<Response> {
+  const project = await getProject(cookie, slug);
+  const definition = change(project.definition) ?? project.definition;
+  return apply(cookie, definition, { ifRevision: project.state.revision, ...more }, bindings);
+}
+
+export const variantOf = (project: ApiProject, slug: string): ApiVariant => {
+  const state = project.state.variants[slug];
+  if (!state) throw new Error(`The project has no variant ${slug}.`);
+  return { ...state, slug, path: `/v/${project.definition.project}/${slug}` };
+};
+
+/** Add a variant to a project (by default `public`, serving the `pets` tag) and return it. */
 export async function createVariant(
   cookie: string,
-  projectId: string,
-  overrides: Record<string, unknown> = {},
+  project: string | ApiProject,
+  slug = "public",
+  variant: VariantDefinition = { include: { tags: ["pets"] } },
 ): Promise<ApiVariant> {
-  const response = await call(
-    "/api/variants",
-    json(
-      "POST",
-      {
-        projectId,
-        name: "Public",
-        selection: { include: { tags: ["pets"] } },
-        ...overrides,
-      },
-      cookie,
-    ),
+  const projectSlug = typeof project === "string" ? project : project.definition.project;
+  await applied(
+    edit(cookie, projectSlug, (definition) => ({
+      ...definition,
+      variants: { ...definition.variants, [slug]: variant },
+    })),
   );
-  expect(response.status, await response.clone().text()).toBe(201);
-  return response.json();
+  return variantOf(await getProject(cookie, projectSlug), slug);
 }
 
 /**
  * A project with one variant serving the `pets` tag, ready to be requested.
  * With `serve: false` the source is whatever the test set up before.
  */
-export async function publish(options: { selection?: object; serve?: boolean } = {}) {
+export async function publish(
+  options: {
+    variant?: VariantDefinition;
+    serve?: boolean;
+    project?: Partial<ProjectDefinition>;
+  } = {},
+) {
   const cookie = await login();
   if (options.serve !== false) serveSpec();
-  const project = await createProject(cookie);
-  const variant = await createVariant(
-    cookie,
-    project.id,
-    options.selection ? { selection: options.selection } : {},
-  );
-  return { cookie, project, variant };
+  await createProject(cookie, {
+    variants: { public: options.variant ?? { include: { tags: ["pets"] } } },
+    ...options.project,
+  });
+  const project = await getProject(cookie, options.project?.project ?? "test");
+  return { cookie, project, variant: variantOf(project, "public") };
 }
 
-/** The project's main source, which most tests are about. */
-export const mainSource = (project: ApiProject): ApiSource => project.sources[0] as ApiSource;
-
-/** Change the settings of a project's main source. */
-export const patchSource = (cookie: string, project: ApiProject, body: unknown, bindings = {}) =>
-  call(
-    `/api/projects/${project.id}/sources/${mainSource(project).id}`,
-    json("PATCH", body, cookie),
-    bindings,
-  );
+/** A document as an apply takes it along. */
+export const document = (body: unknown = SPEC) => ({
+  content: typeof body === "string" ? body : JSON.stringify(body),
+});
 
 export const sql = (query: string, ...params: unknown[]) =>
   env.DB.prepare(query)
@@ -386,26 +457,37 @@ export interface ApiKey {
   prefix: string;
   createdAt: number;
   lastUsedAt: number | null;
-  createdBy: string;
+  createdBy: string | null;
   yours: boolean;
-  /** "full": the API, the MCP endpoint and every private variant. "read": private variants only. */
-  access: "full" | "read";
-  /** For a key that only reads: the one variant it reads, or null for all of them. */
-  variantId: string | null;
+  /** "deploy": applies definitions. "read": reads private variants. */
+  access: "deploy" | "read";
+  /** For a user API key: the one variant it reads, or null for all of them. */
+  variant: { project: string; variant: string } | null;
   /** Only in the response that created it. */
   key?: string;
 }
+
+type KeyRequest =
+  | { access: "deploy" }
+  | { access: "read"; variant: { project: string; variant: string } | null };
 
 /** Create an API key as the signed-in person and return it, including the key itself. */
 export async function createKey(
   cookie: string,
   name = "CI",
-  more: { access?: "full" | "read"; variantId?: string | null } = {},
+  more: KeyRequest = { access: "deploy" },
 ): Promise<ApiKey & { key: string }> {
   const response = await call("/api/workspace/keys", json("POST", { name, ...more }, cookie));
   expect(response.status, await response.clone().text()).toBe(201);
   return response.json();
 }
+
+/** A user API key that reads every private variant of the workspace, or one. */
+export const createReadKey = (
+  cookie: string,
+  variant: { project: string; variant: string } | null = null,
+  name = "Reader",
+) => createKey(cookie, name, { access: "read", variant });
 
 /** Headers for a request authenticated by an API key. */
 export const bearer = (key: string): Record<string, string> => ({

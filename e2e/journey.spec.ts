@@ -24,15 +24,18 @@ test("from a URL to a served variant", async ({ page, request }) => {
   await page.getByLabel("Password").fill(ADMIN_PASSWORD);
   await page.getByLabel("Password").press("Enter");
 
-  // ---- First run: one field. Pasting a URL connects it and opens the editor. ----
+  // ---- First run: the document's address, and what the project is called in its URLs. ----
   await expect(page.getByRole("heading", { level: 1 })).toContainText("One OpenAPI document in");
-  await shot(page, "02-connect");
   await page.getByLabel("OpenAPI document URL").fill(fixtureUrl("/openapi.json"));
-  await page.getByLabel("OpenAPI document URL").press("Enter");
+  // A slug is suggested from the address where it names someone. This one is an IP address.
+  await page.getByLabel("Project URL slug").fill("Pipe0");
+  await expect(page.getByLabel("Project URL slug")).toHaveValue("pipe0");
+  await shot(page, "02-connect");
+  await page.getByRole("button", { name: "Connect" }).click();
 
   // ---- Editor: a new variant of the freshly created project ----
-  await expect(page).toHaveURL(/\/p\/prj_[a-z0-9]+\/new$/, { timeout: 30_000 });
-  await expect(page.getByRole("button", { name: "Switch project" })).toContainText("Pipe0 API");
+  await expect(page).toHaveURL(/\/p\/pipe0\/new$/, { timeout: 30_000 });
+  await expect(page.getByRole("button", { name: "Switch project" })).toContainText("pipe0");
   await expect(page.getByTestId("served-operations")).toHaveText("0");
 
   // A whole tag is one click, and covers what is added to it later; single operations are pinned.
@@ -57,7 +60,7 @@ test("from a URL to a served variant", async ({ page, request }) => {
   await page.getByRole("button", { name: /Create variant/ }).click();
 
   // ---- The same screen, now live: the URL is first, ready to copy ----
-  await expect(page).toHaveURL(/\/v\/var_/);
+  await expect(page).toHaveURL(/\/p\/pipe0\/v\/public-docs/);
   await expect(page.getByTestId("variant-url")).toHaveText(/\/v\/pipe0\/public-docs\.json$/);
   await expect(page.getByRole("button", { name: "Copy URL" })).toBeFocused();
   await expect(page.getByRole("link", { name: "Public docs" })).toBeVisible();
@@ -120,10 +123,10 @@ test("from a URL to a served variant", async ({ page, request }) => {
   ).toBeVisible();
 });
 
-test("a project's documents and its URL prefix", async ({ page, request }) => {
+test("a project's documents, its name and its URL prefix", async ({ page, request }) => {
   // A project opens on its documents.
   await signIn(page);
-  await expect(page).toHaveURL(/\/p\/prj_[a-z0-9]+\/settings$/);
+  await expect(page).toHaveURL(/\/p\/pipe0\/settings$/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Project settings");
   await expect(page.getByText("We check this document for updates every hour.")).toBeVisible();
   await shot(page, "06-source");
@@ -136,13 +139,14 @@ test("a project's documents and its URL prefix", async ({ page, request }) => {
   await expect(page.getByText(/Each check downloads the whole document/)).toBeVisible();
   await page.keyboard.press("Escape");
 
-  // Renaming the prefix moves every variant URL.
-  await page.getByLabel("Project URL slug").fill("pipe");
-  await expect(page.getByText("The old URLs will return 404")).toBeVisible();
+  // Until it has a name, a project goes by its slug. The slug is its address, and stays.
+  await expect(page.getByRole("button", { name: "Switch project" })).toContainText("pipe0");
+  await page.getByLabel("Name", { exact: true }).fill("Pipe0 API");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByRole("button", { name: "Save changes" })).toBeDisabled();
-  expect((await request.get("/v/pipe0/public-docs.json")).status()).toBe(404);
-  expect((await request.get("/v/pipe/public-docs.json")).status()).toBe(200);
+  await expect(page.getByRole("button", { name: "Switch project" })).toContainText("Pipe0 API");
+  await expect(page.getByTestId("project-url-prefix")).toHaveText(/\/v\/pipe0\/$/);
+  expect((await request.get("/v/pipe0/public-docs.json")).status()).toBe(200);
 });
 
 test("a document that needs credentials", async ({ page, request }) => {
@@ -151,6 +155,11 @@ test("a document that needs credentials", async ({ page, request }) => {
   await page.getByRole("menuitem", { name: "New project" }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("New project");
   await page.getByLabel("OpenAPI document URL").fill(fixtureUrl("/private/openapi.json"));
+  // The slug of a project that exists is not free for another.
+  await page.getByLabel("Project URL slug").fill("pipe0");
+  await expect(page.getByText("Already in use.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect" })).toBeDisabled();
+  await page.getByLabel("Project URL slug").fill("partners-api");
   await page.getByRole("button", { name: "Connect" }).click();
 
   // Turned away: the app says so and offers the one field that fixes it.
@@ -159,7 +168,7 @@ test("a document that needs credentials", async ({ page, request }) => {
   await shot(page, "07-credentials");
   await page.getByLabel("Value for Authorization").fill(`Bearer ${FIXTURE_TOKEN}`);
   await page.getByLabel("Value for Authorization").press("Enter");
-  await expect(page).toHaveURL(/\/p\/prj_[a-z0-9]+\/new$/, { timeout: 30_000 });
+  await expect(page).toHaveURL(/\/p\/partners-api\/new$/, { timeout: 30_000 });
 
   // Serve everything, take one tag out, and let later additions through.
   await page.getByLabel("Serve all operations", { exact: true }).click();
@@ -171,9 +180,9 @@ test("a document that needs credentials", async ({ page, request }) => {
 
   await page.getByLabel("Variant name").fill("Partners");
   await page.getByRole("button", { name: /Create variant/ }).click();
-  await expect(page).toHaveURL(/\/v\/var_/);
+  await expect(page).toHaveURL(/\/p\/partners-api\/v\/partners/);
 
-  const served = await request.get("/v/pipe0/partners.json");
+  const served = await request.get("/v/partners-api/partners.json");
   expect(served.status()).toBe(200);
   expect(await served.text()).not.toContain("/v1/secrets");
 
@@ -231,9 +240,8 @@ test("leaving with unpublished changes asks first; deleting takes the URL down",
   await page.getByRole("button", { name: "More actions" }).click();
   await page.getByRole("menuitem", { name: "Delete variant" }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Delete variant" }).click();
-  await expect(page).toHaveURL(/\/p\/prj_[a-z0-9]+\/settings$/);
-  // "pipe0" was renamed to "pipe" by the settings test above.
-  expect((await request.get("/v/pipe/public-docs.json")).status()).toBe(404);
+  await expect(page).toHaveURL(/\/p\/pipe0\/settings$/);
+  expect((await request.get("/v/pipe0/public-docs.json")).status()).toBe(404);
 });
 
 test("merging a second document into a project, and serving a variant as OpenAPI 3.0", async ({
@@ -244,6 +252,8 @@ test("merging a second document into a project, and serving a variant as OpenAPI
   await page.getByRole("link", { name: "Project settings" }).click();
   await page.getByRole("button", { name: "Add document" }).click();
   await page.getByLabel("Document URL").fill(fixtureUrl("/billing/openapi.json"));
+  // With several documents each has a name. The one that was there takes its document's title.
+  await page.getByRole("dialog").getByLabel("Name", { exact: true }).fill("Billing API");
   await page.getByLabel("Path prefix").fill("billing");
   await page.getByRole("button", { name: "Merge it in" }).click();
 
@@ -278,15 +288,15 @@ test("merging a second document into a project, and serving a variant as OpenAPI
 
   await page.getByLabel("Variant name").fill("Billing for the gateway");
   await page.getByRole("button", { name: /Create variant/ }).click();
-  await expect(page).toHaveURL(/\/v\/var_/);
+  await expect(page).toHaveURL(/\/p\/pipe0\/v\/billing-for-the-gateway/);
 
   // At its URL it is what the API has, and the URL follows the version that is picked.
   await expect(page.getByTestId("variant-url")).toHaveText(
-    /\/v\/pipe\/billing-for-the-gateway\.json$/,
+    /\/v\/pipe0\/billing-for-the-gateway\.json$/,
   );
   expect(
     (
-      (await (await request.get("/v/pipe/billing-for-the-gateway.json")).json()) as {
+      (await (await request.get("/v/pipe0/billing-for-the-gateway.json")).json()) as {
         openapi: string;
       }
     ).openapi,
@@ -294,17 +304,17 @@ test("merging a second document into a project, and serving a variant as OpenAPI
   await page.getByRole("button", { name: "OpenAPI version" }).click();
   // Each version says where it is served.
   await expect(page.getByRole("menuitemradio", { name: /3\.1, as your API has it/ })).toContainText(
-    "/v/pipe/billing-for-the-gateway.json",
+    "/v/pipe0/billing-for-the-gateway.json",
   );
   await expect(page.getByRole("menuitemradio", { name: /3\.0, converted/ })).toContainText(
-    "/v/pipe/billing-for-the-gateway/3.0.json",
+    "/v/pipe0/billing-for-the-gateway/3.0.json",
   );
   await page.getByRole("menuitemradio", { name: /3\.0, converted/ }).click();
   await expect(page.getByTestId("variant-url")).toHaveText(
-    /\/v\/pipe\/billing-for-the-gateway\/3\.0\.json$/,
+    /\/v\/pipe0\/billing-for-the-gateway\/3\.0\.json$/,
   );
 
-  const response = await request.get("/v/pipe/billing-for-the-gateway/3.0.json");
+  const response = await request.get("/v/pipe0/billing-for-the-gateway/3.0.json");
   expect(response.status()).toBe(200);
   const served = (await response.json()) as {
     openapi: string;
@@ -340,7 +350,7 @@ test("a variant for another environment: duplicate it, and state its own servers
   await page.getByRole("menuitem", { name: "Duplicate" }).click();
 
   // The copy starts with the same operations, not yet named.
-  await expect(page).toHaveURL(/\/new\?from=var_/);
+  await expect(page).toHaveURL(/\/new\?from=billing-for-the-gateway/);
   await expect(page.getByTestId("served-operations")).toHaveText("2");
   await expect(page.getByTestId("result-document")).toContainText('"openapi": "3.1.0"');
 
@@ -358,9 +368,9 @@ test("a variant for another environment: duplicate it, and state its own servers
 
   await page.getByLabel("Variant name").fill("Billing staging");
   await page.getByRole("button", { name: /Create variant/ }).click();
-  await expect(page).toHaveURL(/\/v\/var_/);
+  await expect(page).toHaveURL(/\/p\/pipe0\/v\/billing-staging/);
 
-  const staging = (await (await request.get("/v/pipe/billing-staging.json")).json()) as {
+  const staging = (await (await request.get("/v/pipe0/billing-staging.json")).json()) as {
     info: { title: string };
     servers: Array<{ url: string; description?: string }>;
   };
@@ -370,7 +380,7 @@ test("a variant for another environment: duplicate it, and state its own servers
     description: "Staging",
   });
   // The variant it was copied from still says what the document says.
-  const original = (await (await request.get("/v/pipe/billing-for-the-gateway.json")).json()) as {
+  const original = (await (await request.get("/v/pipe0/billing-for-the-gateway.json")).json()) as {
     info: { title: string };
   };
   expect(original.info.title).toBe("Pipe0 API");
@@ -439,9 +449,9 @@ test("on a phone: nothing overflows, and the navigation is one tap away", async 
 
   // The editor, on whatever project the earlier journeys left behind.
   const [project] = (await (await page.request.get("/api/projects")).json()) as Array<{
-    id: string;
+    definition: { project: string };
   }>;
-  await page.goto(`/p/${project?.id}/new`);
+  await page.goto(`/p/${project?.definition.project}/new`);
   await expect(page.getByLabel("Variant name")).toBeVisible();
   await expect(page.getByLabel("Serve all operations", { exact: true })).toBeVisible();
   expect(await fits()).toBe(true);

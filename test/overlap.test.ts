@@ -1,9 +1,14 @@
+import type { ProjectDefinition } from "@openapi-proxy/core";
 import { describe, expect, it } from "vitest";
 import { GUARDS } from "../src/shared/plans";
 import {
   type ApiProject,
+  applied,
+  apply,
   call,
   createProject,
+  definitionOf,
+  getProject,
   googleLogin,
   json,
   login,
@@ -19,8 +24,8 @@ import {
 
 /**
  * Requests that arrive together, or overlap. Every test here is a way two or
- * three requests once ended up somewhere no single request could: a limit
- * passed, an edit served under another edit's ETag, a project describing
+ * three requests could end up somewhere no single request can: a limit
+ * passed, one definition served under another's ETag, a project describing
  * documents it does not have.
  */
 
@@ -31,6 +36,16 @@ const BILLING = {
   info: { title: "Billing API", version: "9" },
   paths: { "/invoices": { get: { tags: ["billing"], responses: ok } } },
 };
+const EXTRA_URL = "https://extra.example.com/openapi.json";
+const EXTRA = {
+  openapi: "3.1.0",
+  info: { title: "Extra API", version: "1" },
+  paths: { "/extra": { get: { tags: ["extra"], responses: ok } } },
+};
+
+const CORE = { name: "core", url: SPEC_URL, main: true, follow: true };
+const BILLING_SOURCE = { name: "billing", url: BILLING_URL, follow: true };
+const EXTRA_SOURCE = { name: "extra", url: EXTRA_URL, follow: true };
 
 /** The main fixture with one more path. */
 const withPath = (path: string) => {
@@ -47,207 +62,295 @@ const gate = () => {
   return { wait, open };
 };
 
-/** A request whose body arrives only on `release`: its handler has started, has read the database, and waits. */
-function held(path: string, method: string, body: unknown, cookie: string) {
+/** A source that answers only once it is let: whoever fetches it has read the project, and waits. */
+function slowSource(url: string, body: unknown) {
   const { wait, open } = gate();
-  const bytes = new TextEncoder().encode(JSON.stringify(body));
-  const stream = new ReadableStream({
-    async start(controller) {
-      await wait;
-      controller.enqueue(bytes);
-      controller.close();
-    },
+  const text = JSON.stringify(body);
+  const answer = () => new Response(text, { headers: { "content-type": "application/json" } });
+  upstream("GET", url, async () => {
+    await wait;
+    return answer();
   });
-  const response = call(path, {
-    method,
-    headers: { cookie, "content-type": "application/json" },
-    body: stream,
-    duplex: "half",
-  } as RequestInit);
-  return { response, release: open };
+  return { open, answer };
 }
 
 /** Long enough for a request that is under way to get as far as it can. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 300));
 
-const getProject = async (cookie: string, id: string) =>
-  (await (await call(`/api/projects/${id}`, { headers: { cookie } })).json()) as ApiProject;
-const keys = (project: ApiProject) => project.operations.map((op) => op.key);
+const keys = (project: ApiProject) => project.state.operations.map((op) => op.key);
 const servedPaths = async (path: string) =>
   Object.keys(((await (await call(`${path}.json`)).json()) as { paths?: object }).paths ?? {});
+const check = (cookie: string) =>
+  call("/api/projects/test/check", { method: "POST", headers: { cookie } });
 
 /** A project merged from two documents, with a variant that serves everything. */
 async function merged() {
   const cookie = await login();
   serveSpec();
   serveSpec(BILLING, {}, BILLING_URL);
-  const created = await createProject(cookie);
-  const added = await call(
-    `/api/projects/${created.id}/sources`,
-    json("POST", { url: BILLING_URL }, cookie),
-  );
-  expect(added.status).toBe(201);
-  const project = (await added.json()) as ApiProject;
-  const variant = (await (
-    await call(
-      "/api/variants",
-      json(
-        "POST",
-        {
-          projectId: project.id,
-          name: "Everything",
-          selection: {},
-        },
-        cookie,
-      ),
-    )
-  ).json()) as { path: string };
-  return { cookie, project, variant };
+  const definition = definitionOf({
+    sources: [CORE, BILLING_SOURCE],
+    variants: { everything: {} },
+  });
+  await createProject(cookie, definition);
+  return { cookie, definition, path: "/v/test/everything" };
 }
 
-describe("two edits of a variant that overlap", () => {
+describe("two applies to one project that overlap", () => {
   it("are two versions: the later one is what is served, under its own ETag", async () => {
-    const { cookie, variant } = await publish();
+    const { cookie, project, variant } = await publish();
 
-    // "Serve nothing" has read the variant and waits for its body.
-    const nothing = held(
-      `/api/variants/${variant.id}`,
-      "PATCH",
-      { selection: { include: {} } },
-      cookie,
-    );
+    // "Serve nothing" also adds a document. It has read the project, and
+    // waits for that document to arrive.
+    const extra = slowSource(EXTRA_URL, EXTRA);
+    const nothing = apply(cookie, {
+      ...project.definition,
+      sources: [CORE, EXTRA_SOURCE],
+      variants: { public: { include: {} } },
+    });
     await settle();
 
     // "Serve everything" runs start to finish, and a reader fetches the result.
-    const everything = await call(
-      `/api/variants/${variant.id}`,
-      json("PATCH", { selection: {} }, cookie),
-    );
-    expect(everything.status).toBe(200);
+    await applied(apply(cookie, { ...project.definition, variants: { public: {} } }));
     const first = await call(`${variant.path}.json`);
     expect(Object.keys(((await first.json()) as { paths: object }).paths)).toContain(
       "/internal/flush",
     );
 
-    nothing.release();
-    expect((await nothing.response).status).toBe(200);
+    // What "serve nothing" read is out of date. It plans again from what is
+    // stored now, and is written whole: its variant, and its document.
+    extra.open();
+    expect((await applied(nothing)).project.revision).toBe(3);
 
     const second = await call(`${variant.path}.json`);
     expect(second.headers.get("etag")).not.toBe(first.headers.get("etag"));
     expect(Object.keys(((await second.json()) as { paths?: object }).paths ?? {})).toEqual([]);
+    const after = await getProject(cookie);
+    expect(after.state.sources.map((source) => source.name)).toEqual(["core", "extra"]);
+    // The variant is the one that was there all along.
+    expect(after.state.variants.public?.id).toBe(variant.id);
   });
 });
 
-describe("an edit to a project's sources that overlaps with checks", () => {
-  it("is stored whole or planned again, so the project describes what it serves", async () => {
-    const { cookie, project, variant } = await merged();
-    const billing = project.sources[1];
-
-    // 1. The edit has read the project and waits for its body.
-    const edit = held(
-      `/api/projects/${project.id}/sources/${billing?.id}`,
-      "PATCH",
-      { pathPrefix: "/billing" },
+describe("a save that comes too late", () => {
+  it("is refused whole: nothing of it is written", async () => {
+    const { cookie, definition } = await merged();
+    const before = await getProject(cookie);
+    // The save started from revision 1. It also adds a document, takes a
+    // variant out and brings a new one, and waits for the document it adds.
+    const extra = slowSource(EXTRA_URL, EXTRA);
+    const late = apply(
       cookie,
+      {
+        ...definition,
+        name: "Too late",
+        sources: [CORE, { ...BILLING_SOURCE, pathPrefix: "/billing" }, EXTRA_SOURCE],
+        variants: { fresh: {} },
+      },
+      { ifRevision: before.state.revision },
     );
+    await settle();
+
+    // Meanwhile someone else saves, and the project is at the revision the
+    // late save would have made of it.
+    await applied(
+      apply(cookie, { ...definition, name: "First" }, { ifRevision: before.state.revision }),
+    );
+    const between = await getProject(cookie);
+    const rows = async () => ({
+      sources: (await sql("SELECT id, name, path_prefix, body_hash FROM sources ORDER BY id"))
+        .results,
+      variants: (await sql("SELECT id, slug, served_hash FROM variants ORDER BY id")).results,
+    });
+    const stored = await rows();
+
+    extra.open();
+    const refused = await late;
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({ code: "conflict" });
+    // The project is exactly what the first save left: its row, and every row under it.
+    expect(await getProject(cookie)).toEqual(between);
+    expect(await rows()).toEqual(stored);
+    expect(await servedPaths("/v/test/everything")).toEqual([
+      "/pets",
+      "/internal/flush",
+      "/invoices",
+    ]);
+    expect((await call("/v/test/fresh.json")).status).toBe(404);
+  });
+
+  it("does not let two saves to one project pass the limit on variants together", async () => {
+    const FREE = { CONTACT_EMAIL: "support@proxy.test" };
+    const cookie = await googleLogin("ada@example.com", "Ada", FREE);
+    serveSpec();
+    const thirteen = Object.fromEntries(Array.from({ length: 13 }, (_, n) => [`v-${n}`, {}]));
+    const definition = definitionOf({ variants: thirteen });
+    await applied(apply(cookie, definition, {}, FREE));
+
+    // Each would bring the workspace to its fifteen. Both together would pass it.
+    const both = await Promise.all(
+      ["a", "b"].map((name) =>
+        apply(
+          cookie,
+          { ...definition, variants: { ...thirteen, [`${name}-1`]: {}, [`${name}-2`]: {} } },
+          {},
+          FREE,
+        ),
+      ),
+    );
+    expect(both.map((response) => response.status)).toEqual([200, 200]);
+    // They ran one after the other, and the second is what the project is now.
+    const count = await sql("SELECT count(*) AS n FROM variants");
+    expect(count.results[0]).toEqual({ n: 15 });
+    const one = await apply(
+      cookie,
+      { ...definition, variants: { ...thirteen, "more-1": {}, "more-2": {}, "more-3": {} } },
+      {},
+      FREE,
+    );
+    expect(one.status).toBe(402);
+    expect((await sql("SELECT count(*) AS n FROM variants")).results[0]).toEqual({ n: 15 });
+  });
+});
+
+describe("an apply to a project that is deleted meanwhile", () => {
+  it("starts over from what is there: nothing, so it makes the project", async () => {
+    const { cookie, definition } = await merged();
+    // The apply adds a document and a variant, and waits for the document.
+    const extra = slowSource(EXTRA_URL, EXTRA);
+    const adding = apply(cookie, {
+      ...definition,
+      sources: [CORE, BILLING_SOURCE, EXTRA_SOURCE],
+      variants: { everything: {}, fresh: {} },
+    });
+    await settle();
+    await call("/api/projects/test", { method: "DELETE", headers: { cookie } });
+
+    extra.open();
+    const response = await adding;
+    // Not an error of ours: the definition is applied to what there is, as a deploy does.
+    expect(response.status).toBe(201);
+    expect(Object.keys((await getProject(cookie)).definition.variants)).toEqual([
+      "everything",
+      "fresh",
+    ]);
+  });
+
+  it("refuses a save that started from the project that is gone", async () => {
+    const { cookie, definition } = await merged();
+    const before = await getProject(cookie);
+    const extra = slowSource(EXTRA_URL, EXTRA);
+    const saving = apply(
+      cookie,
+      {
+        ...definition,
+        sources: [CORE, BILLING_SOURCE, EXTRA_SOURCE],
+        variants: { everything: {}, fresh: {} },
+      },
+      { ifRevision: before.state.revision },
+    );
+    await settle();
+    await call("/api/projects/test", { method: "DELETE", headers: { cookie } });
+
+    extra.open();
+    const response = await saving;
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: "This project no longer exists." });
+    expect((await sql("SELECT count(*) AS n FROM projects")).results[0]).toEqual({ n: 0 });
+    expect((await sql("SELECT count(*) AS n FROM variants")).results[0]).toEqual({ n: 0 });
+  });
+});
+
+describe("an apply that overlaps with checks", () => {
+  it("is stored whole or planned again, so the project describes what it serves", async () => {
+    const { cookie, definition, path } = await merged();
+
+    // 1. The apply has read the project and waits for a document it adds.
+    const extra = slowSource(EXTRA_URL, EXTRA);
+    const sources: ProjectDefinition["sources"] = [
+      CORE,
+      { ...BILLING_SOURCE, pathPrefix: "/billing" },
+      EXTRA_SOURCE,
+    ];
+    const edit = apply(cookie, { ...definition, sources });
     await settle();
 
     // 2. A check stores a new main document: the project has moved on.
     serveSpec(withPath("/owners"));
-    await call(`/api/projects/${project.id}/check`, { method: "POST", headers: { cookie } });
+    expect(await (await check(cookie)).json()).toMatchObject({ changed: true });
 
     // 3. A second check has read the sources (billing without a prefix) and
     //    waits for the main source, which has changed again.
-    const slow = gate();
-    const next = JSON.stringify(withPath("/vets"));
-    const answer = () => new Response(next, { headers: { "content-type": "application/json" } });
-    upstream("GET", SPEC_URL, async () => {
-      await slow.wait;
-      return answer();
-    });
-    const secondCheck = call(`/api/projects/${project.id}/check`, {
-      method: "POST",
-      headers: { cookie },
-    });
+    const slow = slowSource(SPEC_URL, withPath("/vets"));
+    const secondCheck = check(cookie);
     await settle();
 
-    // 4. The edit goes on. What it read is out of date, so it plans again
+    // 4. The apply goes on. What it read is out of date, so it plans again
     //    from what is stored now, and that is what it writes.
-    edit.release();
-    expect((await edit.response).status).toBe(200);
+    extra.open();
+    await applied(edit);
 
     // 5. The second check comes back to a project that is no longer what it
     //    looked at, and writes nothing.
     slow.open();
-    expect((await secondCheck).status).toBe(200);
+    expect(await (await secondCheck).json()).toMatchObject({ changed: false });
 
-    const after = await getProject(cookie, project.id);
-    expect(after.sources[1]?.pathPrefix).toBe("/billing");
-    expect(keys(after)).toContain("GET /billing/invoices");
+    const after = await getProject(cookie);
+    expect(after.definition.sources[1]?.pathPrefix).toBe("/billing");
+    expect(keys(after)).toEqual(
+      expect.arrayContaining(["GET /owners", "GET /billing/invoices", "GET /extra"]),
+    );
     expect(keys(after)).not.toContain("GET /invoices");
-    expect(await servedPaths(variant.path)).toContain("/billing/invoices");
+    expect(keys(after)).not.toContain("GET /vets");
+    expect(await servedPaths(path)).toEqual(
+      expect.arrayContaining(["/owners", "/billing/invoices", "/extra"]),
+    );
 
     // What the second check had fetched is picked up by the next one.
-    upstream("GET", SPEC_URL, answer);
-    await call(`/api/projects/${project.id}/check`, { method: "POST", headers: { cookie } });
-    const later = await getProject(cookie, project.id);
+    upstream("GET", SPEC_URL, slow.answer);
+    await check(cookie);
+    const later = await getProject(cookie);
     expect(keys(later)).toEqual(expect.arrayContaining(["GET /vets", "GET /billing/invoices"]));
-    expect(await servedPaths(variant.path)).toEqual(
-      expect.arrayContaining(["/vets", "/billing/invoices"]),
-    );
+    expect(await servedPaths(path)).toEqual(expect.arrayContaining(["/vets", "/billing/invoices"]));
   });
 
   it("does not blame a source for a document that was removed while it was checked", async () => {
-    const { cookie, project } = await merged();
-    const billing = project.sources[1];
+    const { cookie, definition } = await merged();
 
     // A check waits for the main source, which has a new document.
-    const slow = gate();
-    const next = JSON.stringify(withPath("/owners"));
-    const answer = () => new Response(next, { headers: { "content-type": "application/json" } });
-    upstream("GET", SPEC_URL, async () => {
-      await slow.wait;
-      return answer();
-    });
-    const check = call(`/api/projects/${project.id}/check`, {
-      method: "POST",
-      headers: { cookie },
-    });
+    const slow = slowSource(SPEC_URL, withPath("/owners"));
+    const checking = check(cookie);
     await settle();
 
     // Meanwhile the other document is taken out of the project.
-    const removed = await call(`/api/projects/${project.id}/sources/${billing?.id}`, {
-      method: "DELETE",
-      headers: { cookie },
-    });
-    expect(removed.status).toBe(200);
+    await applied(apply(cookie, { ...definition, sources: [{ url: SPEC_URL, follow: true }] }));
 
     slow.open();
-    expect((await check).status).toBe(200);
-    const after = await getProject(cookie, project.id);
-    expect(after.sources).toHaveLength(1);
-    expect(after.lastStatus).toBe("ok");
-    expect(after.lastError).toBeNull();
+    expect((await checking).status).toBe(200);
+    const after = await getProject(cookie);
+    expect(after.state.sources).toHaveLength(1);
+    expect(after.state.check).toMatchObject({ lastStatus: "ok", lastError: null });
     expect(keys(after)).not.toContain("GET /invoices");
 
-    upstream("GET", SPEC_URL, answer);
-    await call(`/api/projects/${project.id}/check`, { method: "POST", headers: { cookie } });
-    expect(keys(await getProject(cookie, project.id))).toContain("GET /owners");
+    upstream("GET", SPEC_URL, slow.answer);
+    await check(cookie);
+    expect(keys(await getProject(cookie))).toContain("GET /owners");
   });
 });
 
 describe("a limit, asked for many times at once", () => {
   const FREE = { CONTACT_EMAIL: "support@proxy.test" };
+  const several = (n: number) =>
+    Object.fromEntries(Array.from({ length: n }, (_, i) => [`variant-${i}`, {}]));
 
   it("holds for projects and for variants", async () => {
     const cookie = await googleLogin("ada@example.com", "Ada", FREE);
-    const urls = Array.from({ length: 10 }, (_, n) => `https://svc-${n}.example.com/openapi.json`);
-    urls.forEach((url, n) => {
-      serveSpec({ ...SPEC, info: { title: `Service ${n}`, version: "1" } }, {}, url);
-    });
+    serveSpec();
 
     const created = await Promise.all(
-      urls.map((url) => call("/api/projects", json("POST", { url }, cookie), FREE)),
+      Array.from({ length: 10 }, (_, n) =>
+        apply(cookie, definitionOf({ project: `service-${n}` }), {}, FREE),
+      ),
     );
     const statuses = created.map((response) => response.status);
     expect(statuses.filter((status) => status === 201)).toHaveLength(3);
@@ -257,28 +360,45 @@ describe("a limit, asked for many times at once", () => {
     ).json()) as ApiProject[];
     expect(projects).toHaveLength(3);
 
-    const variants = await Promise.all(
-      Array.from({ length: 30 }, (_, n) =>
-        call(
-          "/api/variants",
-          json(
-            "POST",
-            {
-              projectId: projects[0]?.id,
-              name: `Variant ${n}`,
-              selection: {},
-            },
-            cookie,
-          ),
-          FREE,
-        ),
+    // Fifteen variants in all. Three projects ask for six each at the same moment.
+    const grown = await Promise.all(
+      projects.map((project) =>
+        apply(cookie, { ...project.definition, variants: several(6) }, {}, FREE),
       ),
     );
-    expect(variants.filter((response) => response.status === 201)).toHaveLength(15);
-    const all = (await (
-      await call("/api/variants", { headers: { cookie } }, FREE)
-    ).json()) as unknown[];
-    expect(all).toHaveLength(15);
+    expect(grown.map((response) => response.status).sort()).toEqual([200, 200, 402]);
+    const stored = await sql("SELECT count(*) AS n FROM variants");
+    expect(stored.results[0]).toEqual({ n: 12 });
+    // The one that was refused is as it was.
+    const after = (await (
+      await call("/api/projects", { headers: { cookie } }, FREE)
+    ).json()) as ApiProject[];
+    expect(after.map((project) => Object.keys(project.definition.variants).length).sort()).toEqual([
+      0, 6, 6,
+    ]);
+  });
+
+  it("holds for the variants that new projects bring", async () => {
+    const cookie = await googleLogin("ada@example.com", "Ada", FREE);
+    serveSpec();
+    const created = await Promise.all(
+      Array.from({ length: 3 }, (_, n) =>
+        apply(cookie, definitionOf({ project: `service-${n}`, variants: several(6) }), {}, FREE),
+      ),
+    );
+    expect(created.map((response) => response.status).sort()).toEqual([201, 201, 402]);
+    expect((await sql("SELECT count(*) AS n FROM projects")).results[0]).toEqual({ n: 2 });
+    expect((await sql("SELECT count(*) AS n FROM variants")).results[0]).toEqual({ n: 12 });
+    expect((await sql("SELECT count(*) AS n FROM sources")).results[0]).toEqual({ n: 2 });
+  });
+
+  it("gives a slug to one of the workspaces that ask for it at once", async () => {
+    const ada = await googleLogin("ada@example.com", "Ada");
+    const bob = await googleLogin("bob@example.com", "Bob");
+    serveSpec();
+    const both = await Promise.all([apply(ada, definitionOf()), apply(bob, definitionOf())]);
+    expect(both.map((response) => response.status).sort()).toEqual([201, 409]);
+    expect((await sql("SELECT count(*) AS n FROM projects")).results[0]).toEqual({ n: 1 });
   });
 
   it("holds for invitations, so a workspace cannot be used to mail strangers in bulk", async () => {
@@ -318,7 +438,7 @@ describe("a limit, asked for many times at once", () => {
     const cookie = await googleLogin("ada@example.com", "Ada");
     const responses = await Promise.all(
       Array.from({ length: GUARDS.apiKeys + 10 }, (_, n) =>
-        call("/api/workspace/keys", json("POST", { name: `Key ${n}` }, cookie)),
+        call("/api/workspace/keys", json("POST", { name: `Key ${n}`, access: "deploy" }, cookie)),
       ),
     );
     expect(responses.filter((response) => response.status === 201)).toHaveLength(GUARDS.apiKeys);

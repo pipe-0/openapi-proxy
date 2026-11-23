@@ -1,9 +1,16 @@
 import { eq } from "drizzle-orm";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { csrf } from "hono/csrf";
 import { PLAN_NAMES } from "../shared/plans";
-import { authFor, configurationProblem, requireSession, sessionOnly, signInMethods } from "./auth";
+import {
+  authFor,
+  configurationProblem,
+  isApply,
+  requireSession,
+  sessionOnly,
+  signInMethods,
+} from "./auth";
 import { createDb } from "./db/client";
 import { organization } from "./db/schema";
 import { emailConfigured } from "./email";
@@ -11,17 +18,19 @@ import type { AppContext } from "./env";
 import { errorResponse } from "./errors";
 import { bearerCredential } from "./keys";
 import { limitsToApi, planOf, sellsPlans } from "./plans";
+import { urlPrefix } from "./public-url";
 import { charge, REQUEST_COST } from "./rate-limit";
 import { keyRoutes } from "./routes/keys";
-import { projectRoutes } from "./routes/projects";
-import { variantRoutes } from "./routes/variants";
+import { projectRoutes, slugRoutes } from "./routes/projects";
 import { invitationRoutes, workspaceRoutes } from "./routes/workspace";
 import { serveRoutes } from "./serve";
 
 /**
  * The surfaces of the Worker that are not pages:
- *   /v/*    public, cacheable, unauthenticated: the filtered documents
- *   /api/*  the API, behind a session or an API key (/api/auth/* is better-auth)
+ *   /v/*    the variants: public and cacheable, or private and read with a user API key
+ *   /api/*  what the app talks to, behind a session (/api/auth/* is better-auth).
+ *           One route also takes a deploy API key: PUT /api/projects/<slug>,
+ *           which is what `openapi-proxy deploy` sends a definition to.
  * Pages, and the routing between this app and them, are in src/web/server.ts.
  */
 const app = new Hono<AppContext>();
@@ -31,16 +40,18 @@ app.onError(errorResponse);
 app.route("/v", serveRoutes);
 
 /**
- * The largest request this API has a use for is a selection that lists every
- * operation of a large API by name, a few hundred kilobytes. Anything bigger
- * is refused before it is read into memory.
+ * Requests are refused before they are read into memory when they are larger
+ * than they have a use for being. A definition comes with the project's
+ * documents (5 MB together, usually sent compressed); nothing else comes
+ * close to a megabyte.
  */
 const MAX_REQUEST_BYTES = 1_000_000;
-const requestLimit = bodyLimit({
-  maxSize: MAX_REQUEST_BYTES,
-  onError: (c) => c.json({ code: "too-large", error: "The request is too large." }, 413),
-});
-app.use("/api/*", requestLimit);
+const MAX_APPLY_BYTES = 8_000_000;
+const tooLarge = (c: Context) =>
+  c.json({ code: "too-large", error: "The request is too large." }, 413);
+const requestLimit = bodyLimit({ maxSize: MAX_REQUEST_BYTES, onError: tooLarge });
+const applyLimit = bodyLimit({ maxSize: MAX_APPLY_BYTES, onError: tooLarge });
+app.use("/api/*", (c, next) => (isApply(c) ? applyLimit(c, next) : requestLimit(c, next)));
 
 const api = new Hono<AppContext>();
 
@@ -84,7 +95,8 @@ api.on(["GET", "POST"], "/auth/*", async (c) => {
   return authFor(c).handler(c.req.raw);
 });
 
-// Everything below requires a principal: a session, or an API key.
+// Everything below requires a principal: a session, or for the one route
+// that takes it, a deploy API key.
 api.use("*", requireSession);
 // And is charged to that principal's workspace (see rate-limit.ts).
 api.use("*", charge(REQUEST_COST));
@@ -114,16 +126,18 @@ api.get("/me", async (c) => {
     plansEnabled: sellsPlans(c.env),
     limits: limitsToApi(limits),
     emailConfigured: emailConfigured(c.env),
-    /** Whether a new variant starts public or private. */
+    /** Who may read a variant when neither it nor its project says. */
     defaultVisibility: org?.defaultVisibility ?? "public",
+    /** Everything before a project's slug in its public URLs, for a project that is not there yet. */
+    urlPrefix: urlPrefix(c),
   });
 });
 
-// What an API key can reach: projects and variants.
 api.route("/projects", projectRoutes);
-api.route("/variants", variantRoutes);
+api.route("/slugs", slugRoutes);
 
-// Who is in the workspace, and which API keys act for it, takes a person.
+// A deploy API key never gets past `requireSession` for these; said again
+// here, because they are about who is in the workspace.
 api.use("/workspace/*", sessionOnly);
 api.use("/invitations/*", sessionOnly);
 api.route("/workspace/keys", keyRoutes);

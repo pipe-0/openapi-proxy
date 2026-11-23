@@ -33,10 +33,10 @@ import { Route as ClientAppWorkspaceRouteImport } from './routes/_client/_app/wo
 import { Route as ClientInviteInvitationIdRouteImport } from './routes/_client/invite.$invitationId'
 import { Route as SiteBlogIndexRouteImport } from './routes/_site/blog/index'
 import { Route as SiteBlogSlugRouteImport } from './routes/_site/blog/$slug'
-import { Route as ClientAppPProjectIdIndexRouteImport } from './routes/_client/_app/p.$projectId.index'
-import { Route as ClientAppPProjectIdNewRouteImport } from './routes/_client/_app/p.$projectId.new'
-import { Route as ClientAppPProjectIdSettingsRouteImport } from './routes/_client/_app/p.$projectId.settings'
-import { Route as ClientAppPProjectIdVVariantIdRouteImport } from './routes/_client/_app/p.$projectId.v.$variantId'
+import { Route as ClientAppPProjectIndexRouteImport } from './routes/_client/_app/p.$project.index'
+import { Route as ClientAppPProjectNewRouteImport } from './routes/_client/_app/p.$project.new'
+import { Route as ClientAppPProjectSettingsRouteImport } from './routes/_client/_app/p.$project.settings'
+import { Route as ClientAppPProjectVVariantRouteImport } from './routes/_client/_app/p.$project.v.$variant'
 
 const ClientRoute = ClientRouteImport.update({
   id: '/_client',
@@ -157,27 +157,26 @@ const SiteBlogSlugRoute = SiteBlogSlugRouteImport.update({
   path: '/blog/$slug',
   getParentRoute: () => SiteRoute,
 } as any)
-const ClientAppPProjectIdIndexRoute =
-  ClientAppPProjectIdIndexRouteImport.update({
-    id: '/p/$projectId/',
-    path: '/p/$projectId/',
-    getParentRoute: () => ClientAppRoute,
-  } as any)
-const ClientAppPProjectIdNewRoute = ClientAppPProjectIdNewRouteImport.update({
-  id: '/p/$projectId/new',
-  path: '/p/$projectId/new',
+const ClientAppPProjectIndexRoute = ClientAppPProjectIndexRouteImport.update({
+  id: '/p/$project/',
+  path: '/p/$project/',
   getParentRoute: () => ClientAppRoute,
 } as any)
-const ClientAppPProjectIdSettingsRoute =
-  ClientAppPProjectIdSettingsRouteImport.update({
-    id: '/p/$projectId/settings',
-    path: '/p/$projectId/settings',
+const ClientAppPProjectNewRoute = ClientAppPProjectNewRouteImport.update({
+  id: '/p/$project/new',
+  path: '/p/$project/new',
+  getParentRoute: () => ClientAppRoute,
+} as any)
+const ClientAppPProjectSettingsRoute =
+  ClientAppPProjectSettingsRouteImport.update({
+    id: '/p/$project/settings',
+    path: '/p/$project/settings',
     getParentRoute: () => ClientAppRoute,
   } as any)
-const ClientAppPProjectIdVVariantIdRoute =
-  ClientAppPProjectIdVVariantIdRouteImport.update({
-    id: '/p/$projectId/v/$variantId',
-    path: '/p/$projectId/v/$variantId',
+const ClientAppPProjectVVariantRoute =
+  ClientAppPProjectVVariantRouteImport.update({
+    id: '/p/$project/v/$variant',
+    path: '/p/$project/v/$variant',
     getParentRoute: () => ClientAppRoute,
   } as any)
 
@@ -203,10 +202,10 @@ export interface FileRoutesByFullPath {
   '/invite/$invitationId': typeof ClientInviteInvitationIdRoute
   '/blog/$slug': typeof SiteBlogSlugRoute
   '/blog/': typeof SiteBlogIndexRoute
-  '/p/$projectId/new': typeof ClientAppPProjectIdNewRoute
-  '/p/$projectId/settings': typeof ClientAppPProjectIdSettingsRoute
-  '/p/$projectId/': typeof ClientAppPProjectIdIndexRoute
-  '/p/$projectId/v/$variantId': typeof ClientAppPProjectIdVVariantIdRoute
+  '/p/$project/new': typeof ClientAppPProjectNewRoute
+  '/p/$project/settings': typeof ClientAppPProjectSettingsRoute
+  '/p/$project/': typeof ClientAppPProjectIndexRoute
+  '/p/$project/v/$variant': typeof ClientAppPProjectVVariantRoute
 }
 export interface FileRoutesByTo {
   '/': typeof SiteIndexRoute
@@ -229,10 +228,10 @@ export interface FileRoutesByTo {
   '/invite/$invitationId': typeof ClientInviteInvitationIdRoute
   '/blog/$slug': typeof SiteBlogSlugRoute
   '/blog': typeof SiteBlogIndexRoute
-  '/p/$projectId/new': typeof ClientAppPProjectIdNewRoute
-  '/p/$projectId/settings': typeof ClientAppPProjectIdSettingsRoute
-  '/p/$projectId': typeof ClientAppPProjectIdIndexRoute
-  '/p/$projectId/v/$variantId': typeof ClientAppPProjectIdVVariantIdRoute
+  '/p/$project/new': typeof ClientAppPProjectNewRoute
+  '/p/$project/settings': typeof ClientAppPProjectSettingsRoute
+  '/p/$project': typeof ClientAppPProjectIndexRoute
+  '/p/$project/v/$variant': typeof ClientAppPProjectVVariantRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -260,10 +259,10 @@ export interface FileRoutesById {
   '/_client/invite/$invitationId': typeof ClientInviteInvitationIdRoute
   '/_site/blog/$slug': typeof SiteBlogSlugRoute
   '/_site/blog/': typeof SiteBlogIndexRoute
-  '/_client/_app/p/$projectId/new': typeof ClientAppPProjectIdNewRoute
-  '/_client/_app/p/$projectId/settings': typeof ClientAppPProjectIdSettingsRoute
-  '/_client/_app/p/$projectId/': typeof ClientAppPProjectIdIndexRoute
-  '/_client/_app/p/$projectId/v/$variantId': typeof ClientAppPProjectIdVVariantIdRoute
+  '/_client/_app/p/$project/new': typeof ClientAppPProjectNewRoute
+  '/_client/_app/p/$project/settings': typeof ClientAppPProjectSettingsRoute
+  '/_client/_app/p/$project/': typeof ClientAppPProjectIndexRoute
+  '/_client/_app/p/$project/v/$variant': typeof ClientAppPProjectVVariantRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -289,10 +288,10 @@ export interface FileRouteTypes {
     | '/invite/$invitationId'
     | '/blog/$slug'
     | '/blog/'
-    | '/p/$projectId/new'
-    | '/p/$projectId/settings'
-    | '/p/$projectId/'
-    | '/p/$projectId/v/$variantId'
+    | '/p/$project/new'
+    | '/p/$project/settings'
+    | '/p/$project/'
+    | '/p/$project/v/$variant'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -315,10 +314,10 @@ export interface FileRouteTypes {
     | '/invite/$invitationId'
     | '/blog/$slug'
     | '/blog'
-    | '/p/$projectId/new'
-    | '/p/$projectId/settings'
-    | '/p/$projectId'
-    | '/p/$projectId/v/$variantId'
+    | '/p/$project/new'
+    | '/p/$project/settings'
+    | '/p/$project'
+    | '/p/$project/v/$variant'
   id:
     | '__root__'
     | '/_client'
@@ -345,10 +344,10 @@ export interface FileRouteTypes {
     | '/_client/invite/$invitationId'
     | '/_site/blog/$slug'
     | '/_site/blog/'
-    | '/_client/_app/p/$projectId/new'
-    | '/_client/_app/p/$projectId/settings'
-    | '/_client/_app/p/$projectId/'
-    | '/_client/_app/p/$projectId/v/$variantId'
+    | '/_client/_app/p/$project/new'
+    | '/_client/_app/p/$project/settings'
+    | '/_client/_app/p/$project/'
+    | '/_client/_app/p/$project/v/$variant'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -533,32 +532,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SiteBlogSlugRouteImport
       parentRoute: typeof SiteRoute
     }
-    '/_client/_app/p/$projectId/': {
-      id: '/_client/_app/p/$projectId/'
-      path: '/p/$projectId'
-      fullPath: '/p/$projectId/'
-      preLoaderRoute: typeof ClientAppPProjectIdIndexRouteImport
+    '/_client/_app/p/$project/': {
+      id: '/_client/_app/p/$project/'
+      path: '/p/$project'
+      fullPath: '/p/$project/'
+      preLoaderRoute: typeof ClientAppPProjectIndexRouteImport
       parentRoute: typeof ClientAppRoute
     }
-    '/_client/_app/p/$projectId/new': {
-      id: '/_client/_app/p/$projectId/new'
-      path: '/p/$projectId/new'
-      fullPath: '/p/$projectId/new'
-      preLoaderRoute: typeof ClientAppPProjectIdNewRouteImport
+    '/_client/_app/p/$project/new': {
+      id: '/_client/_app/p/$project/new'
+      path: '/p/$project/new'
+      fullPath: '/p/$project/new'
+      preLoaderRoute: typeof ClientAppPProjectNewRouteImport
       parentRoute: typeof ClientAppRoute
     }
-    '/_client/_app/p/$projectId/settings': {
-      id: '/_client/_app/p/$projectId/settings'
-      path: '/p/$projectId/settings'
-      fullPath: '/p/$projectId/settings'
-      preLoaderRoute: typeof ClientAppPProjectIdSettingsRouteImport
+    '/_client/_app/p/$project/settings': {
+      id: '/_client/_app/p/$project/settings'
+      path: '/p/$project/settings'
+      fullPath: '/p/$project/settings'
+      preLoaderRoute: typeof ClientAppPProjectSettingsRouteImport
       parentRoute: typeof ClientAppRoute
     }
-    '/_client/_app/p/$projectId/v/$variantId': {
-      id: '/_client/_app/p/$projectId/v/$variantId'
-      path: '/p/$projectId/v/$variantId'
-      fullPath: '/p/$projectId/v/$variantId'
-      preLoaderRoute: typeof ClientAppPProjectIdVVariantIdRouteImport
+    '/_client/_app/p/$project/v/$variant': {
+      id: '/_client/_app/p/$project/v/$variant'
+      path: '/p/$project/v/$variant'
+      fullPath: '/p/$project/v/$variant'
+      preLoaderRoute: typeof ClientAppPProjectVVariantRouteImport
       parentRoute: typeof ClientAppRoute
     }
   }
@@ -568,20 +567,20 @@ interface ClientAppRouteChildren {
   ClientAppAppRoute: typeof ClientAppAppRoute
   ClientAppConnectRoute: typeof ClientAppConnectRoute
   ClientAppWorkspaceRoute: typeof ClientAppWorkspaceRoute
-  ClientAppPProjectIdNewRoute: typeof ClientAppPProjectIdNewRoute
-  ClientAppPProjectIdSettingsRoute: typeof ClientAppPProjectIdSettingsRoute
-  ClientAppPProjectIdIndexRoute: typeof ClientAppPProjectIdIndexRoute
-  ClientAppPProjectIdVVariantIdRoute: typeof ClientAppPProjectIdVVariantIdRoute
+  ClientAppPProjectNewRoute: typeof ClientAppPProjectNewRoute
+  ClientAppPProjectSettingsRoute: typeof ClientAppPProjectSettingsRoute
+  ClientAppPProjectIndexRoute: typeof ClientAppPProjectIndexRoute
+  ClientAppPProjectVVariantRoute: typeof ClientAppPProjectVVariantRoute
 }
 
 const ClientAppRouteChildren: ClientAppRouteChildren = {
   ClientAppAppRoute: ClientAppAppRoute,
   ClientAppConnectRoute: ClientAppConnectRoute,
   ClientAppWorkspaceRoute: ClientAppWorkspaceRoute,
-  ClientAppPProjectIdNewRoute: ClientAppPProjectIdNewRoute,
-  ClientAppPProjectIdSettingsRoute: ClientAppPProjectIdSettingsRoute,
-  ClientAppPProjectIdIndexRoute: ClientAppPProjectIdIndexRoute,
-  ClientAppPProjectIdVVariantIdRoute: ClientAppPProjectIdVVariantIdRoute,
+  ClientAppPProjectNewRoute: ClientAppPProjectNewRoute,
+  ClientAppPProjectSettingsRoute: ClientAppPProjectSettingsRoute,
+  ClientAppPProjectIndexRoute: ClientAppPProjectIndexRoute,
+  ClientAppPProjectVVariantRoute: ClientAppPProjectVVariantRoute,
 }
 
 const ClientAppRouteWithChildren = ClientAppRoute._addFileChildren(

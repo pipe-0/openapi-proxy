@@ -63,13 +63,16 @@ export function VariantIcon({
 export function VariantIconPicker({
   value,
   onChange,
+  disabled,
 }: {
   value: VariantIconName | null;
   onChange: (next: VariantIconName) => void;
+  disabled?: boolean;
 }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
+        disabled={disabled}
         aria-label="Variant icon"
         title="Change the icon shown in the navigation"
         className="grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 aria-expanded:bg-muted/60"

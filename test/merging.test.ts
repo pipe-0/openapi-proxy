@@ -1,11 +1,18 @@
+import type { ProjectDefinition, VariantDefinition } from "@openapi-proxy/core";
 import { describe, expect, it } from "vitest";
 import {
   type ApiProject,
-  type ApiVariant,
+  applied,
+  apply,
   call,
   callsTo,
   createProject,
-  json,
+  createVariant,
+  definitionOf,
+  document,
+  edit,
+  getProject,
+  googleLogin,
   login,
   MAIL,
   mailbox,
@@ -53,83 +60,77 @@ type Doc = {
   components?: { schemas?: Record<string, unknown> };
 };
 
-const project = async (cookie: string, id: string) =>
-  (await (await call(`/api/projects/${id}`, { headers: { cookie } })).json()) as ApiProject;
-const addSource = (cookie: string, id: string, body: object, bindings = {}) =>
-  call(`/api/projects/${id}/sources`, json("POST", body, cookie), bindings);
-const keys = (p: ApiProject) => p.operations.map((op) => op.key);
+const CORE = { name: "core", url: SPEC_URL, main: true, follow: true };
+const BILLING_SOURCE = { name: "billing", url: BILLING_URL, follow: true };
+const keys = (p: ApiProject) => p.state.operations.map((op) => op.key);
+const sourcesOf = (cookie: string, sources: ProjectDefinition["sources"]) =>
+  edit(cookie, "test", (definition) => ({ ...definition, sources }));
 
-async function variant(cookie: string, projectId: string, body: object = {}) {
-  const response = await call(
-    "/api/variants",
-    json(
-      "POST",
-      {
-        projectId,
-        name: "Everything",
-        selection: {},
-        ...body,
-      },
-      cookie,
-    ),
-  );
-  expect(response.status, await response.clone().text()).toBe(201);
-  return (await response.json()) as ApiVariant;
-}
+const variant = (cookie: string, more: VariantDefinition = {}, slug = "everything") =>
+  createVariant(cookie, "test", slug, { name: "Everything", ...more });
 const served = async (path: string) => (await (await call(`${path}.json`)).json()) as Doc;
 
 /** Core and Billing, merged, with Billing added after the project existed. */
-async function merged() {
-  const cookie = await login();
+async function merged(cookie?: string) {
+  const session = cookie ?? (await login());
   serveSpec();
   serveSpec(BILLING, {}, BILLING_URL);
-  const created = await createProject(cookie);
-  const response = await addSource(cookie, created.id, { url: BILLING_URL });
-  expect(response.status, await response.clone().text()).toBe(201);
-  return { cookie, project: (await response.json()) as ApiProject };
+  await createProject(session);
+  const result = await applied(sourcesOf(session, [CORE, BILLING_SOURCE]));
+  expect(result.sources).toMatchObject([
+    // The one that was there got a name, and is still the same source.
+    { name: "core", action: "updated", document: "kept" },
+    { name: "billing", action: "added", document: "fetched" },
+  ]);
+  return { cookie: session, project: await getProject(session) };
 }
 
 describe("merging several documents into one project", () => {
   it("adds a document to an existing project: its operations join, and each knows where it came from", async () => {
     const { project: p } = await merged();
-    expect(p.sources.map((source) => [source.name, source.url, source.operations])).toEqual([
-      ["Test API", SPEC_URL, 3],
-      ["Billing API", BILLING_URL, 2],
-    ]);
+    expect(p.state.sources.map((source) => [source.name, source.title, source.operations])).toEqual(
+      [
+        ["core", "Test API", 3],
+        ["billing", "Billing API", 2],
+      ],
+    );
     expect(keys(p)).toEqual(["GET /pets", "POST /pets", "POST /internal/flush", "GET /invoices"]);
-    expect(Object.fromEntries(p.operations.map((op) => [op.key, op.source]))).toEqual({
-      "GET /pets": "Test API",
-      "POST /pets": "Test API",
-      "POST /internal/flush": "Test API",
-      "GET /invoices": "Billing API",
+    expect(Object.fromEntries(p.state.operations.map((op) => [op.key, op.source]))).toEqual({
+      "GET /pets": "core",
+      "POST /pets": "core",
+      "POST /internal/flush": "core",
+      "GET /invoices": "billing",
     });
+    // One fetch each: the document that was there was not fetched for the merge.
+    expect(callsTo("GET", SPEC_URL)).toBe(1);
+    expect(callsTo("GET", BILLING_URL)).toBe(1);
   });
 
   it("says what merging did: an operation left out, a component renamed, servers not carried over", async () => {
     const { project: p } = await merged();
-    expect(p.notes).toEqual(
+    expect(p.state.notes).toEqual(
       expect.arrayContaining([
         {
           kind: "operation-left-out",
-          source: "Billing API",
+          source: "billing",
           operation: "GET /pets",
-          keptFrom: "Test API",
+          keptFrom: "core",
         },
         {
           kind: "component-renamed",
-          source: "Billing API",
+          source: "billing",
           group: "schemas",
           from: "Pet",
           to: "BillingPet",
         },
-        { kind: "servers-differ", source: "Billing API" },
+        { kind: "servers-differ", source: "billing" },
       ]),
     );
   });
 
   it("serves the merged document: the main one's top level, every operation with the schema it had", async () => {
-    const { cookie, project: p } = await merged();
-    const everything = await variant(cookie, p.id);
+    const { cookie } = await merged();
+    const everything = await variant(cookie);
     const doc = await served(everything.path);
 
     expect(doc.info.title).toBe("Test API");
@@ -141,35 +142,29 @@ describe("merging several documents into one project", () => {
     expect(doc.components?.schemas).toHaveProperty("Pet.properties.name");
 
     // A variant of only the second service carries only what that needs.
-    const billing = await variant(cookie, p.id, {
-      name: "Billing",
-      selection: { include: { tags: ["billing"] } },
-    });
+    const billing = await variant(cookie, { include: { tags: ["billing"] } }, "billing");
     const only = await served(billing.path);
     expect(Object.keys(only.paths)).toEqual(["/invoices"]);
     expect(Object.keys(only.components?.schemas ?? {})).toEqual(["BillingPet"]);
   });
 
-  it("can be created from several documents at once, in order", async () => {
+  it("can be created from several documents at once; the main one leads, wherever it is listed", async () => {
     const cookie = await login();
     serveSpec();
     serveSpec(BILLING, {}, BILLING_URL);
-    const created = await call(
-      "/api/projects",
-      json(
-        "POST",
-        { sources: [{ url: BILLING_URL }, { url: SPEC_URL, pathPrefix: "core" }] },
-        cookie,
-      ),
-    );
-    expect(created.status, await created.clone().text()).toBe(201);
-    const p = (await created.json()) as ApiProject;
-    // The first document is the main one: the project is named after it.
-    expect(p.name).toBe("Billing API");
-    expect(p.sources.map((source) => [source.name, source.pathPrefix])).toEqual([
-      ["Billing API", null],
-      ["Test API", "/core"],
+    const p = await createProject(cookie, {
+      sources: [
+        { name: "core", url: SPEC_URL, follow: true, pathPrefix: "/core" },
+        { name: "billing", url: BILLING_URL, follow: true, main: true },
+      ],
+    });
+    // Listed as the definition lists them.
+    expect(p.state.sources.map((source) => source.name)).toEqual(["core", "billing"]);
+    expect(p.definition.sources.map((source) => [source.name, source.pathPrefix])).toEqual([
+      ["core", "/core"],
+      ["billing", undefined],
     ]);
+    // Merged with the main one first.
     expect(keys(p)).toEqual([
       "GET /invoices",
       "GET /pets",
@@ -177,17 +172,25 @@ describe("merging several documents into one project", () => {
       "POST /core/pets",
       "POST /core/internal/flush",
     ]);
+    const everything = await variant(cookie);
+    expect((await served(everything.path)).info.title).toBe("Billing API");
   });
 
   it("mounts a document under a path prefix, and lets the main document be chosen", async () => {
-    const { cookie, project: p } = await merged();
-    const billing = p.sources[1]?.id;
+    const { cookie } = await merged();
 
-    const prefixed = await call(
-      `/api/projects/${p.id}/sources/${billing}`,
-      json("PATCH", { pathPrefix: "/billing", name: "Money" }, cookie),
+    const prefixed = await applied(
+      sourcesOf(cookie, [CORE, { ...BILLING_SOURCE, name: "money", pathPrefix: "billing" }]),
     );
-    const afterPrefix = (await prefixed.json()) as ApiProject;
+    // Renamed and moved, and still the same source with the same document.
+    expect(prefixed.sources).toMatchObject([
+      { name: "core", action: "unchanged" },
+      { name: "money", action: "updated", document: "kept" },
+    ]);
+    expect(prefixed.operations.added).toEqual(["GET /billing/invoices", "GET /billing/pets"]);
+    expect(prefixed.operations.removed).toEqual(["GET /invoices"]);
+    const afterPrefix = await getProject(cookie);
+    expect(afterPrefix.definition.sources[1]?.pathPrefix).toBe("/billing");
     expect(keys(afterPrefix)).toEqual([
       "GET /pets",
       "POST /pets",
@@ -196,71 +199,126 @@ describe("merging several documents into one project", () => {
       "GET /billing/pets",
     ]);
     // The component is named after the document's new name.
-    expect(afterPrefix.notes).toContainEqual(
+    expect(afterPrefix.state.notes).toContainEqual(
       expect.objectContaining({ kind: "component-renamed", to: "MoneyPet" }),
     );
 
-    const promoted = await call(`/api/projects/${p.id}/sources/${billing}/main`, {
-      method: "POST",
-      headers: { cookie, origin: "https://proxy.test" },
-    });
-    const afterMain = (await promoted.json()) as ApiProject;
-    expect(afterMain.sources.map((source) => source.name)).toEqual(["Money", "Test API"]);
-    const everything = await variant(cookie, p.id);
+    const { main: _, ...core } = CORE;
+    await applied(
+      sourcesOf(cookie, [
+        core,
+        { ...BILLING_SOURCE, name: "money", pathPrefix: "/billing", main: true },
+      ]),
+    );
+    const everything = await variant(cookie);
     expect((await served(everything.path)).info.title).toBe("Billing API");
+    expect(callsTo("GET", SPEC_URL)).toBe(1);
+    expect(callsTo("GET", BILLING_URL)).toBe(1);
   });
 
   it("takes a document out again; what a variant selected from it comes back if it does", async () => {
-    const { cookie, project: p } = await merged();
-    const picked = await variant(cookie, p.id, {
-      selection: { include: { operations: ["GET /invoices", "GET /pets"] } },
+    const { cookie } = await merged();
+    const picked = await variant(cookie, {
+      include: { operations: ["GET /invoices", "GET /pets"] },
     });
     expect(Object.keys((await served(picked.path)).paths)).toEqual(["/pets", "/invoices"]);
 
-    const removed = await call(`/api/projects/${p.id}/sources/${p.sources[1]?.id}`, {
-      method: "DELETE",
-      headers: { cookie, origin: "https://proxy.test" },
-    });
-    const after = (await removed.json()) as ApiProject;
-    expect(after.sources).toHaveLength(1);
-    expect(after.notes).toEqual([]);
+    const removed = await applied(sourcesOf(cookie, [{ url: SPEC_URL, follow: true }]));
+    expect(removed.sources.map((source) => [source.name, source.action])).toEqual([
+      ["main", "updated"],
+      ["billing", "removed"],
+    ]);
+    // The name that is no longer there is reported, and stops nothing.
+    expect(removed.variants[0]?.notFound.include.operations).toEqual(["GET /invoices"]);
+    const after = await getProject(cookie);
+    expect(after.state.sources).toHaveLength(1);
+    expect(after.state.notes).toEqual([]);
     expect(Object.keys((await served(picked.path)).paths)).toEqual(["/pets"]);
 
-    // The last document cannot be removed.
-    const last = await call(`/api/projects/${p.id}/sources/${after.sources[0]?.id}`, {
-      method: "DELETE",
-      headers: { cookie, origin: "https://proxy.test" },
-    });
-    expect(last.status).toBe(409);
+    // A project has at least one document.
+    const none = await sourcesOf(cookie, []);
+    expect(none.status).toBe(400);
+    expect(await none.json()).toMatchObject({ code: "invalid-definition" });
 
-    await addSource(cookie, p.id, { url: BILLING_URL });
+    await applied(sourcesOf(cookie, [CORE, BILLING_SOURCE]));
     expect(Object.keys((await served(picked.path)).paths)).toEqual(["/pets", "/invoices"]);
   });
 
-  it("refuses a document that cannot be fetched or is already there, and leaves the project as it was", async () => {
-    const { cookie, project: p } = await merged();
-    expect((await addSource(cookie, p.id, { url: BILLING_URL })).status).toBe(409);
+  it("refuses a document that cannot be fetched or is listed twice, and leaves the project as it was", async () => {
+    const { cookie } = await merged();
+    const twice = await sourcesOf(cookie, [
+      CORE,
+      BILLING_SOURCE,
+      { name: "again", url: BILLING_URL },
+    ]);
+    expect(twice.status).toBe(400);
 
     upstream(
       "GET",
       "https://down.example.com/openapi.json",
       () => new Response("no", { status: 500 }),
     );
-    const failed = await addSource(cookie, p.id, { url: "https://down.example.com/openapi.json" });
+    const failed = await sourcesOf(cookie, [
+      CORE,
+      BILLING_SOURCE,
+      { name: "down", url: "https://down.example.com/openapi.json", follow: true },
+    ]);
     expect(failed.status).toBe(422);
-    expect((await project(cookie, p.id)).sources).toHaveLength(2);
+    expect(await failed.json()).toMatchObject({ code: "http-error", source: "down" });
+    const after = await getProject(cookie);
+    expect(after.state.sources).toHaveLength(2);
+    expect(after.state.revision).toBe(2);
+  });
+
+  it("merges a document the service follows with one that was uploaded, and only checks the first", async () => {
+    const cookie = await login();
+    serveSpec();
+    await createProject(
+      cookie,
+      {
+        sources: [
+          CORE,
+          { name: "billing", file: "./billing/openapi.json", pathPrefix: "/billing" },
+        ],
+        variants: { everything: {} },
+      },
+      { documents: { billing: document(BILLING) } },
+    );
+    const p = await getProject(cookie);
+    expect(keys(p)).toContain("GET /billing/invoices");
+    expect(p.state.check).not.toBeNull();
+
+    const next = structuredClone(SPEC) as typeof SPEC & { paths: Record<string, unknown> };
+    next.paths["/owners"] = { get: { tags: ["pets"], responses: ok } };
+    serveSpec(next);
+    await sql("UPDATE projects SET next_check_at = ?", Date.now() - 1);
+    await runTimer();
+
+    const after = await getProject(cookie);
+    expect(keys(after)).toContain("GET /owners");
+    // The uploaded one is still what was uploaded, and nobody asked for it anywhere.
+    expect(keys(after)).toContain("GET /billing/invoices");
+    expect(callsTo("GET", BILLING_URL)).toBe(0);
+    // An apply did not happen: the definition is at the revision it was.
+    expect(after.state.revision).toBe(p.state.revision);
   });
 
   it("is isolated like everything else: another workspace cannot add to or read a project's sources", async () => {
-    const { project: p } = await merged();
-    const { googleLogin } = await import("./harness");
+    await merged();
     const stranger = await googleLogin("eve@example.com");
-    expect((await addSource(stranger, p.id, { url: BILLING_URL })).status).toBe(404);
-    const patch = await call(
-      `/api/projects/${p.id}/sources/${p.sources[0]?.id}`,
-      json("PATCH", { name: "Mine" }, stranger),
-    );
-    expect(patch.status).toBe(404);
+    const taken = await apply(stranger, definitionOf({ sources: [CORE, BILLING_SOURCE] }));
+    expect(taken.status).toBe(409);
+    expect(
+      (await call("/api/projects/test/document", { headers: { cookie: stranger } })).status,
+    ).toBe(404);
+  });
+
+  it("gives the editor the assembled document", async () => {
+    const { cookie } = await merged();
+    const response = await call("/api/projects/test/document", { headers: { cookie } });
+    expect(response.status).toBe(200);
+    const doc = (await response.json()) as Doc;
+    expect(Object.keys(doc.paths)).toEqual(["/pets", "/internal/flush", "/invoices"]);
   });
 });
 
@@ -280,31 +338,33 @@ describe("a hostile document", () => {
       hostileUrl,
       () => new Response(body, { headers: { "content-type": "application/json" } }),
     );
+    const hostile = { name: "hostile", url: hostileUrl, follow: true, pathPrefix: "/h" };
 
-    // On its own, as part of a merge, and added to a project that exists.
-    const alone = await call("/api/projects", json("POST", { url: hostileUrl }, cookie));
+    // On its own, as part of a merge, uploaded, and added to a project that exists.
+    const alone = await apply(
+      cookie,
+      definitionOf({ sources: [{ url: hostileUrl, follow: true }] }),
+    );
     expect(alone.status).toBe(422);
     expect(await alone.json()).toMatchObject({ code: "invalid-spec" });
-    const together = await call(
-      "/api/projects",
-      json("POST", { sources: [{ url: SPEC_URL }, { url: hostileUrl, pathPrefix: "/h" }] }, cookie),
-    );
+    const together = await apply(cookie, definitionOf({ sources: [CORE, hostile] }));
     expect(together.status).toBe(422);
+    const uploaded = await apply(cookie, definitionOf({ sources: [{ file: "hostile.json" }] }), {
+      documents: { main: document(body) },
+    });
+    expect(uploaded.status).toBe(422);
     const project = await createProject(cookie);
-    const added = await call(
-      `/api/projects/${project.id}/sources`,
-      json("POST", { url: hostileUrl, pathPrefix: "/h" }, cookie),
-    );
+    const added = await sourcesOf(cookie, [CORE, hostile]);
     expect(added.status).toBe(422);
 
     // Nothing leaked into the objects every request is made of.
     expect(({} as Record<string, unknown>).sources).toBeUndefined();
     expect(({} as Record<string, unknown>).slug).toBeUndefined();
-    const renamed = await call(
-      `/api/projects/${project.id}`,
-      json("PATCH", { name: "Still mine" }, cookie),
-    );
-    expect(await renamed.json()).toMatchObject({ name: "Still mine", slug: project.slug });
+    await applied(edit(cookie, "test", (definition) => ({ ...definition, name: "Still mine" })));
+    expect((await getProject(cookie)).definition).toEqual({
+      ...project.definition,
+      name: "Still mine",
+    });
   });
 });
 
@@ -319,7 +379,7 @@ describe("a document built to be expensive", () => {
       deep,
       () => new Response(body, { headers: { "content-type": "application/json" } }),
     );
-    const refused = await call("/api/projects", json("POST", { url: deep }, cookie));
+    const refused = await apply(cookie, definitionOf({ sources: [{ url: deep, follow: true }] }));
     expect(refused.status).toBe(422);
     expect(await refused.json()).toMatchObject({
       code: "invalid-spec",
@@ -351,23 +411,13 @@ describe("a document built to be expensive", () => {
       };
     }
     serveSpec({ openapi: "3.1.0", info: { title: "Chain", version: "1" }, paths }, {}, url);
-    const project = await createProject(cookie, { url });
-    const created = await call(
-      "/api/variants",
-      json(
-        "POST",
-        {
-          projectId: project.id,
-          name: "One",
-          selection: { include: { operations: ["GET /kept"] } },
-        },
-        cookie,
-      ),
-    );
-    const variant = (await created.json()) as ApiVariant;
+    await createProject(cookie, { sources: [{ url, follow: true }] });
+    const one = await createVariant(cookie, "test", "one", {
+      include: { operations: ["GET /kept"] },
+    });
 
     for (const format of ["json", "yaml"]) {
-      const refused = await call(`${variant.path}.${format}`);
+      const refused = await call(`${one.path}.${format}`);
       expect(refused.status).toBe(500);
       expect(await refused.json()).toMatchObject({
         code: "transform-failed",
@@ -375,13 +425,13 @@ describe("a document built to be expensive", () => {
       });
     }
     // HEAD is GET without the body: it does not say a document is there.
-    expect((await call(`${variant.path}.json`, { method: "HEAD" })).status).toBe(500);
+    expect((await call(`${one.path}.json`, { method: "HEAD" })).status).toBe(500);
 
     // A second request does no work. With the stored documents swapped for
     // something unreadable, it still gives the reason found the first time.
-    const stored = await sql("SELECT id, body FROM sources WHERE project_id = ?", project.id);
-    await sql("UPDATE sources SET body = 'unreadable' WHERE project_id = ?", project.id);
-    const again = await call(`${variant.path}.json`);
+    const stored = await sql("SELECT id, body FROM sources");
+    await sql("UPDATE sources SET body = 'unreadable'");
+    const again = await call(`${one.path}.json`);
     expect(again.status).toBe(500);
     expect(await again.json()).toMatchObject({ error: expect.stringContaining("400 levels deep") });
     for (const row of stored.results as Array<{ id: string; body: string }>) {
@@ -390,55 +440,101 @@ describe("a document built to be expensive", () => {
 
     // The reason belongs to this selection of this document. A selection that
     // can be served is tried, and served.
-    await call(`/api/variants/${variant.id}`, json("PATCH", { selection: {} }, cookie));
-    const served = await call(`${variant.path}.json`);
-    expect(served.status).toBe(200);
-    expect(Object.keys(((await served.json()) as { paths: object }).paths)).toHaveLength(13);
+    await applied(edit(cookie, "test", (definition) => ({ ...definition, variants: { one: {} } })));
+    const fine = await call(`${one.path}.json`);
+    expect(fine.status).toBe(200);
+    expect(Object.keys(((await fine.json()) as { paths: object }).paths)).toHaveLength(13);
   });
 
   it("does not spend time on a path prefix that is not one", async () => {
     const cookie = await login();
     serveSpec();
-    const project = await createProject(cookie);
+    await createProject(cookie);
     const started = Date.now();
-    const refused = await call(
-      `/api/projects/${project.id}/sources/${project.sources[0]?.id}`,
-      json("PATCH", { pathPrefix: `${"/".repeat(400_000)}a` }, cookie),
-    );
+    const refused = await sourcesOf(cookie, [
+      { url: SPEC_URL, follow: true, pathPrefix: `${"/".repeat(400_000)}a` },
+    ]);
     expect(refused.status).toBe(400);
     expect(Date.now() - started).toBeLessThan(2_000);
   });
 });
 
-describe("editing a project while it is being checked", () => {
+describe("changing a project while it is being checked", () => {
   it("never leaves the project describing documents it does not have", async () => {
-    const { cookie, project: p } = await merged();
-    // A check stores a new document for the main source...
+    const { cookie } = await merged();
+    // The main source has a new document, which a check is going to find...
     const next = structuredClone(SPEC) as typeof SPEC & { paths: Record<string, unknown> };
     next.paths["/owners"] = { get: { tags: ["pets"], responses: ok } };
     serveSpec(next);
-    // ...after this request read the project, but before it writes: simulated
-    // by handing the request a picture of the project that is already old.
-    await call(`/api/projects/${p.id}/check`, { method: "POST", headers: { cookie } });
-    await sql("UPDATE projects SET body_hash = 'out-of-date' WHERE id = ?", p.id);
+    // ...in the middle of an apply: after it read the project, and before it
+    // writes. The apply adds a third document, and the check runs while that
+    // one is being fetched.
+    const extraUrl = "https://extra.example.com/openapi.json";
+    let checks = 0;
+    upstream("GET", extraUrl, async () => {
+      if (checks++ === 0) {
+        const check = await call("/api/projects/test/check", {
+          method: "POST",
+          headers: { cookie },
+        });
+        expect(await check.json()).toMatchObject({ changed: true, addedOps: ["GET /owners"] });
+      }
+      return Response.json({
+        openapi: "3.1.0",
+        info: { title: "Extra", version: "1" },
+        paths: { "/extra": { get: { responses: ok } } },
+      });
+    });
 
-    const renamed = await call(
-      `/api/projects/${p.id}/sources/${p.sources[1]?.id}`,
-      json("PATCH", { name: "Money" }, cookie),
+    const result = await applied(
+      sourcesOf(cookie, [
+        CORE,
+        { ...BILLING_SOURCE, name: "money" },
+        { name: "extra", url: extraUrl, follow: true },
+      ]),
     );
-    expect(renamed.status).toBe(200);
-    const after = (await renamed.json()) as ApiProject;
-    // Both the rename and the new operation are there, and the two agree.
-    expect(after.sources[1]?.name).toBe("Money");
-    expect(keys(after)).toContain("GET /owners");
-    expect(after.operations.find((op) => op.key === "GET /invoices")?.source).toBe("Money");
+    expect(checks).toBe(1);
+    // It did not report the check's finding as its own.
+    expect(result.operations.added).toEqual(["GET /extra"]);
+
+    const after = await getProject(cookie);
+    // The rename, the new document and the check's new operation are all there, and agree.
+    expect(after.state.sources.map((source) => source.name)).toEqual(["core", "money", "extra"]);
+    expect(keys(after)).toEqual([
+      "GET /pets",
+      "POST /pets",
+      "POST /internal/flush",
+      "GET /owners",
+      "GET /invoices",
+      "GET /extra",
+    ]);
+    expect(after.state.operations.find((op) => op.key === "GET /invoices")?.source).toBe("money");
+    const everything = await variant(cookie);
+    expect(Object.keys((await served(everything.path)).paths)).toEqual([
+      "/pets",
+      "/internal/flush",
+      "/owners",
+      "/invoices",
+      "/extra",
+    ]);
+  });
+
+  it("tells the second of two people who save at once to reload", async () => {
+    const { cookie, project } = await merged();
+    const rename = (name: string) =>
+      apply(cookie, { ...project.definition, name }, { ifRevision: project.state.revision });
+    expect((await rename("First")).status).toBe(200);
+    const second = await rename("Second");
+    expect(second.status).toBe(409);
+    expect(await second.json()).toMatchObject({ code: "conflict" });
+    expect((await getProject(cookie)).definition.name).toBe("First");
   });
 });
 
 describe("keeping a merged project current", () => {
   it("checks each source, and assembles again when one of them changes", async () => {
-    const { cookie, project: p } = await merged();
-    const everything = await variant(cookie, p.id);
+    const { cookie } = await merged();
+    const everything = await variant(cookie);
     const before = (await call(everything.path)).headers.get("etag");
     const coreCalls = callsTo("GET", SPEC_URL);
     const billingCalls = callsTo("GET", BILLING_URL);
@@ -457,13 +553,13 @@ describe("keeping a merged project current", () => {
     expect(callsTo("GET", SPEC_URL) - coreCalls).toBe(1);
     expect(callsTo("GET", BILLING_URL) - billingCalls).toBe(1);
     expect(
-      (await project(cookie, p.id)).operations.find((op) => op.key === "POST /refunds")?.source,
-    ).toBe("Billing API");
+      (await getProject(cookie)).state.operations.find((op) => op.key === "POST /refunds")?.source,
+    ).toBe("billing");
   });
 
   it("keeps serving, and keeps updating the others, when one source is down", async () => {
-    const { cookie, project: p } = await merged();
-    const everything = await variant(cookie, p.id);
+    const { cookie } = await merged();
+    const everything = await variant(cookie);
 
     upstream("GET", BILLING_URL, () => new Response("boom", { status: 500 }));
     const next = structuredClone(SPEC) as typeof SPEC & { paths: Record<string, unknown> };
@@ -480,31 +576,23 @@ describe("keeping a merged project current", () => {
     expect(paths).toContain("/owners");
     expect(paths).toContain("/invoices");
 
-    const after = await project(cookie, p.id);
-    expect(after.lastError).toContain("Billing API: The source responded with HTTP 500.");
-    expect(after.sources.map((source) => source.lastStatus)).toEqual(["ok", "error"]);
+    const after = await getProject(cookie);
+    expect(after.state.check?.lastError).toContain("billing: The source responded with HTTP 500.");
+    expect(after.state.sources.map((source) => source.lastStatus)).toEqual(["ok", "error"]);
   });
 
   it("emails about a change in any source, once", async () => {
-    const { googleLogin } = await import("./harness");
     const ada = await googleLogin("ada@example.com", "Ada");
-    serveSpec();
-    serveSpec(BILLING, {}, BILLING_URL);
-    const created = await createProject(ada);
-    await addSource(ada, created.id, { url: BILLING_URL });
-    await variant(ada, created.id);
+    await merged(ada);
+    await variant(ada);
 
     const sent = mailbox();
     const next = structuredClone(BILLING) as typeof BILLING & { paths: Record<string, unknown> };
     next.paths["/refunds"] = { post: { tags: ["billing"], responses: ok } };
     serveSpec(next, {}, BILLING_URL);
-    await call(
-      `/api/projects/${created.id}/check`,
-      { method: "POST", headers: { cookie: ada } },
-      MAIL,
-    );
+    await call("/api/projects/test/check", { method: "POST", headers: { cookie: ada } }, MAIL);
 
-    expect(sent.map((email) => email.subject)).toEqual(["Test API: 1 new"]);
+    expect(sent.map((email) => email.subject)).toEqual(["test: 1 new"]);
     expect(sent[0]?.text).toContain("POST /refunds: served by Everything");
   });
 });
@@ -532,9 +620,9 @@ describe("the OpenAPI version of a variant", () => {
   it("is the document's own at the plain URL, and each version at a path of its own", async () => {
     const cookie = await login();
     serveSpec(OLD, {}, OLD_URL);
-    const p = await createProject(cookie, { url: OLD_URL });
-    expect(p.specVersion).toBe("3.0");
-    const v = await variant(cookie, p.id, { name: "As is" });
+    const p = await createProject(cookie, { sources: [{ url: OLD_URL, follow: true }] });
+    expect(p.state.specVersion).toBe("3.0");
+    const v = await variant(cookie, { name: "As is" });
     // One source, served in its own version: byte for byte what the source sent.
     expect(await textOf(await call(`${v.path}.json`))).toBe(JSON.stringify(OLD));
 
@@ -582,17 +670,18 @@ describe("the OpenAPI version of a variant", () => {
     const cookie = await login();
     serveSpec();
     serveSpec(OLD, {}, OLD_URL);
-    const created = await createProject(cookie);
-    const p = (await (await addSource(cookie, created.id, { url: OLD_URL })).json()) as ApiProject;
+    await createProject(cookie);
+    await applied(sourcesOf(cookie, [CORE, { name: "legacy", url: OLD_URL, follow: true }]));
+    const p = await getProject(cookie);
 
-    expect(p.specVersion).toBe("3.1");
-    expect(p.notes).toContainEqual({
+    expect(p.state.specVersion).toBe("3.1");
+    expect(p.state.notes).toContainEqual({
       kind: "source-converted",
-      source: "Legacy API",
+      source: "legacy",
       from: "3.0",
       to: "3.1",
     });
-    const v = await variant(cookie, p.id);
+    const v = await variant(cookie);
     const doc = await served(v.path);
     expect(doc.openapi).toBe("3.1.0");
     expect(schemaOfQ(doc, "/legacy")).toEqual({ type: ["string", "null"] });

@@ -2,14 +2,16 @@ import { describe, expect, it } from "vitest";
 import { giveProStatement, removePlanStatement } from "../src/server/plans";
 import selfHosting from "../src/web/content/docs/self-hosting.mdx?raw";
 import {
+  apply,
   call,
   createVariant,
+  definitionOf,
+  edit,
   googleLogin,
   json,
   MAIL,
   MAIL_URL,
   mailbox,
-  SPEC,
   serveSpec,
   sql,
   upstream,
@@ -37,16 +39,21 @@ async function subscribe(cookie: string, periodEnd: number | null = Date.now() +
     now,
   );
 }
-const url = (n: number) => `https://api.example.com/openapi-${n}.json`;
+const slug = (n: number) => `service-${n}`;
 
 async function connect(cookie: string, n: number, bindings = {}) {
-  serveSpec(SPEC, {}, url(n));
-  return call("/api/projects", json("POST", { url: url(n) }, cookie), bindings);
+  serveSpec();
+  return apply(cookie, definitionOf({ project: slug(n) }), {}, bindings);
 }
-const variant = (cookie: string, projectId: string, name: string, bindings = {}) =>
-  call(
-    "/api/variants",
-    json("POST", { projectId, name, selection: { include: { tags: ["pets"] } } }, cookie),
+const variant = (cookie: string, project: string, name: string, bindings = {}) =>
+  edit(
+    cookie,
+    project,
+    (definition) => ({
+      ...definition,
+      variants: { ...definition.variants, [name]: { include: { tags: ["pets"] } } },
+    }),
+    {},
     bindings,
   );
 
@@ -54,13 +61,7 @@ describe("without plans (a self-hosted instance)", () => {
   it("has room for many documents and variants", async () => {
     const cookie = await googleLogin("ada@example.com");
     for (let n = 1; n <= 4; n++) expect((await connect(cookie, n)).status).toBe(201);
-    const [project] = (await (
-      await call("/api/projects", { headers: { cookie } })
-    ).json()) as Array<{
-      id: string;
-    }>;
-    for (let n = 0; n < 16; n++)
-      await createVariant(cookie, project?.id as string, { name: `V${n}` });
+    for (let n = 0; n < 16; n++) await createVariant(cookie, slug(1), `v${n}`);
 
     const me = (await (await call("/api/me", { headers: { cookie } })).json()) as {
       plan: string;
@@ -81,15 +82,38 @@ describe("on the free plan", () => {
 
   it("includes fifteen variants across the workspace", async () => {
     const cookie = await googleLogin("ada@example.com", "Ada", FREE);
-    const first = (await (await connect(cookie, 1, FREE)).json()) as { id: string };
-    const second = (await (await connect(cookie, 2, FREE)).json()) as { id: string };
+    await connect(cookie, 1, FREE);
+    await connect(cookie, 2, FREE);
     for (let n = 0; n < 15; n++) {
-      const project = n % 2 === 0 ? first : second;
-      expect((await variant(cookie, project.id, `V${n}`, FREE)).status).toBe(201);
+      expect((await variant(cookie, slug(n % 2 === 0 ? 1 : 2), `v${n}`, FREE)).status).toBe(200);
     }
-    const sixteenth = await variant(cookie, first.id, "One more", FREE);
+    const sixteenth = await variant(cookie, slug(1), "one-more", FREE);
     expect(sixteenth.status).toBe(402);
     expect(((await sixteenth.json()) as { error: string }).error).toContain("15 variants");
+    // Changing what is there is not adding: a project at the limit can still be edited.
+    const renamed = await edit(cookie, slug(1), (d) => ({ ...d, name: "Renamed" }), {}, FREE);
+    expect(renamed.status).toBe(200);
+    // Nor is swapping one variant for another.
+    const swapped = await edit(
+      cookie,
+      slug(2),
+      ({ variants: { v1: _, ...rest }, ...d }) => ({ ...d, variants: { ...rest, other: {} } }),
+      {},
+      FREE,
+    );
+    expect(swapped.status).toBe(200);
+    // A new project that brings a variant is one too many as well.
+    serveSpec();
+    const third = await apply(
+      cookie,
+      definitionOf({ project: slug(3), variants: { public: {} } }),
+      {},
+      FREE,
+    );
+    expect(third.status).toBe(402);
+    expect((await call(`/api/projects/${slug(3)}`, { headers: { cookie } }, FREE)).status).toBe(
+      404,
+    );
 
     const workspace = (await (
       await call("/api/workspace", { headers: { cookie } }, FREE)

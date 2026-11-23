@@ -33,33 +33,47 @@ export const cheapToCheck = sql<number>`(
   or ${sources.upstreamLastModified} is not null
 )`;
 
-/** How long a project's copy may age: as long as its costliest source allows. */
+/** How long a followed project's copy may age: as long as its costliest followed source allows. */
 export function checkInterval(cheap: boolean[]): number {
   return cheap.every(Boolean) ? CHECK_EVERY_MS.cheap : CHECK_EVERY_MS.costly;
 }
 
 export interface CheckOutcome {
   now: number;
-  /** For each source that is checked, whether a check of it can skip the download. */
+  /** For each source that is followed, whether a check of it can skip the download. */
   cheap: boolean[];
   /** A source did not answer this time. */
   failed: boolean;
   /** One did not answer the time before either. */
   wasFailing: boolean;
+  /** Until when a deploy asked for a look at every run, if it did. */
+  watchUntil?: number | null | undefined;
 }
+
+/** How long after a deploy the timer looks at a project's followed sources at every run. */
+export const WATCH_MS = 15 * 60_000;
 
 /**
  * When the timer looks at a project next, or null for never.
  *
- * - Nothing to check: never.
- * - A source just stopped answering: at the next tick, since many failures
+ * - Nothing is followed: never. Its documents change with a deploy only.
+ * - A deploy just happened: at the next run, because the API behind a
+ *   followed source is about to change and nobody should wait an hour for it.
+ * - A source just stopped answering: at the next run, since many failures
  *   are over by then.
  * - It has been failing: at the long interval, so that sources that are gone
  *   do not take the timer's time from the others.
  * - Otherwise: one interval from now.
  */
-export function nextCheckAt({ now, cheap, failed, wasFailing }: CheckOutcome): number | null {
+export function nextCheckAt({
+  now,
+  cheap,
+  failed,
+  wasFailing,
+  watchUntil,
+}: CheckOutcome): number | null {
   if (cheap.length === 0) return null;
+  if (watchUntil && watchUntil > now) return now + TICK_MS - SLACK_MS;
   if (failed) return now + (wasFailing ? CHECK_EVERY_MS.costly : TICK_MS) - SLACK_MS;
   return now + checkInterval(cheap) - SLACK_MS;
 }

@@ -2,7 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { Skeleton } from "@/components/ui/skeleton";
 import { queries } from "@/lib/api";
-import { lastProjectId } from "@/lib/hooks";
+import { lastProject } from "@/lib/hooks";
+import { projectSlug } from "@/lib/project";
 
 /** `/app` has no content of its own: it opens the project you were last in, or asks for a first one. */
 export const Route = createFileRoute("/_client/_app/app")({ component: Home });
@@ -16,11 +17,11 @@ function Home() {
       </div>
     );
   }
-  const remembered = lastProjectId();
+  const remembered = lastProject();
   const project =
-    projects.data.find((candidate) => candidate.id === remembered) ?? projects.data[0];
+    projects.data.find((candidate) => projectSlug(candidate) === remembered) ?? projects.data[0];
   return project ? (
-    <Navigate to="/p/$projectId" params={{ projectId: project.id }} replace />
+    <Navigate to="/p/$project" params={{ project: projectSlug(project) }} replace />
   ) : (
     <Navigate to="/connect" replace />
   );

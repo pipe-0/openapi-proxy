@@ -1,3 +1,16 @@
+export type {
+  AppliedRecord,
+  ApplyRequest,
+  ApplyResult,
+  DocumentInput,
+  ProjectNote,
+  ProjectState,
+  ProjectView,
+  SourceReport,
+  SourceState,
+  VariantReport,
+  VariantState,
+} from "./api.js";
 export { canonicalJson } from "./canonical.js";
 export type { EffectiveVisibility } from "./effective.js";
 export {

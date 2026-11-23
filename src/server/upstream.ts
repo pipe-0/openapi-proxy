@@ -314,8 +314,11 @@ export function inspectDocument(bytes: Uint8Array, bodyHash: string): InspectedS
   };
 }
 
-/** A source as a check needs it: everything but the stored document. */
-export type SourceMeta = Omit<SourceRow, "body">;
+/** What a check needs of a followed source: where it is, how it is fetched, and what is stored of it. */
+export type SourceMeta = Pick<
+  SourceRow,
+  "headers" | "upstreamEtag" | "upstreamLastModified" | "bodyHash"
+> & { url: string };
 
 /** What one look at a source found, and what to record about it. */
 export type SourceCheck =
