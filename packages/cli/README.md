@@ -119,10 +119,10 @@ jobs:
       - if: github.event_name == 'push'
         run: npx @pipe0/openapi-proxy deploy
         env:
-          DEPLOY_API_KEY: ${{ secrets.DEPLOY_API_KEY }}
+          OPENAPI_PROXY_DEPLOY_KEY: ${{ secrets.OPENAPI_PROXY_DEPLOY_KEY }}
 ```
 
-Two things need a person, once: the owner of a workspace creates a deploy API key in the app (Workspace, then Deploy API keys), and stores it as the secret `DEPLOY_API_KEY` of the pipeline. Such a key can deploy definition files and nothing else.
+Two things need a person, once: the owner of a workspace creates a deploy API key in the app (Workspace, then Deploy API keys), and stores it as the secret `OPENAPI_PROXY_DEPLOY_KEY` of the pipeline. Such a key can deploy definition files and nothing else.
 
 `openapi-proxy deploy --dry-run` says what a deploy would change, and changes nothing.
 

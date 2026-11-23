@@ -99,9 +99,8 @@ export async function deploy(options: {
     note(`  ${KEY_VARIABLE}=${KEY_PREFIX}... ${RUN} deploy`);
     return 1;
   }
-  // The variable has a name that other tools use for their own keys. A value
-  // that is not one of this service's keys is somebody else's secret: it is
-  // not sent anywhere.
+  // A value that is not one of this service's keys was put there by mistake,
+  // and may be the secret of something else. It is not sent anywhere.
   if (!key.startsWith(KEY_PREFIX)) {
     fail(
       `${KEY_VARIABLE} does not hold a deploy API key of openapi-proxy. Those start with ${KEY_PREFIX}. Nothing was sent.`,

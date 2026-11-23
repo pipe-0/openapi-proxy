@@ -100,7 +100,7 @@ function repository(instance: string, change: (text: string) => string = (text) 
   writeFileSync(config, change(`${readFileSync(config, "utf8")}\ninstance: ${instance}\n`));
   return { dir, config };
 }
-const KEY = { DEPLOY_API_KEY: "oap_test" };
+const KEY = { OPENAPI_PROXY_DEPLOY_KEY: "oap_test" };
 
 describe("deploy", () => {
   it("sends the definition with its documents, and says what the service did", async () => {
@@ -195,7 +195,7 @@ describe("deploy", () => {
     const { config } = repository(url);
     const { result, err } = await captured(() => deploy({ config, dryRun: false, env: {} }));
     expect(result).toBe(1);
-    expect(err).toContain("DEPLOY_API_KEY is not set");
+    expect(err).toContain("OPENAPI_PROXY_DEPLOY_KEY is not set");
     expect(err).toContain(`${url}/workspace`);
     expect(received).toEqual([]);
   });
@@ -203,12 +203,18 @@ describe("deploy", () => {
   it("does not send what is in the variable unless it is a key of this service", async () => {
     const { url, received } = await service();
     const { config } = repository(url);
-    // The name is a common one. Another tool's secret may be under it.
+    // A secret of something else, stored under this name by mistake.
     const { result, err } = await captured(() =>
-      deploy({ config, dryRun: false, env: { DEPLOY_API_KEY: "ghp_someone-elses-secret" } }),
+      deploy({
+        config,
+        dryRun: false,
+        env: { OPENAPI_PROXY_DEPLOY_KEY: "ghp_someone-elses-secret" },
+      }),
     );
     expect(result).toBe(1);
-    expect(err).toContain("DEPLOY_API_KEY does not hold a deploy API key of openapi-proxy");
+    expect(err).toContain(
+      "OPENAPI_PROXY_DEPLOY_KEY does not hold a deploy API key of openapi-proxy",
+    );
     expect(err).toContain("Nothing was sent");
     expect(err).not.toContain("ghp_someone-elses-secret");
     expect(received).toEqual([]);
@@ -274,7 +280,7 @@ describe("deploy", () => {
       expect(result).toBe(1);
       return err;
     };
-    expect(await attempt()).toContain("did not accept the key in DEPLOY_API_KEY");
+    expect(await attempt()).toContain("did not accept the key in OPENAPI_PROXY_DEPLOY_KEY");
     expect(await attempt()).toContain('"bookshop" belongs to another workspace');
     expect(await attempt()).toMatch(
       /openapi-proxy\.yaml:\d+ {2}variants\.public\.icon is not one of the icons\./,

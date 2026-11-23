@@ -150,7 +150,7 @@ Lists every operation of the project's documents with its tags and summary (thre
 ## deploy
 
 ```sh
-DEPLOY_API_KEY=oap_... openapi-proxy deploy
+OPENAPI_PROXY_DEPLOY_KEY=oap_... openapi-proxy deploy
 ```
 
 ```
@@ -169,7 +169,7 @@ Reads the sources the file names, here, and sends them with the file to the serv
 | --- | --- |
 | `--dry-run` | Say what would change, and change nothing. |
 
-- The key is read from the environment variable `DEPLOY_API_KEY`. A value there that is not a key of openapi-proxy (they start with `oap_`) is not sent anywhere. It is a deploy API key, which the owner of a workspace creates in the app. See [Private variants and keys](/docs/private-variants#deploy-api-keys).
+- The key is read from the environment variable `OPENAPI_PROXY_DEPLOY_KEY`. A value there that is not a key of openapi-proxy (they start with `oap_`) is not sent anywhere. It is a deploy API key, which the owner of a workspace creates in the app. See [Private variants and keys](/docs/private-variants#deploy-api-keys).
 - It deploys to `https://openapi-proxy.app`, or to the `instance` the file names. A key is not sent over plain HTTP, except to this machine.
 - A source that cannot be read stops the deploy, unless it says `follow: true`: then the service reads it itself.
 - On GitHub Actions and GitLab CI it sends the commit, the branch or tag, the repository and a link to the run. The app shows them on the project.

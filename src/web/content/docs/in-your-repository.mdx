@@ -101,7 +101,7 @@ A deploy needs a **deploy API key**. This is where a person is needed, twice: th
 To create the key, sign in at [openapi-proxy.app](https://openapi-proxy.app). Signing in gives you a workspace. Open **Workspace** and create a key under **Deploy API keys**, or use **New project**, then **From your repository**, which shows the same button next to these commands. The key is shown once.
 
 ```sh
-DEPLOY_API_KEY=oap_... npx @pipe0/openapi-proxy deploy --dry-run
+OPENAPI_PROXY_DEPLOY_KEY=oap_... npx @pipe0/openapi-proxy deploy --dry-run
 ```
 
 `--dry-run` says what a deploy would do and changes nothing. Without it:
@@ -125,9 +125,11 @@ What a deploy does:
 
 ### From CI
 
-Add the key as a secret of your pipeline named `DEPLOY_API_KEY`. This workflow for GitHub Actions checks the file on every pull request and deploys it from `main`:
+Add the key as a secret of your pipeline named `OPENAPI_PROXY_DEPLOY_KEY`. This workflow for GitHub Actions checks the file on every pull request and deploys it from `main`:
 
 <include lang="yaml" meta='title=".github/workflows/openapi-proxy.yml"'>../../../../examples/in-your-repository/.github/workflows/openapi-proxy.yml</include>
+
+The tool reads the key from the variable `OPENAPI_PROXY_DEPLOY_KEY` and from nowhere else. The secret itself can have any name: the `env:` line of the workflow is where it is given to the tool under that one.
 
 On GitHub Actions and GitLab CI, a deploy also says which commit it ran for. The app shows it on the project.
 

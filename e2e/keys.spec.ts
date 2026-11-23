@@ -26,7 +26,7 @@ test("a deploy API key: created, shown once, used by a pipeline, revoked", async
   await expect(page.getByRole("heading", { name: "Your new API key" })).toBeVisible();
   const key = (await page.getByTestId("new-key").textContent()) ?? "";
   expect(key).toMatch(/^oap_[0-9a-z]{40}$/);
-  await expect(page.getByText("DEPLOY_API_KEY", { exact: false }).first()).toBeVisible();
+  await expect(page.getByText("OPENAPI_PROXY_DEPLOY_KEY", { exact: false }).first()).toBeVisible();
   await shot(page, "12-new-key");
   await page.getByRole("button", { name: "Done" }).click();
 

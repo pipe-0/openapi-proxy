@@ -20,4 +20,4 @@ export const CLI_PACKAGE = "@pipe0/openapi-proxy";
 /** The hosted service: where a definition is deployed unless it names an instance of its own. */
 export const HOSTED_URL = "https://openapi-proxy.app";
 /** The environment variable a deploy reads its key from. */
-export const DEPLOY_KEY_VARIABLE = "DEPLOY_API_KEY";
+export const DEPLOY_KEY_VARIABLE = "OPENAPI_PROXY_DEPLOY_KEY";

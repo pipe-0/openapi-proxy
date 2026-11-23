@@ -127,8 +127,9 @@ export function ApiKeys({ owner }: { owner: boolean }) {
           created?.access === "deploy"
             ? {
                 label:
-                  "Store it in your pipeline as a secret named DEPLOY_API_KEY. To try it here:",
-                command: (key) => `DEPLOY_API_KEY=${key} npx @pipe0/openapi-proxy deploy --dry-run`,
+                  "Store it in your pipeline as a secret named OPENAPI_PROXY_DEPLOY_KEY. To try it here:",
+                command: (key) =>
+                  `OPENAPI_PROXY_DEPLOY_KEY=${key} npx @pipe0/openapi-proxy deploy --dry-run`,
               }
             : undefined
         }
