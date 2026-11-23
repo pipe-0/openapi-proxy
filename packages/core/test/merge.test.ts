@@ -255,7 +255,7 @@ describe("merging two documents", () => {
 
   it("can then be filtered like any document", () => {
     const { doc } = merge();
-    const invoices = applyVariant(doc, { mode: "include", operations: [], tags: ["Invoices"] });
+    const invoices = applyVariant(doc, { include: { tags: ["Invoices"] } });
     expect(keys(invoices.doc)).toEqual(["GET /invoices"]);
     expect(Object.keys(schemas(invoices.doc)).sort()).toEqual(["BillingError", "Invoice", "Money"]);
   });

@@ -12,34 +12,34 @@ describe("validation oracle (@scalar/openapi-parser)", () => {
   const cases: Array<{ fixture: string; selection: Selection }> = [
     {
       fixture: "petstore-3.0.yaml",
-      selection: { mode: "include", operations: [], tags: ["pets"] },
+      selection: { include: { tags: ["pets"] } },
     },
     {
       fixture: "petstore-3.0.yaml",
-      selection: { mode: "exclude", operations: [], tags: ["pets"] },
+      selection: { exclude: { tags: ["pets"] } },
     },
-    { fixture: "pipe0.json", selection: { mode: "include", operations: [], tags: ["Search"] } },
-    { fixture: "pipe0.json", selection: { mode: "exclude", operations: [], tags: ["Pipes"] } },
+    { fixture: "pipe0.json", selection: { include: { tags: ["Search"] } } },
+    { fixture: "pipe0.json", selection: { exclude: { tags: ["Pipes"] } } },
     {
       fixture: "cycles.json",
-      selection: { mode: "include", operations: ["GET /nodes"], tags: [] },
+      selection: { include: { operations: ["GET /nodes"] } },
     },
     {
       fixture: "discriminator.json",
-      selection: { mode: "include", operations: ["GET /animals"], tags: [] },
+      selection: { include: { operations: ["GET /animals"] } },
     },
     {
       fixture: "security-schemes.json",
-      selection: { mode: "include", operations: ["GET /admin"], tags: [] },
+      selection: { include: { operations: ["GET /admin"] } },
     },
     {
       fixture: "webhooks.json",
-      selection: { mode: "include", operations: ["GET /events"], tags: [] },
+      selection: { include: { operations: ["GET /events"] } },
     },
   ];
 
   for (const { fixture, selection } of cases) {
-    it(`${fixture} · ${selection.mode} [${[...selection.operations, ...selection.tags].join(", ")}]`, async () => {
+    it(`${fixture} · ${JSON.stringify(selection)}`, async () => {
       const source = loadFixture(fixture);
       const { doc } = applyVariant(source, selection);
       expect(indexOperations(doc).totalOperations).toBeGreaterThan(0);

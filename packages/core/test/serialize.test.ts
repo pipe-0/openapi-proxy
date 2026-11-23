@@ -31,7 +31,7 @@ describe("serialize", () => {
     // Filtered docs share subtrees with their source; anchors would confuse
     // downstream tools even though they're technically valid YAML.
     const source = loadFixture("pipe0.json");
-    const { doc } = applyVariant(source, { mode: "exclude", operations: [], tags: ["Pipes"] });
+    const { doc } = applyVariant(source, { exclude: { tags: ["Pipes"] } });
     const text = serialize(doc, "yaml");
     expect(text).not.toMatch(/&a\d/);
     expect(text).not.toMatch(/\*a\d/);
@@ -40,7 +40,7 @@ describe("serialize", () => {
 
   it("a serialized filtered doc re-parses as a valid spec", () => {
     const source = loadFixture("pipe0.json");
-    const { doc } = applyVariant(source, { mode: "include", operations: [], tags: ["Search"] });
+    const { doc } = applyVariant(source, { include: { tags: ["Search"] } });
     const reparsed = parseSpec(serialize(doc, "yaml"));
     expect(reparsed.specVersion).toBe("3.1");
     expect(reparsed.doc).toEqual(doc);

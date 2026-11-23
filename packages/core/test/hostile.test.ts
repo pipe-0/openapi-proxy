@@ -36,8 +36,8 @@ import { loadFixtureText } from "./helpers.js";
 const ok = { "200": { description: "ok" } };
 const HEAD = '"openapi":"3.1.0","info":{"title":"t","version":"1"}';
 const YAML_HEAD = 'openapi: 3.1.0\ninfo: { title: t, version: "1" }\npaths: {}';
-const everything: Selection = { mode: "exclude", operations: [], tags: [] };
-const only = (...operations: string[]): Selection => ({ mode: "include", operations, tags: [] });
+const everything: Selection = {};
+const only = (...operations: string[]): Selection => ({ include: { operations } });
 const count = <T>(length: number, each: (n: number) => T): T[] =>
   Array.from({ length }, (_, n) => each(n));
 const doc = (paths: JsonObject, extra: JsonObject = {}): OpenAPIDocument => ({

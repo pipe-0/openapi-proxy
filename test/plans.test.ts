@@ -46,11 +46,7 @@ async function connect(cookie: string, n: number, bindings = {}) {
 const variant = (cookie: string, projectId: string, name: string, bindings = {}) =>
   call(
     "/api/variants",
-    json(
-      "POST",
-      { projectId, name, selection: { mode: "include", operations: [], tags: ["pets"] } },
-      cookie,
-    ),
+    json("POST", { projectId, name, selection: { include: { tags: ["pets"] } } }, cookie),
     bindings,
   );
 

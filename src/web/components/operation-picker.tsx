@@ -1,11 +1,14 @@
 import {
+  followTag,
+  laterAdditions,
   type OperationEntry,
   pinTag,
   resolveSelection,
   type Selection,
   setOperationsServed,
   setTagServed,
-  withMode,
+  tagRule,
+  withLaterAdditions,
 } from "@openapi-proxy/core";
 import { ChevronRightIcon, SearchIcon, XIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -171,15 +174,18 @@ export function OperationPicker({
     .filter(({ shown }) => shown.length > 0);
   const matching = new Set(visibleGroups.flatMap(({ shown }) => shown.map((entry) => entry.key)));
 
-  // What the selection lists is served ("include"), or everything but that is ("exclude").
-  const including = selection.mode === "include";
+  // Whether what the API adds later is hidden, so that serving it takes a rule, or the other way round.
+  const later = laterAdditions(selection);
+  const including = later === "hidden";
+  /** The tags whose rule is the exception to that. */
+  const exceptions = including
+    ? (selection.include?.tags ?? []).filter((tag) => tagRule(selection, tag) === "served")
+    : (selection.exclude?.tags ?? []);
   const servedCount = entries.filter((entry) => served.has(entry.key)).length;
 
   /** Whether a tag also covers the operations that are added to it later. What is served now stays. */
-  const followTag = (tag: string, follow: boolean) =>
-    onChange(
-      follow ? setTagServed(entries, selection, tag, including) : pinTag(entries, selection, tag),
-    );
+  const follow = (tag: string, on: boolean) =>
+    onChange(on ? followTag(entries, selection, tag) : pinTag(entries, selection, tag));
   const toggleGroup = (group: Group) => {
     const allServed = group.entries.every((entry) => served.has(entry.key));
     onChange(
@@ -336,9 +342,12 @@ export function OperationPicker({
           const servedHere = group.entries.filter((entry) => served.has(entry.key)).length;
           const all = servedHere === group.entries.length;
           // A tag can cover the operations that are added to it later ("a rule").
-          const isRule = group.tag !== undefined && selection.tags.includes(group.tag);
-          // It can start to, once all of it is served (or, when the rest is served, all of it hidden).
-          const canFollow = including ? all : servedHere === 0;
+          const isRule =
+            group.tag !== undefined &&
+            tagRule(selection, group.tag) === (including ? "served" : "hidden");
+          // It can start to once some of it is served. When the rest is served, a tag
+          // can only hide what is added later if all of it is hidden: an exclusion wins.
+          const canFollow = including ? servedHere > 0 : servedHere === 0;
           const isCollapsed = collapsed.has(group.id) && needle === "" && view === "all";
           return (
             <section key={group.id}>
@@ -380,14 +389,14 @@ export function OperationPicker({
                   >
                     <Checkbox
                       checked={isRule}
-                      onCheckedChange={() => followTag(group.tag as string, !isRule)}
+                      onCheckedChange={() => follow(group.tag as string, !isRule)}
                       aria-label={`${group.label}: ${including ? "serve" : "hide"} operations added later`}
                     />
                     {/* The text toggles it too, as a label would. Hidden from assistive technology: the checkbox carries the name. */}
                     <span
                       aria-hidden="true"
                       className="cursor-default"
-                      onClick={() => followTag(group.tag as string, !isRule)}
+                      onClick={() => follow(group.tag as string, !isRule)}
                     >
                       {including ? "Serve" : "Hide"} operations added later
                     </span>
@@ -454,18 +463,18 @@ export function OperationPicker({
           </span>
           <Segmented
             aria-label="Operations your API adds later are"
-            value={selection.mode}
-            onValueChange={(mode) => onChange(withMode(entries, selection, mode))}
+            value={later}
+            onValueChange={(next) => onChange(withLaterAdditions(entries, selection, next))}
             options={[
-              { value: "include", label: "Hidden" },
-              { value: "exclude", label: "Served" },
+              { value: "hidden", label: "Hidden" },
+              { value: "served", label: "Served" },
             ]}
           />
         </div>
         {/* Always a line of its own, said or not: the foot keeps its height. */}
         <p className="text-[12.5px] leading-[18px] text-faint">
-          {selection.tags.length > 0
-            ? `Except in ${tagList(selection.tags)}, where they are ${including ? "served" : "hidden"}.`
+          {exceptions.length > 0
+            ? `Except in ${tagList(exceptions)}, where they are ${including ? "served" : "hidden"}.`
             : "In every tag."}
         </p>
       </div>

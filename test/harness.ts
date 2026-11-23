@@ -312,7 +312,7 @@ export async function createVariant(
       {
         projectId,
         name: "Public",
-        selection: { mode: "include", operations: [], tags: ["pets"] },
+        selection: { include: { tags: ["pets"] } },
         ...overrides,
       },
       cookie,

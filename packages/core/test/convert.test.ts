@@ -360,7 +360,7 @@ describe("the pipeline", () => {
   it("serves a variant as its document is when that can no longer be converted", () => {
     const newer: OpenAPIDocument = { ...current, openapi: "3.2.0" };
     const built = buildVariant(newer, {
-      selection: { mode: "exclude", operations: [], tags: [] },
+      selection: {},
       version: "3.0",
     });
     expect(built.doc.openapi).toBe("3.2.0");
@@ -371,7 +371,7 @@ describe("the pipeline", () => {
   it("serves a variant in the version it asks for, converting only what is served", () => {
     const doc = loadFixture("webhooks.json");
     const [first] = indexOperations(doc).entries.filter((entry) => !entry.webhook);
-    const selection = { mode: "include" as const, operations: [first?.key as string], tags: [] };
+    const selection = { include: { operations: [first?.key as string] } };
 
     const asIs = buildVariant(doc, { selection });
     expect(asIs.doc.openapi).toBe("3.1.0");

@@ -31,17 +31,17 @@ function selections(doc: JsonObject): Array<{ label: string; selection: Selectio
   return [
     {
       label: "include-ops",
-      selection: { mode: "include", operations: [firstOp, lastOp], tags: [] },
+      selection: { include: { operations: [firstOp, lastOp] } },
     },
-    { label: "include-tag", selection: { mode: "include", operations: [], tags: [firstTag] } },
+    { label: "include-tag", selection: { include: { tags: [firstTag] } } },
     {
       label: "include-mixed",
-      selection: { mode: "include", operations: [lastOp], tags: [firstTag] },
+      selection: { include: { operations: [lastOp], tags: [firstTag] } },
     },
-    { label: "exclude-ops", selection: { mode: "exclude", operations: [firstOp], tags: [] } },
-    { label: "exclude-tag", selection: { mode: "exclude", operations: [], tags: [firstTag] } },
-    { label: "include-empty", selection: { mode: "include", operations: [], tags: [] } },
-    { label: "exclude-empty", selection: { mode: "exclude", operations: [], tags: [] } },
+    { label: "exclude-ops", selection: { exclude: { operations: [firstOp] } } },
+    { label: "exclude-tag", selection: { exclude: { tags: [firstTag] } } },
+    { label: "include-empty", selection: { include: {} } },
+    { label: "exclude-empty", selection: {} },
   ];
 }
 
@@ -81,9 +81,7 @@ describe("selection semantics", () => {
 
   it("include by operation keeps exactly those operations", () => {
     const { doc, stats } = applyVariant(petstore, {
-      mode: "include",
-      operations: ["GET /pets", "POST /pets"],
-      tags: [],
+      include: { operations: ["GET /pets", "POST /pets"] },
     });
     const keys = indexOperations(doc).entries.map((e) => e.key);
     expect(keys.sort()).toEqual(["GET /pets", "POST /pets"]);
@@ -91,28 +89,26 @@ describe("selection semantics", () => {
   });
 
   it("include by tag keeps every operation carrying the tag", () => {
-    const { doc } = applyVariant(petstore, { mode: "include", operations: [], tags: ["pets"] });
+    const { doc } = applyVariant(petstore, { include: { tags: ["pets"] } });
     const keys = indexOperations(doc).entries.map((e) => e.key);
     expect(keys.sort()).toEqual(["GET /pets", "GET /pets/{petId}", "POST /pets"]);
   });
 
   it("exclude removes matches and keeps the rest", () => {
-    const { doc } = applyVariant(petstore, { mode: "exclude", operations: [], tags: ["pets"] });
+    const { doc } = applyVariant(petstore, { exclude: { tags: ["pets"] } });
     const keys = indexOperations(doc).entries.map((e) => e.key);
     expect(keys).toEqual(["GET /stores"]);
   });
 
   it("operations and tags are OR-ed", () => {
     const { doc } = applyVariant(petstore, {
-      mode: "include",
-      operations: ["GET /stores"],
-      tags: ["pets"],
+      include: { operations: ["GET /stores"], tags: ["pets"] },
     });
     expect(indexOperations(doc).totalOperations).toBe(4);
   });
 
   it("include-empty serves a valid but empty spec", () => {
-    const { doc, stats } = applyVariant(petstore, { mode: "include", operations: [], tags: [] });
+    const { doc, stats } = applyVariant(petstore, { include: {} });
     expect(doc.paths).toEqual({});
     expect(doc.components).toBeUndefined();
     expect(doc.tags).toBeUndefined();
@@ -121,12 +117,10 @@ describe("selection semantics", () => {
 
   it("vanished selected operations are dropped silently and reported", () => {
     const { doc, stats } = applyVariant(petstore, {
-      mode: "include",
-      operations: ["GET /pets", "DELETE /gone"],
-      tags: [],
+      include: { operations: ["GET /pets", "DELETE /gone"] },
     });
     expect(indexOperations(doc).entries.map((e) => e.key)).toEqual(["GET /pets"]);
-    expect(stats.missingSelectedOperations).toEqual(["DELETE /gone"]);
+    expect(stats.unmatched.include.operations).toEqual(["DELETE /gone"]);
   });
 });
 
@@ -134,11 +128,7 @@ describe("component pruning", () => {
   const petstore = loadFixture("petstore-3.0.yaml");
 
   it("keeps the transitive closure and drops the rest", () => {
-    const { doc } = applyVariant(petstore, {
-      mode: "include",
-      operations: ["GET /pets"],
-      tags: [],
-    });
+    const { doc } = applyVariant(petstore, { include: { operations: ["GET /pets"] } });
     const components = doc.components as JsonObject;
     const schemas = components.schemas as JsonObject;
     // GET /pets → Pet → Category (transitive), default response → Error → Category
@@ -153,21 +143,21 @@ describe("component pruning", () => {
   });
 
   it("always drops never-referenced components", () => {
-    const { doc } = applyVariant(petstore, { mode: "exclude", operations: [], tags: [] });
+    const { doc } = applyVariant(petstore, {});
     const schemas = (doc.components as JsonObject).schemas as JsonObject;
     expect(schemas.Orphan).toBeUndefined();
   });
 
   it("handles circular schema references", () => {
     const cycles = loadFixture("cycles.json");
-    const { doc } = applyVariant(cycles, { mode: "include", operations: ["GET /nodes"], tags: [] });
+    const { doc } = applyVariant(cycles, { include: { operations: ["GET /nodes"] } });
     const schemas = (doc.components as JsonObject).schemas as JsonObject;
     expect(Object.keys(schemas).sort()).toEqual(["Node", "NodeRef"]);
   });
 
   it("follows discriminator.mapping refs", () => {
     const disc = loadFixture("discriminator.json");
-    const { doc } = applyVariant(disc, { mode: "include", operations: ["GET /animals"], tags: [] });
+    const { doc } = applyVariant(disc, { include: { operations: ["GET /animals"] } });
     const schemas = (doc.components as JsonObject).schemas as JsonObject;
     expect(Object.keys(schemas).sort()).toEqual(["Animal", "Cat", "Dog", "Lizard"]);
     expect(schemas.Plant).toBeUndefined();
@@ -175,7 +165,7 @@ describe("component pruning", () => {
 
   it("keeps security schemes referenced by name, drops unused ones", () => {
     const sec = loadFixture("security-schemes.json");
-    const { doc } = applyVariant(sec, { mode: "include", operations: ["GET /admin"], tags: [] });
+    const { doc } = applyVariant(sec, { include: { operations: ["GET /admin"] } });
     const schemes = ((doc.components as JsonObject).securitySchemes ?? {}) as JsonObject;
     // adminAuth via the kept op, globalAuth via root security; legacyAuth pruned.
     expect(Object.keys(schemes).sort()).toEqual(["adminAuth", "globalAuth"]);
@@ -183,7 +173,7 @@ describe("component pruning", () => {
 
   it("keeps webhook payload schemas only while the webhook is served", () => {
     const hooks = loadFixture("webhooks.json");
-    const { doc } = applyVariant(hooks, { mode: "exclude", operations: [], tags: [] });
+    const { doc } = applyVariant(hooks, {});
     const schemas = (doc.components as JsonObject).schemas as JsonObject;
     expect(Object.keys(schemas).sort()).toEqual(["Event", "WebhookPayload"]);
     expect(schemas.Unrelated).toBeUndefined();
@@ -194,7 +184,7 @@ describe("component pruning", () => {
 describe("tags array cleanup", () => {
   it("filters top-level tags to those on kept operations", () => {
     const petstore = loadFixture("petstore-3.0.yaml");
-    const { doc } = applyVariant(petstore, { mode: "include", operations: [], tags: ["pets"] });
+    const { doc } = applyVariant(petstore, { include: { tags: ["pets"] } });
     const tags = doc.tags as Array<{ name: string }>;
     expect(tags.map((t) => t.name)).toEqual(["pets"]);
   });
@@ -204,7 +194,7 @@ describe("pipe0 reference spec", () => {
   const pipe0 = loadFixture("pipe0.json");
 
   it("filtering away the Pipes tag drops the 380 KB PipePayload schema", () => {
-    const { doc } = applyVariant(pipe0, { mode: "exclude", operations: [], tags: ["Pipes"] });
+    const { doc } = applyVariant(pipe0, { exclude: { tags: ["Pipes"] } });
     const schemas = (doc.components as JsonObject).schemas as JsonObject;
     expect(schemas.PipePayload).toBeUndefined();
 
@@ -214,7 +204,7 @@ describe("pipe0 reference spec", () => {
   });
 
   it("keeping only Search keeps its transitive schema chain", () => {
-    const { doc } = applyVariant(pipe0, { mode: "include", operations: [], tags: ["Search"] });
+    const { doc } = applyVariant(pipe0, { include: { tags: ["Search"] } });
     const schemas = (doc.components as JsonObject).schemas as JsonObject;
     expect(schemas.SearchRequestSchema).toBeDefined();
     expect(schemas.SearchPayloadSchema).toBeDefined();
@@ -222,7 +212,7 @@ describe("pipe0 reference spec", () => {
   });
 
   it("select-all still prunes the 6 dead schemas", () => {
-    const { doc, stats } = applyVariant(pipe0, { mode: "exclude", operations: [], tags: [] });
+    const { doc, stats } = applyVariant(pipe0, {});
     expect(stats.keptOperations).toBe(30);
     const schemas = (doc.components as JsonObject).schemas as JsonObject;
     for (const dead of [

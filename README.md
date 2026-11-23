@@ -87,7 +87,7 @@ const { doc } = assembleDocument([
   { name: "Billing API", doc: parseSpec(billingText).doc, pathPrefix: "/billing" },
 ]);
 const variant = buildVariant(doc, {
-  selection: { mode: "include", operations: ["GET /v1/books"], tags: ["public"] },
+  selection: { include: { tags: ["public"] }, exclude: { operations: ["POST /v1/books/import"] } },
   version: "3.0",
 });
 const yaml = serialize(variant.doc, "yaml");

@@ -70,7 +70,8 @@ import { useProject, useProjectVariants } from "@/lib/hooks";
 import { useProjectDoc } from "@/lib/use-project-doc";
 import { cn, MOD_KEY } from "@/lib/utils";
 
-const EMPTY: Selection = { mode: "include", operations: [], tags: [] };
+/** A new variant: nothing served yet, and what the API adds later stays hidden. */
+const EMPTY: Selection = { include: {} };
 const sameSelection = (a: Selection, b: Selection) => JSON.stringify(a) === JSON.stringify(b);
 
 export function VariantNewPage() {
@@ -273,7 +274,9 @@ function Editor({
   });
 
   const nothingServed =
-    selection.mode === "include" && selection.operations.length + selection.tags.length === 0;
+    selection.include !== undefined &&
+    !selection.include.operations?.length &&
+    !selection.include.tags?.length;
   const canCreate = name.trim() !== "" && slugStatus === "available";
   const busy = create.isPending || publish.isPending;
 
@@ -313,7 +316,9 @@ function Editor({
 
   // Selected operations the document does not have, while they are still selected.
   const missing = variant
-    ? variant.notFound.include.operations.filter((key) => selection.operations.includes(key))
+    ? variant.notFound.include.operations.filter((key) =>
+        selection.include?.operations?.includes(key),
+      )
     : [];
 
   return (

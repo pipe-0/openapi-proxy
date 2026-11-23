@@ -3,12 +3,8 @@
  * both, and the app, which offers them.
  */
 
-/** Who may read what a variant serves: anyone with the URL, or only an API key of its workspace. */
-export type Visibility = "public" | "private";
-
-export function isVisibility(value: unknown): value is Visibility {
-  return value === "public" || value === "private";
-}
+// Who may read what a variant serves is part of the definition format.
+export { isVisibility, type Visibility } from "@openapi-proxy/core";
 
 /**
  * What an API key may do. "full": everything a key can, which is the API, the

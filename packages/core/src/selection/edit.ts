@@ -1,52 +1,132 @@
-import type { OperationEntry, Selection, SelectionMode } from "../types.js";
+import type { OperationEntry, Selection, SelectionRules } from "../types.js";
 
 /**
  * Editing a selection in terms of outcomes.
  *
- * A selection is stored as "what matches" (pinned operations and tag rules)
- * plus a mode that says whether matches are kept or removed. People do not
- * think that way. They think "is this operation served?", and separately
- * "what should happen to operations that show up later?". These helpers let a
- * UI work in those terms: every function takes the desired outcome and returns
- * a new selection that produces it, changing nothing else that is visible.
+ * A selection is stored as rules: what is included, and what is excluded from
+ * that. People do not think that way. They think "is this operation served?",
+ * and separately "what should happen to operations that show up later?".
+ * These helpers let a UI work in those terms: every function takes the
+ * desired outcome and returns a new selection that produces it, changing
+ * nothing else that is served.
  */
 type Entry = Pick<OperationEntry, "key" | "tags">;
 
-const matches = (operations: Set<string>, tags: Set<string>, entry: Entry): boolean =>
-  operations.has(entry.key) || entry.tags.some((tag) => tags.has(tag));
+/** What happens to operations the API adds after the selection was made. */
+export type LaterAdditions = "served" | "hidden";
 
-/** Matching an entry means serving it in include mode and hiding it in exclude mode. */
-const matchFor = (mode: SelectionMode, served: boolean): boolean => (mode === "include") === served;
+interface Side {
+  operations: Set<string>;
+  tags: Set<string>;
+}
+interface Sides {
+  include: Side | undefined;
+  exclude: Side;
+}
 
-function build(mode: SelectionMode, operations: Set<string>, tags: Set<string>): Selection {
-  return { mode, operations: [...operations].sort(), tags: [...tags].sort() };
+const side = (rules: SelectionRules | undefined): Side => ({
+  operations: new Set(rules?.operations ?? []),
+  tags: new Set(rules?.tags ?? []),
+});
+const open = (selection: Selection): Sides => ({
+  include: selection.include ? side(selection.include) : undefined,
+  exclude: side(selection.exclude),
+});
+
+const matches = (rules: Side, entry: Entry): boolean =>
+  rules.operations.has(entry.key) || entry.tags.some((tag) => rules.tags.has(tag));
+const isServed = (sides: Sides, entry: Entry): boolean =>
+  (!sides.include || matches(sides.include, entry)) && !matches(sides.exclude, entry);
+
+function rulesOf(from: Side): SelectionRules {
+  const rules: SelectionRules = {};
+  if (from.tags.size > 0) rules.tags = [...from.tags].sort();
+  if (from.operations.size > 0) rules.operations = [...from.operations].sort();
+  return rules;
+}
+
+function close(sides: Sides): Selection {
+  const selection: Selection = {};
+  if (sides.include) selection.include = rulesOf(sides.include);
+  if (sides.exclude.tags.size > 0 || sides.exclude.operations.size > 0) {
+    selection.exclude = rulesOf(sides.exclude);
+  }
+  return selection;
 }
 
 /**
- * Apply an edit, then pin whatever the edit unmatched by accident. Dropping a
- * tag rule to unmatch one operation would otherwise unmatch its siblings too.
+ * A selection in the one form it is stored and compared in: lists sorted and
+ * without duplicates, empty lists left out, and no `exclude` that names
+ * nothing. An `include` that names nothing stays: it means "serve nothing".
+ */
+export function normalizeSelection(selection: Selection): Selection {
+  return close(open(selection));
+}
+
+/** Pins that say nothing a rule does not already say, for operations the document has. */
+function tidy(entries: Entry[], sides: Sides): void {
+  for (const entry of entries) {
+    const { include, exclude } = sides;
+    if (include && entry.tags.some((tag) => include.tags.has(tag))) {
+      include.operations.delete(entry.key);
+    }
+    const reachable = !include || matches(include, entry);
+    if (!reachable || entry.tags.some((tag) => exclude.tags.has(tag))) {
+      exclude.operations.delete(entry.key);
+    }
+  }
+}
+
+/**
+ * Apply an edit, then put back whatever it changed by accident: removing a
+ * tag rule to change one operation would otherwise change its siblings too.
+ * They are held where they were with a pin of their own.
  */
 function edit(
   entries: Entry[],
   selection: Selection,
   targets: Set<string>,
-  change: (operations: Set<string>, tags: Set<string>) => void,
+  change: (sides: Sides) => void,
 ): Selection {
-  const before = { operations: new Set(selection.operations), tags: new Set(selection.tags) };
-  const operations = new Set(selection.operations);
-  const tags = new Set(selection.tags);
-  change(operations, tags);
+  const before = open(selection);
+  const after = open(selection);
+  change(after);
 
   for (const entry of entries) {
     if (targets.has(entry.key)) continue;
-    if (matches(before.operations, before.tags, entry) && !matches(operations, tags, entry)) {
-      operations.add(entry.key);
-    }
+    const was = isServed(before, entry);
+    const is = isServed(after, entry);
+    if (was && !is) after.include?.operations.add(entry.key);
+    else if (!was && is) after.exclude.operations.add(entry.key);
   }
-  return build(selection.mode, operations, tags);
+  tidy(entries, after);
+  return close(after);
 }
 
-/** Serve or hide specific operations by pinning them. Tag rules that stand in the way are dissolved into pins. */
+/** Whether operations the API adds later are served or hidden, tag rules aside. */
+export function laterAdditions(selection: Selection): LaterAdditions {
+  return selection.include ? "hidden" : "served";
+}
+
+/**
+ * What a tag's rule says about operations that get the tag later, or
+ * undefined if the selection has no rule for the tag.
+ */
+export function tagRule(selection: Selection, tag: string): LaterAdditions | undefined {
+  if (selection.exclude?.tags?.includes(tag)) return "hidden";
+  if (selection.include?.tags?.includes(tag)) return "served";
+  return undefined;
+}
+
+/**
+ * Serve or hide specific operations.
+ *
+ * Hiding an operation that a tag rule serves excludes that one operation and
+ * leaves the rule alone, so the tag keeps covering what is added later.
+ * Serving an operation that an excluded tag hides is the one case where a
+ * rule has to give way, because an exclusion always wins: the tag's other
+ * operations stay hidden one by one.
+ */
 export function setOperationsServed(
   entries: Entry[],
   selection: Selection,
@@ -54,27 +134,31 @@ export function setOperationsServed(
   served: boolean,
 ): Selection {
   const targets = new Set(keys);
-  const matched = matchFor(selection.mode, served);
   const affected = entries.filter((entry) => targets.has(entry.key));
 
-  return edit(entries, selection, targets, (operations, tags) => {
-    if (matched) {
-      for (const entry of affected) {
-        if (!matches(operations, tags, entry)) operations.add(entry.key);
-      }
-      return;
-    }
+  return edit(entries, selection, targets, (sides) => {
     for (const entry of affected) {
-      operations.delete(entry.key);
-      for (const tag of entry.tags) tags.delete(tag);
+      if (isServed(sides, entry) === served) continue;
+      const { include, exclude } = sides;
+      if (served) {
+        exclude.operations.delete(entry.key);
+        for (const tag of entry.tags) exclude.tags.delete(tag);
+        if (include && !matches(include, entry)) include.operations.add(entry.key);
+        continue;
+      }
+      const byRule = !include || entry.tags.some((tag) => include.tags.has(tag));
+      include?.operations.delete(entry.key);
+      if (byRule) exclude.operations.add(entry.key);
     }
   });
 }
 
 /**
- * Serve or hide everything under a tag. Where that lines up with the mode
- * (serving in include mode, hiding in exclude mode) the result is a rule, so
- * operations that later appear under the tag are covered too.
+ * Serve or hide everything under a tag.
+ *
+ * Where that can be said as a rule it is one, so that operations which later
+ * appear under the tag are covered too: serving a tag includes it when later
+ * additions are hidden, and hiding a tag excludes it when they are served.
  */
 export function setTagServed(
   entries: Entry[],
@@ -83,44 +167,87 @@ export function setTagServed(
   served: boolean,
 ): Selection {
   const tagged = entries.filter((entry) => entry.tags.includes(tag));
-  if (!matchFor(selection.mode, served)) {
-    return setOperationsServed(
-      entries,
-      selection,
-      tagged.map((entry) => entry.key),
-      served,
-    );
-  }
   const targets = new Set(tagged.map((entry) => entry.key));
-  return edit(entries, selection, targets, (operations, tags) => {
-    tags.add(tag);
-    // Pins under a rule are redundant.
-    for (const key of targets) operations.delete(key);
-  });
-}
 
-/** Replace a tag rule with pins for the operations it covers today. The outcome stays the same; later additions are no longer covered. */
-export function pinTag(entries: Entry[], selection: Selection, tag: string): Selection {
-  if (!selection.tags.includes(tag)) return selection;
-  return edit(entries, selection, new Set(), (_operations, tags) => {
-    tags.delete(tag);
+  return edit(entries, selection, targets, ({ include, exclude }) => {
+    if (served) {
+      exclude.tags.delete(tag);
+      for (const entry of tagged) {
+        exclude.operations.delete(entry.key);
+        // Hidden through another tag as well: that rule gives way too.
+        for (const other of entry.tags) exclude.tags.delete(other);
+        include?.operations.delete(entry.key);
+      }
+      include?.tags.add(tag);
+      return;
+    }
+    if (!include) {
+      exclude.tags.add(tag);
+      for (const entry of tagged) exclude.operations.delete(entry.key);
+      return;
+    }
+    include.tags.delete(tag);
+    for (const entry of tagged) {
+      include.operations.delete(entry.key);
+      // Still served through another tag it carries.
+      if (matches(include, entry)) exclude.operations.add(entry.key);
+    }
   });
 }
 
 /**
- * Switch what happens to operations the source adds later, without changing
- * what is served now. A tag whose operations all match in the new mode becomes
- * a rule, so the tag keeps behaving as a unit.
+ * Make a tag a rule for what is added to it later, without changing what is
+ * served now: when later additions are hidden, the tag's are served from now
+ * on, and the other way round. Where that cannot be said, because an
+ * exclusion always wins and some of the tag is served, the selection comes
+ * back as it is.
  */
-export function withMode(entries: Entry[], selection: Selection, mode: SelectionMode): Selection {
-  if (selection.mode === mode) return selection;
+export function followTag(entries: Entry[], selection: Selection, tag: string): Selection {
+  const sides = open(selection);
+  if (!sides.include) {
+    const tagged = entries.filter((entry) => entry.tags.includes(tag));
+    if (tagged.some((entry) => isServed(sides, entry))) return selection;
+  }
+  return edit(entries, selection, new Set(), ({ include, exclude }) => {
+    if (include) {
+      include.tags.add(tag);
+      exclude.tags.delete(tag);
+    } else {
+      exclude.tags.add(tag);
+    }
+  });
+}
 
-  const operations = new Set(selection.operations);
-  const tags = new Set(selection.tags);
-  // Flipping the mode flips the meaning of a match, so the matched set inverts.
-  const matched = entries.filter((entry) => !matches(operations, tags, entry));
-  const matchedKeys = new Set(matched.map((entry) => entry.key));
+/**
+ * Replace a tag rule with pins for the operations it covers today. What is
+ * served stays the same; operations added under the tag later are no longer
+ * covered by it.
+ */
+export function pinTag(entries: Entry[], selection: Selection, tag: string): Selection {
+  if (tagRule(selection, tag) === undefined) return selection;
+  return edit(entries, selection, new Set(), ({ include, exclude }) => {
+    include?.tags.delete(tag);
+    exclude.tags.delete(tag);
+  });
+}
 
+/**
+ * Switch what happens to operations the API adds later, without changing
+ * what is served now. A tag whose operations are all served (or all hidden)
+ * becomes a rule, so the tag keeps behaving as a unit.
+ */
+export function withLaterAdditions(
+  entries: Entry[],
+  selection: Selection,
+  later: LaterAdditions,
+): Selection {
+  if (laterAdditions(selection) === later) return selection;
+
+  const sides = open(selection);
+  const served = new Set(
+    entries.filter((entry) => isServed(sides, entry)).map((entry) => entry.key),
+  );
+  const known = new Set(entries.map((entry) => entry.key));
   const byTag = new Map<string, Entry[]>();
   for (const entry of entries) {
     for (const tag of new Set(entry.tags)) {
@@ -129,12 +256,28 @@ export function withMode(entries: Entry[], selection: Selection, mode: Selection
       else byTag.set(tag, [entry]);
     }
   }
-  const rules = new Set<string>();
-  for (const [tag, tagged] of byTag) {
-    if (tagged.every((entry) => matchedKeys.has(entry.key))) rules.add(tag);
+  // Exclusions that are about names the document does not have yet stay as they are.
+  const exclude: Side = {
+    tags: new Set(sides.exclude.tags),
+    operations: new Set([...sides.exclude.operations].filter((key) => !known.has(key))),
+  };
+
+  if (later === "served") {
+    for (const [tag, tagged] of byTag) {
+      if (tagged.every((entry) => !served.has(entry.key))) exclude.tags.add(tag);
+    }
+    for (const entry of entries) {
+      if (!served.has(entry.key) && !matches(exclude, entry)) exclude.operations.add(entry.key);
+    }
+    return close({ include: undefined, exclude });
   }
-  const pins = new Set(
-    matched.filter((entry) => !entry.tags.some((tag) => rules.has(tag))).map((entry) => entry.key),
-  );
-  return build(mode, pins, rules);
+
+  const include: Side = { tags: new Set(), operations: new Set() };
+  for (const [tag, tagged] of byTag) {
+    if (tagged.every((entry) => served.has(entry.key))) include.tags.add(tag);
+  }
+  for (const entry of entries) {
+    if (served.has(entry.key) && !matches(include, entry)) include.operations.add(entry.key);
+  }
+  return close({ include, exclude });
 }

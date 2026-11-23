@@ -125,7 +125,7 @@ describe("a workspace's budget of requests", () => {
         {
           projectId: project.id,
           name: "Public",
-          selection: { mode: "exclude", operations: [], tags: [] },
+          selection: {},
         },
         ada,
       ),

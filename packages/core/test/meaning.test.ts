@@ -19,7 +19,7 @@ import { expectSelfContained } from "./helpers.js";
  * spell alike and mean differently, families of schemas, and YAML's anchors.
  */
 
-const everything: Selection = { mode: "exclude", operations: [], tags: [] };
+const everything: Selection = {};
 const info = { title: "t", version: "1" };
 const ok = { "200": { description: "ok" } };
 const returning = (schema: string) => ({

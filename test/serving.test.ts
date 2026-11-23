@@ -100,11 +100,7 @@ describe("serving a variant", () => {
 
     const patch = await call(
       `/api/variants/${variant.id}`,
-      json(
-        "PATCH",
-        { selection: { mode: "include", operations: ["GET /pets"], tags: [] } },
-        cookie,
-      ),
+      json("PATCH", { selection: { include: { operations: ["GET /pets"] } } }, cookie),
     );
     expect(patch.status).toBe(200);
 

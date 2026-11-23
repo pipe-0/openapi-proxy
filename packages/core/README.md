@@ -15,7 +15,7 @@ const { doc, notes } = assembleDocument([
 
 // 2. What one audience gets: some operations, in the version their tools need.
 const variant = buildVariant(doc, {
-  selection: { mode: "include", operations: ["GET /v1/books"], tags: ["public"] },
+  selection: { include: { tags: ["public"] }, exclude: { operations: ["POST /v1/books/import"] } },
   version: "3.0", // leave out to keep the document's own
 });
 
@@ -37,8 +37,9 @@ text ─▶ parse ─▶ [convert] ─▶ merge ─▶ select ─▶ [convert] �
 | Folder            | What is in it                                                                           |
 | ----------------- | --------------------------------------------------------------------------------------- |
 | `src/document`    | Reading and writing: parse, serialize, JSON pointers, where operations and schemas live |
-| `src/inspect`     | Reading facts off a document: its operations, a fingerprint per operation, what changed |
+| `src/inspect`     | Reading facts off a document: its operations, a fingerprint per operation               |
 | `src/selection`   | The selection model: which operations it keeps, and editing it by outcome               |
+| `src/definition`  | A project as one definition: the file format, its validation and its JSON Schema        |
 | `src/transforms`  | `select.ts`, `merge.ts` and `convert/`: the steps of the pipeline                       |
 | `src/pipeline.ts` | The two stages above as two functions, `assembleDocument` and `buildVariant`            |
 
@@ -76,13 +77,30 @@ A document already in the version asked for comes back untouched. Schemas are fo
 
 ```ts
 interface Selection {
-  mode: "include" | "exclude";
-  operations: string[]; // "METHOD path", or "METHOD webhook:name"
-  tags: string[];
+  include?: { tags?: string[]; operations?: string[] };
+  exclude?: { tags?: string[]; operations?: string[] };
 }
+// An operation is "METHOD path", or "METHOD webhook:name".
 ```
 
-An operation matches when its key is listed **or** it carries a listed tag. `include` keeps the matches; `exclude` keeps everything else. Keys are built from method and path, so documents without `operationId`s work. `indexOperations(doc)` lists every key in a document, with tags, summaries and deprecation flags.
+An operation matches a side when its key is listed there **or** it carries a listed tag. It is kept when `include` is absent or matches it, and `exclude` does not match it: `exclude` wins.
+
+- Without `include`, everything is kept except what is excluded, operations the API adds later too.
+- With `include`, only what it names is kept. An `include` that names nothing keeps nothing.
+- A tag is a rule: it also covers operations that get the tag later. So "this whole tag, except these two operations" is an included tag and two excluded operations.
+
+Keys are built from method and path, so documents without `operationId`s work. `indexOperations(doc)` lists every key in a document, with tags, summaries and deprecation flags.
+
+## Definitions
+
+A project (its sources and its variants) can be written as one definition, the format of an `openapi-proxy.yaml` file. `readDefinition(data)` takes plain data as parsed from YAML or JSON and gives the definition in its stored form, or every problem with the place it is at:
+
+```ts
+const result = readDefinition({ version: 1, project: "books", sources: [{ url }], variants: {} });
+if ("problems" in result) console.error(result.problems.map(describeProblem).join("\n"));
+```
+
+`effectiveVariant(definition, slug)` gives the selection and overrides to hand to `buildVariant`, with the project's defaults filled in, and `definitionSchema()` gives the format as a JSON Schema.
 
 ## What the output contains
 
@@ -105,16 +123,16 @@ Checked by the test suite across real and synthetic documents, with [`@scalar/op
 
 ## Also exported
 
-| Function                                                    | What it does                                                                                             |
-| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `parseSpec(text)`                                           | Parse JSON or YAML; reports format, spec version and whether JSON was minified. Throws `SpecParseError`. |
-| `findExternalRefs(doc)`                                     | References that point outside the document, which this package does not resolve.                         |
-| `resolveSelection(index, selection)`                        | The set of operation keys a selection keeps.                                                             |
-| `computeDrift(selection, snapshot, index)`                  | What changed in a source since a selection was last reviewed.                                            |
-| `fingerprintOperations(doc)`                                | One fingerprint per operation that changes when the operation, or anything it references, does.          |
-| `setOperationsServed`, `setTagServed`, `pinTag`, `withMode` | Edit a selection by outcome ("serve this", "hide that tag") instead of by rule.                          |
-| `slugify(name)`, `isValidSlug(slug)`                        | URL-safe slugs.                                                                                          |
-| `TRANSFORM_VERSION`                                         | Changes whenever output bytes can. Fold it into cache keys.                                              |
+| Function                                                                           | What it does                                                                                             |
+| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `parseSpec(text)`                                                                  | Parse JSON or YAML; reports format, spec version and whether JSON was minified. Throws `SpecParseError`. |
+| `findExternalRefs(doc)`                                                            | References that point outside the document, which this package does not resolve.                         |
+| `resolveSelection(index, selection)`                                               | The set of operation keys a selection keeps.                                                             |
+| `unmatchedNames(index, selection)`                                                 | The names in a selection that the document has nothing for.                                              |
+| `fingerprintOperations(doc)`                                                       | One fingerprint per operation that changes when the operation, or anything it references, does.          |
+| `setOperationsServed`, `setTagServed`, `followTag`, `pinTag`, `withLaterAdditions` | Edit a selection by outcome ("serve this", "hide that tag") instead of by rule.                          |
+| `slugify(name)`, `isValidSlug(slug)`                                               | URL-safe slugs.                                                                                          |
+| `TRANSFORM_VERSION`                                                                | Changes whenever output bytes can. Fold it into cache keys.                                              |
 
 ## Limits
 

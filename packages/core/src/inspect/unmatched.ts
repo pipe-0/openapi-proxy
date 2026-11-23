@@ -1,4 +1,4 @@
-import type { OperationIndex, Selection, UnmatchedNames } from "../types.js";
+import type { OperationIndex, Selection, SelectionRules, UnmatchedNames } from "../types.js";
 
 /**
  * The names in a selection that the document has nothing for: operations it
@@ -12,12 +12,19 @@ import type { OperationIndex, Selection, UnmatchedNames } from "../types.js";
 export function unmatchedNames(index: OperationIndex, selection: Selection): UnmatchedNames {
   const keys = new Set(index.entries.map((entry) => entry.key));
   const tags = new Set(index.tags.filter((tag) => tag.count > 0).map((tag) => tag.name));
-  const side = {
-    operations: selection.operations.filter((key) => !keys.has(key)),
-    tags: selection.tags.filter((tag) => !tags.has(tag)),
-  };
-  const none = { operations: [], tags: [] };
-  return selection.mode === "include"
-    ? { include: side, exclude: none }
-    : { include: none, exclude: side };
+  const side = (rules: SelectionRules | undefined) => ({
+    operations: (rules?.operations ?? []).filter((key) => !keys.has(key)),
+    tags: (rules?.tags ?? []).filter((tag) => !tags.has(tag)),
+  });
+  return { include: side(selection.include), exclude: side(selection.exclude) };
+}
+
+/** How many names that is. */
+export function unmatchedCount(names: UnmatchedNames): number {
+  return (
+    names.include.operations.length +
+    names.include.tags.length +
+    names.exclude.operations.length +
+    names.exclude.tags.length
+  );
 }

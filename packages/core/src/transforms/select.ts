@@ -8,6 +8,7 @@ import {
 } from "../document/path-items.js";
 import { componentClosure } from "../document/refs.js";
 import { indexOperations } from "../inspect/operations.js";
+import { unmatchedNames } from "../inspect/unmatched.js";
 import { resolveSelection } from "../selection/resolve.js";
 import {
   COMPONENT_GROUPS,
@@ -93,10 +94,6 @@ function select(doc: OpenAPIDocument, selection: Selection): FilterResult {
     }
   }
 
-  const sourceKeys = new Set(index.entries.map((entry) => entry.key));
-  const missingSelectedOperations =
-    selection.mode === "include" ? selection.operations.filter((key) => !sourceKeys.has(key)) : [];
-
   return {
     doc: out,
     stats: {
@@ -104,7 +101,7 @@ function select(doc: OpenAPIDocument, selection: Selection): FilterResult {
       totalOperations: index.totalOperations,
       keptComponents,
       totalComponents,
-      missingSelectedOperations,
+      unmatched: unmatchedNames(index, selection),
       inlinedRefs,
     },
   };

@@ -27,7 +27,7 @@ const doc = (paths: JsonObject, schemas: JsonObject = {}): OpenAPIDocument => ({
 });
 const schemasOf = (document: OpenAPIDocument) =>
   (document.components as { schemas?: Record<string, JsonObject> } | undefined)?.schemas ?? {};
-const everything = { mode: "exclude" as const, operations: [], tags: [] };
+const everything = {};
 const changedBetween = (before: OpenAPIDocument, after: OpenAPIDocument) => {
   const [was, is] = [fingerprintOperations(before), fingerprintOperations(after)];
   return [...is.keys()].filter((key) => was.get(key) !== is.get(key));
@@ -177,7 +177,7 @@ describe("a reference to where a schema was first written", () => {
       },
     });
     const built = buildVariant(tricky, {
-      selection: { mode: "include", operations: ["GET /kept"], tags: [] },
+      selection: { include: { operations: ["GET /kept"] } },
     }).doc;
     const uses = ((built.paths as JsonObject)["/kept"] as { get: JsonObject }).get[
       "x-uses"

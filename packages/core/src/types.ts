@@ -86,17 +86,26 @@ export interface OperationIndex {
   totalOperations: number;
 }
 
-export type SelectionMode = "include" | "exclude";
+/** What one side of a selection names: operations by key, and whole tags. */
+export interface SelectionRules {
+  /** Tags. A tag is a rule: it also covers operations that get the tag later. */
+  tags?: string[];
+  /** Operation keys, such as `"GET /v1/pipes"`. */
+  operations?: string[];
+}
 
 /**
- * A variant's selection. `operations` and `tags` are OR-ed: an operation matches the
- * selection iff its key is listed OR it carries a listed tag. In `include` mode matched
- * operations are kept; in `exclude` mode they are removed.
+ * Which operations a variant serves. An operation matches a side when its key
+ * is listed there or it carries a listed tag.
+ *
+ * It is served when `include` is absent or matches it, and `exclude` does not
+ * match it: `exclude` wins. So without `include` everything is served except
+ * what is excluded, operations the API adds later too. With `include`, only
+ * what it names is served, and an `include` that names nothing serves nothing.
  */
 export interface Selection {
-  mode: SelectionMode;
-  operations: string[];
-  tags: string[];
+  include?: SelectionRules;
+  exclude?: SelectionRules;
 }
 
 export interface FilterStats {
@@ -104,8 +113,8 @@ export interface FilterStats {
   totalOperations: number;
   keptComponents: Record<string, number>;
   totalComponents: Record<string, number>;
-  /** Selected operation keys that do not exist in the source (drift, include mode). */
-  missingSelectedOperations: string[];
+  /** Names in the selection that the document has nothing for. */
+  unmatched: UnmatchedNames;
   /**
    * `$ref`s that pointed into a removed operation and were replaced by a copy
    * of their target so the output stays self-contained.

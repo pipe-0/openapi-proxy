@@ -14,6 +14,7 @@
       "!**/test/fixtures",
       "!**/test-results",
       "!migrations/meta",
+      "!public/schema",
       "!**/routeTree.gen.ts",
       "!.source"
     ]

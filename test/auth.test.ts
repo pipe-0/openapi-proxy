@@ -204,7 +204,7 @@ describe("organizations", () => {
             {
               projectId: project.id,
               name: "x",
-              selection: { mode: "exclude", operations: [], tags: [] },
+              selection: {},
             },
             grace,
           ),

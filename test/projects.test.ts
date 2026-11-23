@@ -134,7 +134,7 @@ describe("creating a project", () => {
     expect(project.bodyBytes).toBeGreaterThan(2_000_000);
 
     const variant = await createVariant(cookie, project.id, {
-      selection: { mode: "include", operations: [], tags: ["big"] },
+      selection: { include: { tags: ["big"] } },
     });
     const served = await call(`${variant.path}.json`);
     expect(served.status).toBe(200);
@@ -356,7 +356,7 @@ describe("variants", () => {
           projectId: one.id,
           name: "Again",
           slug: "docs",
-          selection: { mode: "include", operations: [], tags: [] },
+          selection: { include: {} },
         },
         cookie,
       ),
@@ -379,7 +379,7 @@ describe("variants", () => {
     serveSpec();
     const project = await createProject(cookie);
     const attempt = (body: object) => call("/api/variants", json("POST", body, cookie));
-    const selection = { mode: "include", operations: [], tags: [] };
+    const selection = { include: {} };
 
     expect((await attempt({ projectId: project.id, name: "", selection })).status).toBe(400);
     expect(

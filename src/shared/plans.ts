@@ -13,6 +13,8 @@
  * source per interval, which stays small at these numbers. Pro is for
  * companies with many APIs, or many versions of them.
  */
+import { DEFINITION_LIMITS } from "@openapi-proxy/core";
+
 export type Plan = "free" | "pro";
 
 export interface PlanLimits {
@@ -35,10 +37,10 @@ export const PLAN_NAMES: Record<Plan, string> = { free: "Free", pro: "Pro" };
  * (memory and CPU for a document, D1's 2 MB rows), not from buying more.
  */
 export const GUARDS = {
-  variantsPerProject: 100,
+  variantsPerProject: DEFINITION_LIMITS.variants,
   people: 50,
   apiKeys: 100,
-  sourcesPerProject: 10,
+  sourcesPerProject: DEFINITION_LIMITS.sources,
   /** All of a project's sources together, before compression. */
   projectBytes: 5_000_000,
 } as const;

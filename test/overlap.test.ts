@@ -96,7 +96,7 @@ async function merged() {
         {
           projectId: project.id,
           name: "Everything",
-          selection: { mode: "exclude", operations: [], tags: [] },
+          selection: {},
         },
         cookie,
       ),
@@ -113,7 +113,7 @@ describe("two edits of a variant that overlap", () => {
     const nothing = held(
       `/api/variants/${variant.id}`,
       "PATCH",
-      { selection: { mode: "include", operations: [], tags: [] } },
+      { selection: { include: {} } },
       cookie,
     );
     await settle();
@@ -121,7 +121,7 @@ describe("two edits of a variant that overlap", () => {
     // "Serve everything" runs start to finish, and a reader fetches the result.
     const everything = await call(
       `/api/variants/${variant.id}`,
-      json("PATCH", { selection: { mode: "exclude", operations: [], tags: [] } }, cookie),
+      json("PATCH", { selection: {} }, cookie),
     );
     expect(everything.status).toBe(200);
     const first = await call(`${variant.path}.json`);
@@ -266,7 +266,7 @@ describe("a limit, asked for many times at once", () => {
             {
               projectId: projects[0]?.id,
               name: `Variant ${n}`,
-              selection: { mode: "exclude", operations: [], tags: [] },
+              selection: {},
             },
             cookie,
           ),

@@ -1,0 +1,302 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openapi-proxy.app/schema/definition.v1.json",
+  "title": "openapi-proxy definition",
+  "type": "object",
+  "description": "An openapi-proxy project: the OpenAPI documents it is made of, and the variants served from them.",
+  "properties": {
+    "version": {
+      "const": 1,
+      "description": "The version of this format. Always 1."
+    },
+    "project": {
+      "type": "string",
+      "description": "The project's slug: the first part of every public URL, /v/<project>/<variant>. It is the project's identity; a deploy creates the project or updates the one with this slug.",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$"
+    },
+    "name": {
+      "type": "string",
+      "description": "What the project is called in the app. Left out, it is the slug.",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "instance": {
+      "type": "string",
+      "description": "The address of the instance this is deployed to, for a self-hosted one. Left out, it is https://openapi-proxy.app.",
+      "minLength": 1,
+      "pattern": "^https?:\\/\\/[^\\s/]+(?:\\/[^\\s]*)?$"
+    },
+    "visibility": {
+      "enum": [
+        "public",
+        "private"
+      ],
+      "description": "Who may read this project's variants unless a variant says otherwise. Left out, it is the workspace's default."
+    },
+    "overrides": {
+      "type": "object",
+      "description": "Title, description and servers for every variant, instead of what the main document says. A variant can state its own.",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "The title readers see, instead of the document's.",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "description": "The description readers see, instead of the document's.",
+          "minLength": 1,
+          "maxLength": 5000
+        },
+        "servers": {
+          "type": "array",
+          "description": "Where the API is reached, instead of the document's whole list. Tools use the first unless someone picks another.",
+          "items": {
+            "type": "object",
+            "description": "One place the API is reached.",
+            "properties": {
+              "url": {
+                "type": "string",
+                "description": "The address, starting with https://, http:// or /.",
+                "minLength": 1,
+                "maxLength": 2000,
+                "pattern": "^(?:https?:\\/\\/|\\/)[^\\s{}]*$"
+              },
+              "description": {
+                "type": "string",
+                "description": "What this one is, such as \"Production\".",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            },
+            "required": [
+              "url"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 20
+        }
+      },
+      "additionalProperties": false
+    },
+    "sources": {
+      "type": "array",
+      "description": "The OpenAPI documents of the project, merged into one in this order. One source needs only url or file. With several, each has a name and exactly one says main: true.",
+      "items": {
+        "type": "object",
+        "description": "One OpenAPI document: at a url, or in a file.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "What this document is called. Required with several sources; it also names components that have to be renamed in a merge.",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "url": {
+            "type": "string",
+            "description": "The address of the document. A deploy reads it where it runs and uploads what it finds.",
+            "minLength": 1,
+            "maxLength": 2000,
+            "pattern": "^https?:\\/\\/\\S+$"
+          },
+          "file": {
+            "type": "string",
+            "description": "The path of the document, relative to this file. A deploy uploads it.",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "main": {
+            "type": "boolean",
+            "description": "With several sources: this is the one whose title, description and servers describe the merged document, and whose operations win where two define the same."
+          },
+          "follow": {
+            "type": "boolean",
+            "description": "For a url: the service keeps reading it, so the document stays current between deploys. Left out, it changes only with a deploy."
+          },
+          "pathPrefix": {
+            "type": "string",
+            "description": "Put in front of every path of this document, such as /billing.",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "required": [
+              "url"
+            ]
+          },
+          {
+            "required": [
+              "file"
+            ]
+          }
+        ]
+      },
+      "maxItems": 10
+    },
+    "variants": {
+      "type": "object",
+      "description": "The documents served from the project, by slug: the second part of the public URL.",
+      "propertyNames": {
+        "pattern": "^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "description": "One audience's document.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "What the variant is called in the app. Left out, it is the slug.",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "icon": {
+            "enum": [
+              "file",
+              "book",
+              "code",
+              "globe",
+              "lock",
+              "users",
+              "bot",
+              "terminal",
+              "package",
+              "rocket",
+              "flask",
+              "shield",
+              "star",
+              "zap",
+              "layers",
+              "plug"
+            ],
+            "description": "The icon it has in the app's navigation."
+          },
+          "visibility": {
+            "enum": [
+              "public",
+              "private"
+            ],
+            "description": "Who may read it: public (anyone with the URL) or private (an API key that reads it). Left out, it is the project's, then the workspace's default."
+          },
+          "include": {
+            "type": "object",
+            "description": "What is served. Left out, everything is, and so is what the API adds later. With it, only what it names is served.",
+            "properties": {
+              "tags": {
+                "type": "array",
+                "description": "Tags. A tag is a rule: it also covers operations that get the tag later.",
+                "items": {
+                  "type": "string",
+                  "description": "A tag, exactly as the document spells it.",
+                  "minLength": 1,
+                  "maxLength": 2000
+                },
+                "maxItems": 2000
+              },
+              "operations": {
+                "type": "array",
+                "description": "Operations, each by method and path as the document has them, such as \"GET /v1/books\".",
+                "items": {
+                  "type": "string",
+                  "description": "An operation: its method in capitals, a space, and its path. A webhook is \"POST webhook:<name>\".",
+                  "minLength": 1,
+                  "maxLength": 2000
+                },
+                "maxItems": 10000
+              }
+            },
+            "additionalProperties": false
+          },
+          "exclude": {
+            "type": "object",
+            "description": "What is not served, whatever include says.",
+            "properties": {
+              "tags": {
+                "type": "array",
+                "description": "Tags. A tag is a rule: it also covers operations that get the tag later.",
+                "items": {
+                  "type": "string",
+                  "description": "A tag, exactly as the document spells it.",
+                  "minLength": 1,
+                  "maxLength": 2000
+                },
+                "maxItems": 2000
+              },
+              "operations": {
+                "type": "array",
+                "description": "Operations, each by method and path as the document has them, such as \"GET /v1/books\".",
+                "items": {
+                  "type": "string",
+                  "description": "An operation: its method in capitals, a space, and its path. A webhook is \"POST webhook:<name>\".",
+                  "minLength": 1,
+                  "maxLength": 2000
+                },
+                "maxItems": 10000
+              }
+            },
+            "additionalProperties": false
+          },
+          "overrides": {
+            "type": "object",
+            "description": "Title, description and servers this variant states itself, key by key over the project's.",
+            "properties": {
+              "title": {
+                "type": "string",
+                "description": "The title readers see, instead of the document's.",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "description": {
+                "type": "string",
+                "description": "The description readers see, instead of the document's.",
+                "minLength": 1,
+                "maxLength": 5000
+              },
+              "servers": {
+                "type": "array",
+                "description": "Where the API is reached, instead of the document's whole list. Tools use the first unless someone picks another.",
+                "items": {
+                  "type": "object",
+                  "description": "One place the API is reached.",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "description": "The address, starting with https://, http:// or /.",
+                      "minLength": 1,
+                      "maxLength": 2000,
+                      "pattern": "^(?:https?:\\/\\/|\\/)[^\\s{}]*$"
+                    },
+                    "description": {
+                      "type": "string",
+                      "description": "What this one is, such as \"Production\".",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  },
+                  "required": [
+                    "url"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 20
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "maxProperties": 100
+    }
+  },
+  "required": [
+    "version",
+    "project",
+    "sources"
+  ],
+  "additionalProperties": false
+}

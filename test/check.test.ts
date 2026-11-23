@@ -22,11 +22,7 @@ const check = (cookie: string, id: string) =>
 describe("a selection and a document that have drifted apart", () => {
   it("names what the document no longer has, and keeps serving the rest", async () => {
     const { cookie, project } = await publish({
-      selection: {
-        mode: "include",
-        operations: ["GET /pets", "POST /pets"],
-        tags: ["retired"],
-      },
+      selection: { include: { operations: ["GET /pets", "POST /pets"], tags: ["retired"] } },
     });
 
     // The source loses POST /pets and gains DELETE /pets.

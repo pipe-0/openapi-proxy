@@ -327,7 +327,7 @@ interface Subject {
   half: Selection;
 }
 
-const everything: Selection = { mode: "exclude", operations: [], tags: [] };
+const everything: Selection = {};
 const written = (doc: OpenAPIDocument, format: "json" | "yaml") => {
   serialize(doc, format);
 };
@@ -414,7 +414,7 @@ function subjectOf(shape: Shape): Subject | undefined {
       other: build(shape, 1),
       json: fits(quietly(() => JSON.stringify(doc))),
       yaml: fits(quietly(() => serialize(doc, "yaml"))),
-      half: { mode: "include", operations: keys.filter((_, n) => n % 2 === 0), tags: [] },
+      half: { include: { operations: keys.filter((_, n) => n % 2 === 0) } },
     };
   } catch (error) {
     if (error instanceof TooBig) return undefined;

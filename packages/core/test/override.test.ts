@@ -7,7 +7,7 @@ import {
   type Selection,
 } from "../src/index.js";
 
-const everything: Selection = { mode: "exclude", operations: [], tags: [] };
+const everything: Selection = {};
 const doc: OpenAPIDocument = {
   openapi: "3.1.0",
   info: { title: "Internal API", version: "4.2.0", description: "For us." },

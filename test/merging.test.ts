@@ -67,7 +67,7 @@ async function variant(cookie: string, projectId: string, body: object = {}) {
       {
         projectId,
         name: "Everything",
-        selection: { mode: "exclude", operations: [], tags: [] },
+        selection: {},
         ...body,
       },
       cookie,
@@ -143,7 +143,7 @@ describe("merging several documents into one project", () => {
     // A variant of only the second service carries only what that needs.
     const billing = await variant(cookie, p.id, {
       name: "Billing",
-      selection: { mode: "include", operations: [], tags: ["billing"] },
+      selection: { include: { tags: ["billing"] } },
     });
     const only = await served(billing.path);
     expect(Object.keys(only.paths)).toEqual(["/invoices"]);
@@ -213,7 +213,7 @@ describe("merging several documents into one project", () => {
   it("takes a document out again; what a variant selected from it comes back if it does", async () => {
     const { cookie, project: p } = await merged();
     const picked = await variant(cookie, p.id, {
-      selection: { mode: "include", operations: ["GET /invoices", "GET /pets"], tags: [] },
+      selection: { include: { operations: ["GET /invoices", "GET /pets"] } },
     });
     expect(Object.keys((await served(picked.path)).paths)).toEqual(["/pets", "/invoices"]);
 
@@ -359,7 +359,7 @@ describe("a document built to be expensive", () => {
         {
           projectId: project.id,
           name: "One",
-          selection: { mode: "include", operations: ["GET /kept"], tags: [] },
+          selection: { include: { operations: ["GET /kept"] } },
         },
         cookie,
       ),
@@ -390,10 +390,7 @@ describe("a document built to be expensive", () => {
 
     // The reason belongs to this selection of this document. A selection that
     // can be served is tried, and served.
-    await call(
-      `/api/variants/${variant.id}`,
-      json("PATCH", { selection: { mode: "exclude", operations: [], tags: [] } }, cookie),
-    );
+    await call(`/api/variants/${variant.id}`, json("PATCH", { selection: {} }, cookie));
     const served = await call(`${variant.path}.json`);
     expect(served.status).toBe(200);
     expect(Object.keys(((await served.json()) as { paths: object }).paths)).toHaveLength(13);

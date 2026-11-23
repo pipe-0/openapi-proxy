@@ -68,7 +68,7 @@ describe("an API key", () => {
           json("POST", {
             projectId: project.id,
             name: "Mine now",
-            selection: { mode: "exclude", operations: [], tags: [] },
+            selection: {},
           }),
         )
       ).status,
@@ -524,7 +524,7 @@ describe("a private variant", () => {
       body: JSON.stringify({
         projectId: project.id,
         name: "Third",
-        selection: { mode: "include", operations: [], tags: ["pets"] },
+        selection: { include: { tags: ["pets"] } },
       }),
     });
     expect(await scripted.json()).toMatchObject({ visibility: "private" });

@@ -2,6 +2,7 @@ import {
   type DocumentOverrides,
   isValidSlug,
   readOverrides,
+  readSelection,
   resolveSelection,
   type Selection,
   slugify,
@@ -28,19 +29,8 @@ const SLUG_RULE = "Use 2 to 64 characters: a-z, 0-9 and hyphens.";
 const MAX_VARIANTS_PER_PROJECT = GUARDS.variantsPerProject;
 
 function parseSelection(input: unknown): Selection | undefined {
-  if (typeof input !== "object" || input === null) return undefined;
-  const candidate = input as Record<string, unknown>;
-  if (candidate.mode !== "include" && candidate.mode !== "exclude") return undefined;
-
-  const list = (value: unknown, max: number): string[] | undefined => {
-    if (!Array.isArray(value) || value.length > max) return undefined;
-    if (!value.every((item) => typeof item === "string" && item.length <= 2000)) return undefined;
-    return [...new Set(value as string[])].sort();
-  };
-  const operations = list(candidate.operations, 10_000);
-  const tags = list(candidate.tags, 2_000);
-  if (!operations || !tags) return undefined;
-  return { mode: candidate.mode, operations, tags };
+  const read = readSelection(input);
+  return "selection" in read ? read.selection : undefined;
 }
 
 /** Who may read a variant at its URL. Not given, it is what the workspace starts new variants with. */

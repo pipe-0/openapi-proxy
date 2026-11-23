@@ -18,11 +18,9 @@ const jsonBody = (ref: string) => ({
   "200": { description: "ok", content: { "application/json": { schema: { $ref: ref } } } },
 });
 const include = (operations: string[], tags: string[] = []): Selection => ({
-  mode: "include",
-  operations,
-  tags,
+  include: { operations, tags },
 });
-const everything: Selection = { mode: "exclude", operations: [], tags: [] };
+const everything: Selection = {};
 
 function keys(doc: OpenAPIDocument): string[] {
   return indexOperations(doc).entries.map((entry) => entry.key);
@@ -41,7 +39,7 @@ describe("webhooks follow the selection", () => {
     expect(entry).toMatchObject({ key: "POST webhook:newEvent", method: "POST", path: "newEvent" });
   });
 
-  it("include mode drops webhooks that were not selected, and their schemas", () => {
+  it("an include drops webhooks that were not selected, and their schemas", () => {
     const { doc } = applyVariant(hooks, include(["POST /subscriptions"]));
     expect(doc.webhooks).toEqual({});
     expect(doc.components).toBeUndefined();
@@ -55,13 +53,9 @@ describe("webhooks follow the selection", () => {
     expect(stats.keptOperations).toBe(1);
   });
 
-  it("exclude mode keeps webhooks unless they are excluded", () => {
+  it("without an include, webhooks are kept unless they are excluded", () => {
     expect(applyVariant(hooks, everything).doc.webhooks).toEqual(hooks.webhooks);
-    const { doc } = applyVariant(hooks, {
-      mode: "exclude",
-      operations: ["POST webhook:newEvent"],
-      tags: [],
-    });
+    const { doc } = applyVariant(hooks, { exclude: { operations: ["POST webhook:newEvent"] } });
     expect(doc.webhooks).toEqual({});
     expect(schemaNames(doc)).toEqual(["Event"]);
   });
@@ -367,7 +361,7 @@ describe("polymorphism without a list of members", () => {
   const schemasOf = (operations: string[]) =>
     Object.keys(
       (
-        applyVariant(doc, { mode: "include", operations, tags: [] }).doc.components as {
+        applyVariant(doc, { include: { operations } }).doc.components as {
           schemas?: object;
         }
       )?.schemas ?? {},
