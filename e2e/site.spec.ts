@@ -1,12 +1,30 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
-import { fixtureUrl, follow, shot, signIn } from "./helpers.ts";
+import { fixtureUrl, follow, root, shot, signIn } from "./helpers.ts";
 import { ADMIN_PASSWORD, PREVIEW } from "./server.ts";
 
 /**
  * The public site: the landing page and the blog, which the server renders.
  * The suite switches it on (PUBLIC_SITE); a self-hosted instance leaves it off.
  */
-const POST = "/blog/stale-while-revalidate-is-the-wrong-default";
+
+/**
+ * A post that is being written (`draft: true`), if there is one at the
+ * moment: where it is, and what it is called. What holds for drafts is
+ * checked on it. Without one, the journeys check that nothing claims to be a draft.
+ */
+const DRAFT = (() => {
+  const posts = join(root, "src/web/content/blog");
+  for (const file of readdirSync(posts).filter((name) => name.endsWith(".mdx"))) {
+    const text = readFileSync(join(posts, file), "utf8");
+    const front = /^---\n([\s\S]*?)\n---/.exec(text)?.[1] ?? "";
+    if (!/^draft: true$/m.test(front)) continue;
+    const title = /^title: "?(.*?)"?$/m.exec(front)?.[1] ?? "";
+    return { path: `/blog/${file.replace(/\.mdx$/, "")}`, title };
+  }
+  return undefined;
+})();
 
 /** Collect everything the page complains about: script errors and blocked resources. */
 function problemsOf(page: Page): string[] {
@@ -161,38 +179,35 @@ test("the blog lists published posts, and drafts only while developing", async (
   );
   expect(text).not.toMatch(/^---$/m);
   // A draft has no Markdown to hand out, in any build.
-  expect((await request.get(`${POST}.md`)).status()).toBe(404);
-  // llms.txt lists the docs and the posts, each post as its Markdown.
+  if (DRAFT) expect((await request.get(`${DRAFT.path}.md`)).status()).toBe(404);
+  // llms.txt lists the docs and the posts, each as its Markdown.
   const llms = await request.get("/llms.txt");
   expect(llms.status()).toBe(200);
   const index = await llms.text();
   expect(index).toMatch(/^# openapi-proxy\n/);
   expect(index).toContain("## Documentation");
-  expect(index).toMatch(/\/docs\/selecting\): /);
+  expect(index).toMatch(/\/docs\/selecting\.md\): /);
   expect(index).toMatch(/\/blog\/filter-openapi-by-tag\.md\): /);
-  expect(index).not.toContain("stale-while-revalidate");
+  if (DRAFT) expect(index).not.toContain(DRAFT.path);
   await page.goto("/blog");
 
-  if (PREVIEW) {
+  // A production build knows no drafts. Neither does a development server while none is being written.
+  if (PREVIEW || !DRAFT) {
     await expect(page.getByText("Draft, not published")).toHaveCount(0);
-    expect((await request.get(POST)).status()).toBe(404);
+    if (DRAFT) expect((await request.get(DRAFT.path)).status()).toBe(404);
+    expect(problems).toEqual([]);
     return;
   }
 
-  await expect(page.getByText("Draft, not published")).toBeVisible();
-  await follow(
-    page,
-    page.getByRole("link", { name: /stale-while-revalidate is the wrong default/ }),
-    POST,
-  );
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("stale-while-revalidate");
-  await expect(page.getByRole("heading", { name: "Who reads an OpenAPI document" })).toBeVisible();
+  await expect(page.getByText("Draft, not published").first()).toBeVisible();
+  await follow(page, page.getByRole("link", { name: DRAFT.title }), DRAFT.path);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText(DRAFT.title);
   expect(problems).toEqual([]);
   await shot(page, "site-03-post", { fullPage: true });
 
   // The post is in the HTML the server sends, and a draft asks not to be indexed.
-  const html = await (await request.get(POST)).text();
-  expect(html).toContain("Who reads an OpenAPI document");
+  const html = await (await request.get(DRAFT.path)).text();
+  expect(html).toContain(DRAFT.title);
   expect(html).toContain('content="noindex"');
 });
 
@@ -229,7 +244,7 @@ test("the site tells search engines and feed readers what there is", async ({ re
   expect(urls).toContain(`${published}</loc>`);
   expect(urls).toContain("/pricing</loc>");
   expect(urls).toContain("/docs/merging</loc>");
-  expect(urls).not.toContain(POST);
+  if (DRAFT) expect(urls).not.toContain(DRAFT.path);
 
   const robots = await (await request.get("/robots.txt")).text();
   expect(robots).toMatch(/^Sitemap: http:\/\/[^\s]+\/sitemap\.xml$/m);
@@ -237,7 +252,7 @@ test("the site tells search engines and feed readers what there is", async ({ re
 
   const feed = await (await request.get("/blog/rss.xml")).text();
   expect(feed).toContain("<title>How to merge several OpenAPI documents into one</title>");
-  expect(feed).not.toContain(POST);
+  if (DRAFT) expect(feed).not.toContain(DRAFT.path);
 
   // A post is an article with a cover of its own as its social card.
   const html = await (await request.get(published)).text();
@@ -246,23 +261,49 @@ test("the site tells search engines and feed readers what there is", async ({ re
   expect((await request.get("/site/blog/merge-multiple-openapi-documents.jpg")).status()).toBe(200);
 });
 
-test("the docs explain checks, and the Source page points to the right page", async ({ page }) => {
+test("the docs are ordered by what someone wants to do, and the app points into them", async ({
+  page,
+}) => {
   const problems = problemsOf(page);
-  const response = await page.goto("/docs/etag");
+  const response = await page.goto("/docs");
   expect(response?.status()).toBe(200);
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Sending an ETag");
-  await expect(page.getByText("If-None-Match").first()).toBeVisible();
-  // The pages are listed beside it, with search above them.
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Start here");
+  // The two ways, in the words the app and the command line tool use for them.
+  await expect(page.getByText(/The service reads it, keeps reading it/)).toBeVisible();
+  await expect(page.getByText(/written in a file next to your code/)).toBeVisible();
+
+  // The pages are listed beside it, guides first, with search above them.
   const sidebar = page.locator("#nd-sidebar");
   await expect(sidebar.getByRole("button", { name: /Search/ })).toBeVisible();
-  await sidebar.getByRole("link", { name: "Keeping in sync" }).click();
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Keeping in sync");
+  const listed = (await sidebar.getByRole("link").allTextContents()).map((text) => text.trim());
+  const pages = [
+    "Start here",
+    "From a URL",
+    "Several documents and audiences",
+    "In your repository",
+    "Configuration file",
+    "CLI",
+    "URLs, formats and versions",
+    "Selecting operations",
+    "Merging rules",
+    "Following a URL",
+    "Private variants and keys",
+    "Self-hosting",
+  ];
+  expect(listed.filter((text) => pages.includes(text))).toEqual(pages);
+  await sidebar.getByRole("link", { name: "In your repository" }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("In your repository");
+  // The workflow on the page is the file in examples/, which CI checks.
+  await expect(page.getByText("npx @pipe0/openapi-proxy deploy").first()).toBeVisible();
+  await expect(page.getByText("name: OpenAPI documents")).toBeVisible();
   await shot(page, "site-04-docs", { fullPage: true });
-  await sidebar.getByRole("link", { name: "Environments and servers" }).click();
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Environments and servers");
+  await sidebar.getByRole("link", { name: "Following a URL" }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Following a URL");
+  await expect(page.getByRole("heading", { name: "Sending an ETag" })).toBeVisible();
+  await expect(page.getByText("If-None-Match").first()).toBeVisible();
   expect(problems).toEqual([]);
 
-  // The fixture API sends no ETag, so the Source page says what that costs and links here.
+  // The fixture API sends no ETag, so the project says what that costs and links to how to send one.
   await signIn(page);
   const projects = (await (await page.request.get("/api/projects")).json()) as Array<{
     definition: { project: string };
@@ -278,8 +319,58 @@ test("the docs explain checks, and the Source page points to the right page", as
   await expect(page.getByText(/Each check downloads the whole document/)).toBeVisible();
   await expect(page.getByRole("link", { name: "How to send one" })).toHaveAttribute(
     "href",
-    "/docs/etag",
+    "/docs/following-a-url#sending-an-etag",
   );
+});
+
+test("every page of the docs is also Markdown, for an agent", async ({ request }) => {
+  const llms = await (await request.get("/llms.txt")).text();
+  // The guide an agent is sent here for comes first, before the rest of the docs.
+  expect(llms.indexOf("## Setting up a repository")).toBeGreaterThan(0);
+  expect(llms.indexOf("## Setting up a repository")).toBeLessThan(llms.indexOf("## Documentation"));
+  expect(llms).toMatch(
+    /Setting up a repository\n\n- \[In your repository\]\(\S+\/docs\/in-your-repository\.md\)/,
+  );
+  expect(llms).toContain("/schema/definition.v1.json");
+
+  // Every page in the sitemap has a twin, and llms.txt links every twin.
+  const sitemap = await (await request.get("/sitemap.xml")).text();
+  const pages = [...sitemap.matchAll(/<loc>[^<]*?(\/docs(?:\/[a-z0-9-]+)?)<\/loc>/g)].map(
+    (match) => match[1] as string,
+  );
+  expect(pages.length).toBeGreaterThanOrEqual(12);
+  for (const path of pages) {
+    const twin = path === "/docs" ? "/docs/index.md" : `${path}.md`;
+    const response = await request.get(twin);
+    expect(response.status(), twin).toBe(200);
+    expect(response.headers()["content-type"], twin).toContain("text/markdown");
+    const text = await response.text();
+    expect(text, twin).toMatch(/^# .+\n\n> .+\n\nSource: http/);
+    // It is Markdown all the way through: no front matter, no tags left from the page.
+    expect(text, twin).not.toMatch(/^---$/m);
+    expect(text, twin).not.toContain("<include");
+    expect(llms, twin).toContain(`${twin})`);
+  }
+
+  // A page that shows an example file has the file in it, written out.
+  const guide = await (await request.get("/docs/in-your-repository.md")).text();
+  expect(guide).toContain("name: OpenAPI documents");
+  expect(guide).toContain("secrets.OPENAPI_PROXY_API_KEY");
+  // Links lead to Markdown too, by whole addresses.
+  expect(guide).toMatch(/\]\(http:\/\/[^)]+\/docs\/configuration\.md\)/);
+  expect(guide).not.toMatch(/\]\(\/docs\//);
+
+  // All of it in one file.
+  const full = await request.get("/llms-full.txt");
+  expect(full.status()).toBe(200);
+  const everything = await full.text();
+  for (const title of ["# Start here", "# In your repository", "# Configuration file", "# CLI"]) {
+    expect(everything).toContain(`${title}\n`);
+  }
+  expect(everything.indexOf("# In your repository")).toBeLessThan(
+    everything.indexOf("# Configuration file"),
+  );
+  expect((await request.get("/docs/nope.md")).status()).toBe(404);
 });
 
 test("about, terms and privacy belong to the public site, and sign-in points to them", async ({

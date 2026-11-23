@@ -6,11 +6,11 @@ date: 2026-11-22
 tldr: "A diff in CI tells you whether a change is safe, at review time. It does not tell you when the deployed document gained an endpoint, which is what the owners of docs, SDKs and partner integrations need to hear. Watch the document at its URL, compare operations instead of text, and say which published documents a change touches."
 faq:
   - q: "How can I get notified when an OpenAPI document changes?"
-    a: "Fetch the deployed document on a schedule, compare it with the previous version operation by operation, and send the difference. openapi-proxy does this for every document it serves and emails the people in the workspace, each choosing per project how much they want to hear."
+    a: "Fetch the deployed document on a schedule, compare it with the previous version operation by operation, and send the difference. openapi-proxy does this for every URL it follows and emails the people in the workspace, each choosing per project how much they want to hear."
   - q: "What is the difference between a diff in CI and watching the deployed document?"
     a: "A tool such as oasdiff compares two files, usually a branch against main, and flags breaking changes in review. Watching the deployed document catches what never appears in a pull request: documents generated at runtime, other teams' services, and additions that are safe but still news."
   - q: "How do I check an OpenAPI document for changes without downloading it every time?"
-    a: "Use a conditional request with the ETag the server sent, which is answered with a 304 and no body when nothing changed, or a small version endpoint that returns a build id."
+    a: "Use a conditional request with the ETag the server sent, or the Last-Modified date. It is answered with a 304 and no body when nothing changed."
 ---
 
 There is good tooling for comparing two OpenAPI documents. `oasdiff` reports every difference between two versions and flags the breaking ones, and teams run it in CI to fail a pull request that removes a field or tightens a parameter. If you have not set it up, it is worth an afternoon.
@@ -39,7 +39,7 @@ The alternative is to watch the document where it lives, at its URL, and compare
 
 **Let people choose how much.** The person who owns the public docs wants to know about anything that touches what is published. The person who owns the API might want every change. Nobody wants both lists in one email.
 
-**Do not make checks expensive.** Fetching a large generated document every few minutes costs the API real work. A conditional request with an `ETag`, or a tiny version endpoint that returns a build id, makes "has anything changed?" nearly free.
+**Do not make checks expensive.** Fetching a large generated document every few minutes costs the API real work. A conditional request with an `ETag` or a `Last-Modified` date makes "has anything changed?" nearly free.
 
 ## How openapi-proxy does it
 
@@ -47,4 +47,4 @@ openapi-proxy already fetches your document to serve its variants, so it compare
 
 Everyone in the workspace chooses, for each project, what they hear about: nothing, new operations plus changes to anything a variant serves, or every change in the source. The email lists the operations and the variants they affect. A new operation is only served where a variant asked for it, for example because it carries a tag the variant includes, and the email says which variants those are. Everything else waits until someone decides.
 
-Projects nobody has requested lately are checked once an hour, so you hear about a change before your next build does. How checks work, and how to make them cheap, is in [Keeping in sync](/docs/keeping-in-sync).
+A URL the service follows is checked every five minutes where your API can answer "nothing new" without sending the document, and once an hour where it cannot, so you hear about a change before your next build does. How checks work, and how to make them cheap, is in [Following a URL](/docs/following-a-url).

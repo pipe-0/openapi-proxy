@@ -18,19 +18,22 @@ To try Google sign-in locally, put a client ID and secret into `.env` and regist
 
 ## Layout
 
-| Path             | What lives there                                                                                                                                                      |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/core`  | The engine: merge, select and convert OpenAPI documents. Pure functions, no I/O, one dependency (`yaml`). MIT. Not published to npm: it is used from this repository. |
-| `src/server`     | Everything that is not a page (Hono): sign-in (better-auth), workspaces, fetching sources, the admin API, public serving, the hourly check, email.                    |
-| `src/web`        | The Worker's entry (`server.ts`) and every page (React on TanStack Start).                                                                                            |
-| `src/web/routes` | The route tree: `_site` is rendered on the server, `_client` in the browser. Files here are thin.                                                                     |
-| `src/web/pages`  | The screens of the app. `src/web/site` is the landing page and blog, `src/web/content` the posts.                                                                     |
-| `src/shared`     | What server and web must agree on: the plans and their limits.                                                                                                        |
-| `migrations`     | D1 schema, generated from `src/server/db/schema.ts` with `pnpm db:generate`.                                                                                          |
-| `test`           | Worker integration tests. They run inside workerd against a real local D1.                                                                                            |
-| `e2e`            | The product journeys in a browser, plus the local fixture server they run against.                                                                                    |
+| Path              | What lives there                                                                                                                                                                                 |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `packages/core`   | The engine: merge, select and convert OpenAPI documents, and the definition format. Pure functions, no I/O, one dependency (`yaml`). MIT. Not published to npm: it is used from this repository. |
+| `packages/cli`    | The command line tool, published to npm as `@pipe0/openapi-proxy`: `init`, `dev`, `validate`, `operations`, `deploy`. `page/` is the page that `dev` serves. MIT.                                |
+| `packages/editor` | The variant editor and the primitives it is drawn with (`src/ui`), shown by the app and by `openapi-proxy dev`. MIT, not published.                                                              |
+| `examples`        | Three definition files that run as they are. The docs show them, and the tests check them.                                                                                                       |
+| `src/server`      | Everything that is not a page (Hono): sign-in (better-auth), workspaces, applying a definition, fetching sources, serving variants, the timer, email.                                            |
+| `src/web`         | The Worker's entry (`server.ts`) and every page (React on TanStack Start).                                                                                                                       |
+| `src/web/routes`  | The route tree: `_site` is rendered on the server, `_client` in the browser. Files here are thin.                                                                                                |
+| `src/web/pages`   | The screens of the app. `src/web/site` is the landing page and blog, `src/web/content` the posts and the docs.                                                                                   |
+| `src/shared`      | What server and web must agree on: the plans and their limits, the kinds of key.                                                                                                                 |
+| `migrations`      | D1 schema, generated from `src/server/db/schema.ts` with `pnpm db:generate`.                                                                                                                     |
+| `test`            | Worker integration tests. They run inside workerd against a real local D1.                                                                                                                       |
+| `e2e`             | The product journeys in a browser, plus the local fixture server they run against.                                                                                                               |
 
-The app imports `@openapi-proxy/core` straight from its TypeScript source, so there is no build step between editing the engine and seeing the result in the app.
+The app and the command line tool import `@openapi-proxy/core` and the editor straight from their TypeScript source, so there is no build step between editing either and seeing the result in the app. The command line tool is built (`pnpm --filter @pipe0/openapi-proxy build`) into one file with nothing to install beside it; the browser journeys build it themselves and run what people will install.
 
 To add a screen to the app, create a file under `src/web/routes/_client/_app/` that points at a component in `src/web/pages/`. To add a public, server-rendered page, create it under `src/web/routes/_site/` and add its path to `isSitePath` in `src/web/server.ts`. `src/web/routeTree.gen.ts` is generated; commit it.
 
@@ -41,6 +44,26 @@ To add a screen to the app, create a file under `src/web/routes/_client/_app/` t
 - **A transform is a pure function** from documents to a document. It never changes its input, and it shares what it does not touch.
 - **A version conversion is a list of steps** in `src/transforms/convert`. To support one more difference between two versions, add a step: a name that says what it does, a few lines, and a row in the table of `test/convert.test.ts`. If something cannot be expressed in the target version, remove it and `report` it.
 - **Schemas are found by where they stand**, through `mapSchemas` in `src/document/schemas.ts`. Do not search a document for keys: a property can be named `nullable`, and an example can contain anything.
+
+## Working on the definition format
+
+The format of an `openapi-proxy.yaml` is described once, in `packages/core/src/definition/format.ts`. The validator, its messages and the JSON Schema that editors use all come from that description. To add a key:
+
+1. Add it to the description, and to the types next to it.
+2. Run `pnpm schema`. It writes `public/schema/definition.v1.json`, which the command line tool copies into its package when it is built. A test fails while the file is stale.
+3. Describe it in `src/web/content/docs/configuration.mdx`. A test fails while the reference misses a key the validator knows.
+4. Store it: a column in `src/server/db/schema.ts`, and both directions in `src/server/definition-rows.ts`, where a test holds the round trip to be lossless.
+
+A key that changes what a variant serves has to be part of `effectiveVariant`, because the hash of its result is what a variant's ETag is made from.
+
+## Working on the command line tool
+
+```sh
+pnpm --filter @pipe0/openapi-proxy build
+node packages/cli/dist/cli.js dev --config examples/several-audiences/openapi-proxy.yaml
+```
+
+Everything it needs is bundled, so its `package.json` has development dependencies only. What it prints is part of the docs: the pages show commands with the output to expect, and the tests compare.
 
 ## Checks
 
@@ -61,16 +84,18 @@ pnpm test:e2e      # needs `pnpm exec playwright install chromium` once
 ### How things are tested
 
 - **Engine guarantees are invariants, not examples.** Self-contained output, preserved key order, untouched input and idempotence are asserted across every fixture and a set of generated selections. Selection editing is checked against a simple model over hundreds of random edits. If you add a capability, add a case that would break without it.
-- **"Valid" is judged by someone else.** Outputs are checked with `@scalar/openapi-parser`, and the MCP endpoint is driven by the official MCP client. Both are dev dependencies that never ship, so validity is not just our own opinion.
+- **"Valid" is judged by someone else.** Outputs are checked with `@scalar/openapi-parser`, a dev dependency that never ships, so validity is not just our own opinion.
 - **Worker tests exercise real behaviour.** They call the Worker's `fetch` handler, wait for everything it scheduled with `waitUntil`, and stub only the outside world: the source servers, Google's token endpoint and the email provider. Sign-in runs through better-auth for real. See `test/harness.ts`.
-- **Promises are tests.** "A reader never gets a copy older than the interval", "a change is emailed once, whoever notices it", "someone removed from a workspace loses it with their next request": each is a test with that sentence as its name.
+- **Promises are tests.** "No request for a variant makes the service fetch anything", "a change is emailed once, whoever notices it", "someone removed from a workspace loses it with their next request": each is a test with that sentence as its name.
+- **Localhost and the service serve the same bytes.** A browser journey deploys an example with the built command line tool, then fetches every variant in every format and version from `openapi-proxy dev` and from the app, and compares.
+- **The package is tested as it is installed.** `pnpm --filter @pipe0/openapi-proxy test:packed` packs it, installs the tarball into an empty folder outside the repository, and runs `init`, `validate` and `dev` there.
 - **The end-to-end suite is hermetic.** It starts a fixture server that plays "your backend", a fresh local database and its own secrets, so it needs no network, ignores your `.env`, and gives the same result every time.
 
 ## Working on the interface
 
 Read [docs/design.md](docs/design.md) first; it is short. The rules that get broken most easily: one solid button per screen, status as a word with nothing in front, no raw colors in components (use the tokens), monospace only for paths and documents, and never all caps.
 
-Primitives in `src/web/components/ui` come from shadcn (`pnpm dlx shadcn@latest add <name>`, then `pnpm lint:fix`). Everything else in `src/web/components` is ours.
+Primitives come from shadcn (`pnpm dlx shadcn@latest add <name>`, then `pnpm lint:fix`). The ones the editor is drawn with live in `packages/editor/src/ui`, the rest in `src/web/components/ui`. Everything else in `src/web/components` and `packages/editor/src/components` is ours. A component belongs in the editor package when `openapi-proxy dev` shows it too; it then takes what differs between the two hosts as props, and knows neither the router nor the API.
 
 Look at what you changed, in both color schemes:
 
@@ -106,7 +131,7 @@ If a deploy goes wrong after its migration ran, D1 keeps every minute of the las
 
 ## Changing the engine's output
 
-If a change alters the bytes `applyVariant` or `serialize` produce for the same input, bump `TRANSFORM_VERSION` in `packages/core/src/types.ts`. It is part of every served ETag, so deployments drop their stored output and re-render after upgrading.
+If a change alters the bytes `buildVariant` or `serialize` produce for the same input, bump `TRANSFORM_VERSION` in `packages/core/src/types.ts`. It is part of every served ETag, so deployments drop their stored output and re-render after upgrading.
 
 ## Style
 

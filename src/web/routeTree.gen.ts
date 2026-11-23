@@ -13,6 +13,7 @@ import { Route as ClientRouteImport } from './routes/_client'
 import { Route as SiteRouteImport } from './routes/_site'
 import { Route as DocsRouteImport } from './routes/docs'
 import { Route as DocsSearchDotjsonRouteImport } from './routes/docs-search[.]json'
+import { Route as LlmsFullDottxtRouteImport } from './routes/llms-full[.]txt'
 import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
@@ -27,6 +28,7 @@ import { Route as BlogRssDotxmlRouteImport } from './routes/blog.rss[.]xml'
 import { Route as BlogChar123slugChar125DotmdRouteImport } from './routes/blog.{$slug}[.]md'
 import { Route as DocsIndexRouteImport } from './routes/docs/index'
 import { Route as DocsSlugRouteImport } from './routes/docs/$slug'
+import { Route as DocsChar123slugChar125DotmdRouteImport } from './routes/docs.{$slug}[.]md'
 import { Route as ClientAppAppRouteImport } from './routes/_client/_app/app'
 import { Route as ClientAppConnectRouteImport } from './routes/_client/_app/connect'
 import { Route as ClientAppWorkspaceRouteImport } from './routes/_client/_app/workspace'
@@ -54,6 +56,11 @@ const DocsRoute = DocsRouteImport.update({
 const DocsSearchDotjsonRoute = DocsSearchDotjsonRouteImport.update({
   id: '/docs-search.json',
   path: '/docs-search.json',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LlmsFullDottxtRoute = LlmsFullDottxtRouteImport.update({
+  id: '/llms-full.txt',
+  path: '/llms-full.txt',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LlmsDottxtRoute = LlmsDottxtRouteImport.update({
@@ -126,6 +133,12 @@ const DocsSlugRoute = DocsSlugRouteImport.update({
   path: '/$slug',
   getParentRoute: () => DocsRoute,
 } as any)
+const DocsChar123slugChar125DotmdRoute =
+  DocsChar123slugChar125DotmdRouteImport.update({
+    id: '/{$slug}.md',
+    path: '/{$slug}.md',
+    getParentRoute: () => DocsRoute,
+  } as any)
 const ClientAppAppRoute = ClientAppAppRouteImport.update({
   id: '/app',
   path: '/app',
@@ -184,6 +197,7 @@ export interface FileRoutesByFullPath {
   '/': typeof SiteIndexRoute
   '/docs': typeof DocsRouteWithChildren
   '/docs-search.json': typeof DocsSearchDotjsonRoute
+  '/llms-full.txt': typeof LlmsFullDottxtRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -195,6 +209,7 @@ export interface FileRoutesByFullPath {
   '/blog/rss.xml': typeof BlogRssDotxmlRoute
   '/blog/{$slug}.md': typeof BlogChar123slugChar125DotmdRoute
   '/docs/$slug': typeof DocsSlugRoute
+  '/docs/{$slug}.md': typeof DocsChar123slugChar125DotmdRoute
   '/docs/': typeof DocsIndexRoute
   '/app': typeof ClientAppAppRoute
   '/connect': typeof ClientAppConnectRoute
@@ -210,6 +225,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof SiteIndexRoute
   '/docs-search.json': typeof DocsSearchDotjsonRoute
+  '/llms-full.txt': typeof LlmsFullDottxtRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -221,6 +237,7 @@ export interface FileRoutesByTo {
   '/blog/rss.xml': typeof BlogRssDotxmlRoute
   '/blog/{$slug}.md': typeof BlogChar123slugChar125DotmdRoute
   '/docs/$slug': typeof DocsSlugRoute
+  '/docs/{$slug}.md': typeof DocsChar123slugChar125DotmdRoute
   '/docs': typeof DocsIndexRoute
   '/app': typeof ClientAppAppRoute
   '/connect': typeof ClientAppConnectRoute
@@ -239,6 +256,7 @@ export interface FileRoutesById {
   '/_site': typeof SiteRouteWithChildren
   '/docs': typeof DocsRouteWithChildren
   '/docs-search.json': typeof DocsSearchDotjsonRoute
+  '/llms-full.txt': typeof LlmsFullDottxtRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -251,6 +269,7 @@ export interface FileRoutesById {
   '/blog/rss.xml': typeof BlogRssDotxmlRoute
   '/blog/{$slug}.md': typeof BlogChar123slugChar125DotmdRoute
   '/docs/$slug': typeof DocsSlugRoute
+  '/docs/{$slug}.md': typeof DocsChar123slugChar125DotmdRoute
   '/_site/': typeof SiteIndexRoute
   '/docs/': typeof DocsIndexRoute
   '/_client/_app/app': typeof ClientAppAppRoute
@@ -270,6 +289,7 @@ export interface FileRouteTypes {
     | '/'
     | '/docs'
     | '/docs-search.json'
+    | '/llms-full.txt'
     | '/llms.txt'
     | '/robots.txt'
     | '/sitemap.xml'
@@ -281,6 +301,7 @@ export interface FileRouteTypes {
     | '/blog/rss.xml'
     | '/blog/{$slug}.md'
     | '/docs/$slug'
+    | '/docs/{$slug}.md'
     | '/docs/'
     | '/app'
     | '/connect'
@@ -296,6 +317,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/docs-search.json'
+    | '/llms-full.txt'
     | '/llms.txt'
     | '/robots.txt'
     | '/sitemap.xml'
@@ -307,6 +329,7 @@ export interface FileRouteTypes {
     | '/blog/rss.xml'
     | '/blog/{$slug}.md'
     | '/docs/$slug'
+    | '/docs/{$slug}.md'
     | '/docs'
     | '/app'
     | '/connect'
@@ -324,6 +347,7 @@ export interface FileRouteTypes {
     | '/_site'
     | '/docs'
     | '/docs-search.json'
+    | '/llms-full.txt'
     | '/llms.txt'
     | '/robots.txt'
     | '/sitemap.xml'
@@ -336,6 +360,7 @@ export interface FileRouteTypes {
     | '/blog/rss.xml'
     | '/blog/{$slug}.md'
     | '/docs/$slug'
+    | '/docs/{$slug}.md'
     | '/_site/'
     | '/docs/'
     | '/_client/_app/app'
@@ -355,6 +380,7 @@ export interface RootRouteChildren {
   SiteRoute: typeof SiteRouteWithChildren
   DocsRoute: typeof DocsRouteWithChildren
   DocsSearchDotjsonRoute: typeof DocsSearchDotjsonRoute
+  LlmsFullDottxtRoute: typeof LlmsFullDottxtRoute
   LlmsDottxtRoute: typeof LlmsDottxtRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
@@ -390,6 +416,13 @@ declare module '@tanstack/react-router' {
       path: '/docs-search.json'
       fullPath: '/docs-search.json'
       preLoaderRoute: typeof DocsSearchDotjsonRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/llms-full.txt': {
+      id: '/llms-full.txt'
+      path: '/llms-full.txt'
+      fullPath: '/llms-full.txt'
+      preLoaderRoute: typeof LlmsFullDottxtRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/llms.txt': {
@@ -488,6 +521,13 @@ declare module '@tanstack/react-router' {
       path: '/$slug'
       fullPath: '/docs/$slug'
       preLoaderRoute: typeof DocsSlugRouteImport
+      parentRoute: typeof DocsRoute
+    }
+    '/docs/{$slug}.md': {
+      id: '/docs/{$slug}.md'
+      path: '/{$slug}.md'
+      fullPath: '/docs/{$slug}.md'
+      preLoaderRoute: typeof DocsChar123slugChar125DotmdRouteImport
       parentRoute: typeof DocsRoute
     }
     '/_client/_app/app': {
@@ -626,11 +666,13 @@ const SiteRouteWithChildren = SiteRoute._addFileChildren(SiteRouteChildren)
 
 interface DocsRouteChildren {
   DocsSlugRoute: typeof DocsSlugRoute
+  DocsChar123slugChar125DotmdRoute: typeof DocsChar123slugChar125DotmdRoute
   DocsIndexRoute: typeof DocsIndexRoute
 }
 
 const DocsRouteChildren: DocsRouteChildren = {
   DocsSlugRoute: DocsSlugRoute,
+  DocsChar123slugChar125DotmdRoute: DocsChar123slugChar125DotmdRoute,
   DocsIndexRoute: DocsIndexRoute,
 }
 
@@ -641,6 +683,7 @@ const rootRouteChildren: RootRouteChildren = {
   SiteRoute: SiteRouteWithChildren,
   DocsRoute: DocsRouteWithChildren,
   DocsSearchDotjsonRoute: DocsSearchDotjsonRoute,
+  LlmsFullDottxtRoute: LlmsFullDottxtRoute,
   LlmsDottxtRoute: LlmsDottxtRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,

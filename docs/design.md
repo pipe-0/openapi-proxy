@@ -1,6 +1,6 @@
 # Design system
 
-How the interface is built, and the rules it follows. The system lives in three places: tokens and materials in [`src/web/styles.css`](../src/web/styles.css), primitives in [`src/web/components/ui`](../src/web/components/ui), and the app's own vocabulary in [`src/web/components`](../src/web/components).
+How the interface is built, and the rules it follows. The system lives in three places: tokens and materials in [`packages/editor/src/theme.css`](../packages/editor/src/theme.css), primitives in [`packages/editor/src/ui`](../packages/editor/src/ui) and [`src/web/components/ui`](../src/web/components/ui), and the product's own vocabulary in [`packages/editor/src/components`](../packages/editor/src/components) and [`src/web/components`](../src/web/components). What is in the editor package is what the page of `openapi-proxy dev` shows too, so both look the same from one source; [`src/web/styles.css`](../src/web/styles.css) imports the theme and adds what only the app and the site need.
 
 ## Principles
 
@@ -53,7 +53,7 @@ Radius is 0.6rem with a short scale around it. Controls are 32px tall (28px smal
 
 ## Components
 
-Primitives come from [shadcn/ui](https://ui.shadcn.com) in its Base UI flavor ("base-nova") and are restyled with the tokens and materials above. Add one with `pnpm dlx shadcn@latest add <name>`, then run `pnpm lint:fix`.
+Primitives come from [shadcn/ui](https://ui.shadcn.com) in its Base UI flavor ("base-nova") and are restyled with the tokens and materials above. Add one with `pnpm dlx shadcn@latest add <name>`, then run `pnpm lint:fix`. It lands in `src/web/components/ui`; move it to `packages/editor/src/ui` if the editor needs it.
 
 The app's own components, and when to use them:
 
@@ -61,7 +61,7 @@ The app's own components, and when to use them:
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Button`           | `default` once per screen. `outline` for everything else. `ghost` inside dense rows.                                                                    |
 | `Segmented`        | Every choice among a few visible options: filters, formats, switches. A quiet track with the selection lifted off it. Never tabs with a different look. |
-| `StatusChip`       | A status or a fact as a word. `ok`, `warn`, `bad` for judgment, `accent` for "new", `neutral` for facts. No dot or icon in front.                       |
+| `StatusChip`       | A status or a fact as a word. `ok`, `warn`, `bad` for judgment, `neutral` for facts. No dot or icon in front.                                           |
 | `MethodChip`       | An HTTP method as a colored word, at a fixed width so paths line up.                                                                                    |
 | `OperationPath`    | An operation's path: UI text, faint slashes, each parameter as a chip with its name.                                                                    |
 | `Notice`           | Something to read in the flow of a page: an error, a change in the source.                                                                              |

@@ -1,0 +1,177 @@
+---
+title: CLI
+description: The commands of the openapi-proxy command line tool, their options, and what its local server does on your machine.
+---
+
+The command line tool is the npm package `@pipe0/openapi-proxy`. It needs Node 20 or later and has no dependencies to install.
+
+```sh
+npx @pipe0/openapi-proxy <command>
+```
+
+Installed in a project (`npm install --save-dev @pipe0/openapi-proxy`), the command is `openapi-proxy` in the scripts of your `package.json`, and `npx openapi-proxy` in a shell. This page writes `openapi-proxy` for short.
+
+| Command | What it does | Needs a key |
+| --- | --- | --- |
+| [`init`](#init) | Writes a first `openapi-proxy.yaml` for a document | No |
+| [`dev`](#dev) | Serves the variants on localhost, with a page to edit the file | No |
+| [`validate`](#validate) | Checks the file, and its names against the documents | No |
+| [`operations`](#operations) | Lists the operations and tags of the documents | No |
+| [`deploy`](#deploy) | Sends the file and its documents to the service | Yes |
+
+Every command reads `openapi-proxy.yaml` in the folder it is run in. `--config <file>` names another file. `--help` after a command shows its options, and `openapi-proxy --version` prints the version of the tool.
+
+Results are printed to standard output and everything else to standard error, so a result can be piped. A command exits with 0 when it did what it was asked, and with 1 otherwise.
+
+## init
+
+```sh
+openapi-proxy init <url or file>
+```
+
+```
+Wrote openapi-proxy.yaml for 8 operations.
+
+Next:
+  npx @pipe0/openapi-proxy dev          serve it on localhost and pick what it serves
+  npx @pipe0/openapi-proxy operations   list the operations and tags to pick from
+  npx @pipe0/openapi-proxy deploy       publish it
+```
+
+Reads the OpenAPI document at an address or in a file and writes a definition for it: the document as the one source, the project's slug from the document's title, and a variant `public` that serves nothing yet. The tags of the document are left in the file as a comment, to choose from.
+
+The place you name is the place a deploy reads the document from. For an address on this machine, such as a dev server's, `init` says that a pipeline cannot read it, and how to keep reading it while you work: with `--source`.
+
+| Option | |
+| --- | --- |
+| `--config <file>` | Where to write it. Default: `openapi-proxy.yaml`. |
+| `--force` | Write over a file that exists. |
+
+## dev
+
+```sh
+openapi-proxy dev
+```
+
+Serves the variants of the file on this machine, at the paths the service has, and a page to edit the file with. It runs until it is stopped.
+
+```
+openapi-proxy is serving openapi-proxy.yaml
+
+  http://localhost:7745/v/bookshop/public.json
+
+  Edit the file in your browser: http://localhost:7745
+
+Also as .yaml. A 3.0 or 3.1 document is served as either, at /3.0.json and /3.1.json.
+The file and its sources are read on every request. Stop with Ctrl+C.
+```
+
+```
+GET /v/<project>/<variant>              JSON, or YAML if the Accept header asks for it
+GET /v/<project>/<variant>.json
+GET /v/<project>/<variant>.yaml
+GET /v/<project>/<variant>/3.0.json     in one OpenAPI version
+GET /                                   the editor
+```
+
+| Option | |
+| --- | --- |
+| `--source [name=]<location>` | Read a source from another address or file, for this run. With several sources, name the one meant. |
+| `--port <number>` | The port. Default: 7745. |
+| `--host <address>` | The address to listen on. Default: `127.0.0.1`. |
+| `--allowed-host <host>` | A host, besides localhost, that requests may be addressed to. Repeat it for several. `.example.com` allows every host under it. |
+| `--no-editor` | Serve the variants only, and nothing that writes. |
+
+What it serves is what the service would serve for the same file and documents, byte for byte. Every variant can be read, private ones too: the machine is yours.
+
+### What it does on your machine
+
+- It reads the definition file and its sources on every request, and keeps nothing between requests. A source that cannot be read is a `502` that names it, never an older copy.
+- It writes one file: the definition file, when you save in the editor. A save changes the file where the definition changed and nowhere else. If the file changed on disk since the page read it, the save is refused. The page says so and keeps what you changed on screen until you tell it to read the file again.
+- It listens on `127.0.0.1`, so it is reached from this machine only.
+- It answers only requests addressed to this machine by name (`localhost`, `127.0.0.1`), or to a host given with `--allowed-host`. A page on another website cannot read your documents through a domain that points at your machine.
+- A save is taken from the page it serves and from nowhere else.
+- It sends nothing anywhere. There is no telemetry.
+
+### Tunnels, containers and remote machines
+
+To reach it from somewhere else, say so:
+
+```sh
+openapi-proxy dev --host 0.0.0.0 --allowed-host dev.example.com
+```
+
+`--host 0.0.0.0` listens on every address of the machine, which is what a container needs. `--allowed-host` names the host a tunnel or a proxy forwards. The tool then prints a warning: whoever reaches the server can read every variant and change the file. `--no-editor` leaves out everything that writes.
+
+## validate
+
+```sh
+openapi-proxy validate
+```
+
+```
+ok openapi-proxy.yaml is a valid definition.
+  public: serves 5 of 8 operations
+```
+
+Checks the file against the format, and the tags and operations it names against the documents.
+
+- What is wrong with the file is an error, printed as `file:line  key message`, and the exit code is 1.
+- A name the documents do not have is a warning, and the exit code is 0. The API may not have it yet.
+- If a source cannot be read, the file is still checked, and a warning says that its names were not.
+
+`--source [name=]<location>` reads a source from another place, as for `dev`.
+
+## operations
+
+```sh
+openapi-proxy operations --variant public
+```
+
+```
+served  GET /books           Books          List books
+served  POST /books          Books          Add a book
+hidden  GET /orders/export   Orders, Admin  Export every order as CSV
+...
+
+8 operations, 5 served by public.
+Tags: Books (3), Orders (3), Admin (3)
+```
+
+Lists every operation of the project's documents with its tags and summary (three of the eight are shown above), and the tags with how many operations each has. These are the names `include` and `exclude` take.
+
+| Option | |
+| --- | --- |
+| `--tag <tag>` | Only operations with this tag. |
+| `--variant <slug>` | Say for each operation whether this variant serves it. |
+| `--json` | As JSON, for a program. |
+| `--source [name=]<location>` | Read a source from another place, as for `dev`. |
+
+## deploy
+
+```sh
+OPENAPI_PROXY_API_KEY=oap_... openapi-proxy deploy
+```
+
+```
+Created bookshop on https://openapi-proxy.app
+
+Sources
+  main  uploaded  6 kB  8 operations  read from /repo/openapi.json
+
+Variants
+  public  created  5 of 8 operations  public (set on the variant)  https://openapi-proxy.app/v/bookshop/public
+```
+
+Reads the sources the file names, here, and sends them with the file to the service. The project with the file's slug becomes what the file says: it is created if it is not there, variants the file does not list are deleted, and from then on it is changed by deploying, not in the app.
+
+| Option | |
+| --- | --- |
+| `--dry-run` | Say what would change, and change nothing. |
+
+- The key is read from the environment variable `OPENAPI_PROXY_API_KEY`. It is a deploy API key, which the owner of a workspace creates in the app. See [Private variants and keys](/docs/private-variants#deploy-api-keys).
+- It deploys to `https://openapi-proxy.app`, or to the `instance` the file names. A key is not sent over plain HTTP, except to this machine.
+- A source that cannot be read stops the deploy, unless it says `follow: true`: then the service reads it itself.
+- On GitHub Actions and GitLab CI it sends the commit, the branch or tag, the repository and a link to the run. The app shows them on the project.
+
+It prints each source with where it was read from and whether the service reads it again, each variant with its URL and who may read it, and the operations that the new documents added, removed or changed.

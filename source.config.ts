@@ -58,9 +58,10 @@ export const blog = defineCollections({
 });
 
 /**
- * The documentation: how to run, connect and tune the proxy. One MDX file per
- * page in src/web/content/docs, named after its slug; `meta.json` there sets
- * the order and the groups of the navigation. Rendered with Fumadocs UI.
+ * The documentation. One MDX file per page in src/web/content/docs, named
+ * after its slug; `meta.json` there sets the order and the groups of the
+ * navigation. Rendered with Fumadocs UI. Pages are plain Markdown, plus
+ * `<include>` for the files in examples/, which are the same ones CI checks.
  */
 export const docs = defineDocs({
   dir: "src/web/content/docs",

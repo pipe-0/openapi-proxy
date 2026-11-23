@@ -347,8 +347,8 @@ export function Problem() {
       <section className="mx-auto mt-28 max-w-5xl px-6 sm:mt-40">
         <h2 className={h2}>Ship the endpoint now. Publish it when it is ready.</h2>
         <p className={lead}>
-          A new operation stays out of a variant until you include it. Publishing it is a click, not
-          a pull request and a deploy.
+          A new operation stays out of a variant until you include it. Publishing it is a click in
+          the app, or a line in a file that is reviewed like the rest of your code.
         </p>
         <PublishDemo />
       </section>

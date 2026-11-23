@@ -1,0 +1,160 @@
+---
+title: Configuration file
+description: Every key of openapi-proxy.yaml, the definition of a project.
+---
+
+`openapi-proxy.yaml` is the definition of one project: the documents it is made of and the variants served from them. The command line tool reads it from the folder it is run in, or from `--config <file>`.
+
+A JSON Schema of the format is at [`/schema/definition.v1.json`](/schema/definition.v1.json). `init` puts a comment at the top of the file that makes editors check it and complete its keys:
+
+```yaml
+# yaml-language-server: $schema=https://openapi-proxy.app/schema/definition.v1.json
+```
+
+A key that is not described here is an error. So is a file without `version`, `project` or `sources`.
+
+## An example with every key
+
+```yaml
+version: 1
+project: bookshop
+name: Bookshop
+instance: https://proxy.example.com
+visibility: private
+overrides:
+  title: Bookshop API
+  description: Everything the bookshop does.
+  servers:
+    - url: https://api.bookshop.example
+      description: Production
+
+sources:
+  - name: core
+    url: https://api.bookshop.example/openapi.json
+    main: true
+    follow: true
+  - name: billing
+    file: ./billing/openapi.yaml
+    pathPrefix: /billing
+
+variants:
+  public:
+    name: Public docs
+    icon: globe
+    visibility: public
+    include:
+      tags: [Books, Orders]
+      operations:
+        - GET /billing/invoices
+    exclude:
+      tags: [Admin]
+      operations:
+        - GET /orders/export
+    overrides:
+      title: Bookshop, the public API
+      description: What customers can do.
+      servers:
+        - url: https://sandbox.bookshop.example
+          description: Sandbox
+```
+
+## The project
+
+| Key | | What it says |
+| --- | --- | --- |
+| `version` | required | The version of this format. Always `1`. |
+| `project` | required | The project's slug: the first part of every URL, `/v/<project>/<variant>`. 2 to 64 characters of `a-z`, `0-9` and hyphens. It is the project's identity: a deploy creates the project with this slug, or updates it. A slug belongs to one workspace. |
+| `name` | | What the project is called in the app and in emails. Left out, it goes by its slug. |
+| `instance` | | The address of the instance the file is deployed to, for a self-hosted one. Left out, it is `https://openapi-proxy.app`. It has to start with `https://`, unless it is on this machine. |
+| `visibility` | | `public` or `private`: who may read this project's variants unless a variant says otherwise. Left out, the workspace's default holds. |
+| `overrides` | | `title`, `description` and `servers` for every variant, in place of what the main document says. See [overrides](#overrides). |
+| `sources` | required | The project's OpenAPI documents. See [sources](#sources). |
+| `variants` | | The documents served from the project, by slug. See [variants](#variants). |
+
+## sources
+
+A list of 1 to 10 documents, 5 MB together. Each is OpenAPI 3.0, 3.1 or 3.2, as JSON or YAML, in one file.
+
+| Key | | What it says |
+| --- | --- | --- |
+| `url` | one of the two | The address of the document. |
+| `file` | one of the two | The path of the document, relative to the definition file. |
+| `name` | with several | What the document is called. Shown next to its operations, and used to rename what clashes in a merge. With several sources every one has a name, and no two are the same. |
+| `main` | with several | `true` on exactly one source: the one whose title, description and servers describe the merged API, and that wins where two documents define the same operation. |
+| `follow` | | `true`: the service keeps reading the `url` between deploys. Only with `url`. Left out, the document changes only with a deploy. |
+| `pathPrefix` | | Put in front of every path of this document, such as `/billing`. |
+
+How documents are put together: [Merging rules](/docs/merging). What following does: [Following a URL](/docs/following-a-url).
+
+The request headers that the service sends when it fetches a followed source are not part of the file. They are set in the app, on the document, and stay with the project across deploys.
+
+## variants
+
+A map from a variant's slug to what it serves. The slug is the second part of the URL: 2 to 64 characters of `a-z`, `0-9` and hyphens. A project has up to 100 variants.
+
+| Key | | What it says |
+| --- | --- | --- |
+| `name` | | What the variant is called in the app. Left out, it goes by its slug. |
+| `icon` | | The picture next to its name in the app: `file`, `book`, `code`, `globe`, `lock`, `users`, `bot`, `terminal`, `package`, `rocket`, `flask`, `shield`, `star`, `zap`, `layers` or `plug`. |
+| `visibility` | | `public` or `private`. Left out, it is what the project says, and then what the workspace says. |
+| `include` | | What is served: `tags` and `operations`. Left out, everything is. |
+| `exclude` | | What is not served: `tags` and `operations`. It wins over `include`. |
+| `overrides` | | `title`, `description` and `servers` for this variant. A key it leaves out is taken from the project's `overrides`, and then from the document. |
+
+Renaming a variant's slug makes a new variant: the old URL answers `404`, and a user API key that was for the old one alone is removed.
+
+### include and exclude
+
+Both have the same two lists.
+
+| Key | What it lists |
+| --- | --- |
+| `tags` | Tags, by name. A tag stands for every operation that carries it, also for ones your API adds later. |
+| `operations` | Operations, each as method and path: `GET /books/{id}`. A webhook is `POST webhook:<name>`. |
+
+An operation is served when `include` is left out or names it, and `exclude` does not name it.
+
+```yaml
+# Everything
+public: {}
+
+# Everything except what is tagged Admin
+public:
+  exclude:
+    tags: [Admin]
+
+# Two tags and one more operation, without one of the tagged ones
+public:
+  include:
+    tags: [Books, Orders]
+    operations:
+      - GET /billing/invoices
+  exclude:
+    operations:
+      - GET /orders/export
+
+# Nothing yet
+public:
+  include: {}
+```
+
+A name the documents do not have is reported by `validate` and by a deploy, and is not an error. An operation with braces in its path cannot be written inside `[ ]` without quotes, so give operations a line each.
+
+More on what a selection means when your API grows: [Selecting operations](/docs/selecting).
+
+## overrides
+
+On the project and on a variant. Each key replaces what the document says at its top.
+
+| Key | What it says |
+| --- | --- |
+| `title` | The document's `info.title`. |
+| `description` | The document's `info.description`. |
+| `servers` | The document's `servers`: a list of `url` and, optionally, `description`. The first is the one tools use by default. |
+
+They hold key by key: a variant that states only a `title` gets the project's `servers`, and a project that states only `servers` leaves the title to the document.
+
+## What is not in the file
+
+- **Credentials** for a followed URL, API keys, the people of a workspace, and each person's email setting. They are set in the app.
+- **Variables.** The file is read as it is. What differs on your machine is said with a flag: `dev --source` reads a source from somewhere else.

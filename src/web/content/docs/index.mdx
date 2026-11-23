@@ -1,28 +1,49 @@
 ---
-title: Overview
-description: What openapi-proxy does, and the three things it is made of.
+title: Start here
+description: What openapi-proxy does, the two ways to use it, and which guide is yours.
 ---
 
-Your backend generates one OpenAPI document for everything it does. openapi-proxy fetches that document, keeps the parts each audience should see, and serves each selection at a URL of its own. When your API changes, the served documents change with it.
+Your backend generates one OpenAPI document for everything it does. openapi-proxy keeps the parts each audience should get and serves each selection at a URL of its own, as JSON or YAML, in OpenAPI 3.0 or 3.1. Your public docs read one URL, your SDK generator another, a partner a third.
 
-## Three things
+## Two ways to make a project
+
+**From a URL.** Your OpenAPI document is at a URL. The service reads it, keeps reading it, and you choose in the app what each audience gets.
+
+**From your repository.** What each audience gets is written in a file next to your code. You serve it on localhost while you work, and deploy it from CI.
+
+Both make the same thing: a project with variants at the same URLs. A project that started in the app can move into a repository later, without rebuilding anything.
+
+## Which guide is yours
+
+| You have | You want | Guide |
+| --- | --- | --- |
+| A document at a public or protected URL | A few variants that stay current by themselves, set up in a browser | [From a URL](/docs/from-a-url) |
+| Several services, each with a document, or several audiences and environments | One API for your readers, and a document for each of them | [Several documents and audiences](/docs/several-documents) |
+| A repository, a dev server and a pipeline | The selection in version control, variants on localhost, a deploy with every release | [In your repository](/docs/in-your-repository) |
+
+## Four words
 
 - A **workspace** is the people who share the projects. Signing in gives you one, and you invite colleagues into it.
-- A **project** is one API as its readers know it: one OpenAPI document fetched from a URL, or several merged into one. A document can be public, or behind credentials that the proxy sends for you.
-- A **variant** is a selection of that document's operations, served at `/v/<project>/<variant>`. Your public docs read one, your SDK generator another. A variant is public, or private and read with an API key.
+- A **project** is one API as its readers know it: one OpenAPI document, or several merged into one. Its slug is the first part of every URL it serves.
+- A **variant** is a selection of the project's operations, served at `/v/<project>/<variant>`. A variant is public, or private and read with a user API key.
+- A **definition** says what a project is: its documents and its variants. It is what the app's editor saves, and it is the content of an `openapi-proxy.yaml` in a repository.
 
-A variant keeps the operations you chose and exactly what they reference: schemas, parameters, responses, security schemes. Nothing else from the source ends up in it. It is served as JSON and YAML, in OpenAPI 3.0 and 3.1, and the URL says which.
+A variant keeps the operations you chose and exactly what they reference: schemas, parameters, responses, security schemes. Nothing else from your document ends up in it.
 
-## Where to go next
+## Reference
 
-- [Connecting a document](/docs/connecting): what the proxy reads, and how it reads a document that is not public.
-- [Selecting operations](/docs/selecting): what a variant serves, today and when your API grows.
-- [Serving a variant](/docs/serving): the URLs, formats and response headers your consumers see, and private variants.
-- [Merging documents](/docs/merging): one project from the documents of several services.
-- [Environments and servers](/docs/environments): production, sandbox and staging, and audiences that should see different servers.
-- [OpenAPI versions](/docs/versions): every variant as 3.0 and 3.1, picked by the URL.
-- [When your API changes](/docs/changes): what is served then, and how you hear about it.
-- [Keeping in sync](/docs/keeping-in-sync): how the proxy notices that your API changed, and how often it looks.
-- [Sending an ETag](/docs/etag): how to make a check nearly free, so that the proxy looks every 5 minutes instead of once an hour.
-- [API](/docs/api-and-mcp): doing all of it from a script.
+- [Configuration file](/docs/configuration): every key of `openapi-proxy.yaml`.
+- [CLI](/docs/cli): `init`, `dev`, `validate`, `operations`, `deploy`.
+- [URLs, formats and versions](/docs/urls): what a consumer fetches, and the headers it gets.
+
+## How it behaves
+
+- [Selecting operations](/docs/selecting): `include` and `exclude`, and what happens to operations your API adds later.
+- [Merging rules](/docs/merging): what happens when two documents define the same thing.
+- [Following a URL](/docs/following-a-url): how the service notices that your API changed, and how you hear about it.
+- [Private variants and keys](/docs/private-variants): who may read what, and the two kinds of API key.
 - [Self-hosting](/docs/self-hosting): running it on your own Cloudflare account.
+
+## For agents
+
+Every page of these docs is also plain Markdown: add `.md` to its address, as in `/docs/in-your-repository.md`. [`/llms.txt`](/llms.txt) lists them, and [`/llms-full.txt`](/llms-full.txt) is all of them in one file.

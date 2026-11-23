@@ -1,0 +1,66 @@
+---
+title: From a URL
+description: Connect the URL of your OpenAPI document in the app, choose what each audience gets, and hand out URLs that stay current by themselves.
+---
+
+This is the way for you if your document is at a URL and you want variants without touching a repository. It takes a few minutes, in a browser.
+
+## 1. Connect the document
+
+In the app, choose **New project**, then **From a URL**. Give it two things:
+
+- **The URL of your OpenAPI document.** OpenAPI 3.0, 3.1 or 3.2, as JSON or YAML, up to 5 MB. It has to be one file: references that point into other files are not followed. Bundle a split document first, for example with `redocly bundle`.
+- **The project's slug.** It is the first part of every URL the project serves, `/v/<slug>/...`, and it stays for as long as the project does. Choose it the way you choose the name of a repository.
+
+The service fetches the document and lists its operations.
+
+### A document that is not public
+
+If the URL answers `401` or `403`, the app offers a field for request headers, typically `Authorization`. The service sends them with every fetch of this document.
+
+The headers are encrypted before they are stored and are never shown again. They are sent to the document's own origin only, also when that origin redirects somewhere else.
+
+## 2. Make a variant
+
+A variant is one audience's document. In its editor:
+
+- A checked operation is served. Checking a whole tag also covers operations that are added to the tag later.
+- The document on the right is what will be served. It updates as you check.
+- **Title and servers** lets the variant say something else at the top of its document than your backend does: a title for this audience, and the servers it should use.
+
+Nothing reaches the URL until you choose **Create variant**, and later **Publish changes**. See [Selecting operations](/docs/selecting) for how a selection treats operations your API adds later.
+
+## 3. Hand out the URL
+
+```
+https://openapi-proxy.app/v/<project>/<variant>.json
+https://openapi-proxy.app/v/<project>/<variant>.yaml
+https://openapi-proxy.app/v/<project>/<variant>/3.0.json
+```
+
+Docs renderers, SDK generators and contract tests fetch it like any other OpenAPI document. See [URLs, formats and versions](/docs/urls).
+
+A variant is public unless you say otherwise: next to its URL for one variant, or as the default of the project or the workspace. A private one is read with a user API key: see [Private variants and keys](/docs/private-variants).
+
+## What happens from here
+
+The service keeps reading your URL: every 5 minutes if your API sends an `ETag` with the document, once an hour if it does not. When the document changes, every variant serves the new version, and you get an email that says which operations were added, changed or removed. See [Following a URL](/docs/following-a-url).
+
+If your API is down, variants keep being served from the last good copy.
+
+## Best practice
+
+- **Send an ETag.** It is usually one line in your backend, and it makes the service look twelve times as often. [How to send one](/docs/following-a-url#sending-an-etag).
+- **Select by tag where you can.** A variant that includes the tag `Billing` serves the billing operation you add next month without anyone opening the app.
+- **Keep "operations added later" hidden for public variants.** That is the default. Nothing reaches your public docs by accident.
+- **State the servers of a public variant.** A document generated from code often lists `http://localhost:8080` or an internal hostname.
+
+## When to move into a repository
+
+When the selection should be reviewed like code, when you want your variants on localhost against your dev server, or when a deploy should carry the document with it.
+
+What you build in the app is a definition, and the app shows it: Project settings has **View as file**. For a document at a URL with a public and a private variant it reads like this:
+
+<include lang="yaml" meta='title="openapi-proxy.yaml"'>../../../../examples/from-a-url/openapi-proxy.yaml</include>
+
+`follow: true` is what the app writes for a URL: the service keeps reading it. Save the file in your repository and continue with [In your repository](/docs/in-your-repository). The URLs stay the same.

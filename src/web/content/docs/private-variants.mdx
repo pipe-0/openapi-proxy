@@ -1,0 +1,69 @@
+---
+title: Private variants and keys
+description: Who may read a variant, and the two kinds of API key, a user API key that reads private variants and a deploy API key that deploys a definition file.
+---
+
+## Public and private
+
+A variant is public or private.
+
+- **Public**: anyone with the URL can read it. In the app, the dice next to a new variant's slug makes a URL that cannot be guessed.
+- **Private**: a reader sends a user API key of the workspace.
+
+```sh
+curl https://openapi-proxy.app/v/acme/internal.json \
+  -H "Authorization: Bearer $KEY"
+```
+
+Without a key the answer is a `401`. With a key that is not for this variant it is a `403`. Being signed in to the app is not a key.
+
+## Who says which
+
+Three places can say whether a variant is public or private. The closest one that says anything holds.
+
+1. **The variant**: `visibility` on the variant, or the menu next to its URL in the editor.
+2. **The project**: `visibility` on the project, or **Defaults for variants** in the project's settings.
+3. **The workspace**: **Default visibility** on the Workspace page.
+
+A variant that says nothing follows its project, and a project that says nothing follows the workspace, as they change. The app says how many variants a change touches before you make it, and asks before it opens any to the public.
+
+A team that works on internal APIs sets the workspace to private once. Nothing it makes is public by accident, and a variant for the public says so itself.
+
+A definition file knows the first two. A variant that neither it nor its project sets follows the workspace it is deployed to, also when the workspace's default changes later. `deploy` prints who may read each variant and which of the three says so. A variant that must be public, or must not be, says `visibility` itself.
+
+## The two kinds of key
+
+| | User API key | Deploy API key |
+| --- | --- | --- |
+| For | Someone, or something, that reads private variants | A pipeline that deploys a definition file |
+| Can do | Read private variants, all of the workspace's or one. Nothing else. | Deploy to the workspace's projects. Nothing else. |
+| Belongs to | The person who made it. It stops working when they leave the workspace. | The workspace. It keeps working when whoever made it leaves. |
+| Made and revoked by | Anyone in the workspace, for their own. The owner can revoke anyone's. | The owner of the workspace. |
+
+Both are listed, made and revoked on the **Workspace** page. A key is shown once, when it is made, and is sent as `Authorization: Bearer <key>`. Only the beginning of a key is stored in a form that can be shown, to tell keys apart in the list.
+
+Neither key can read or change who is in the workspace, make other keys, or use the app.
+
+## User API keys
+
+Next to a private variant's URL, **Create a key for this variant** makes a key that reads this variant and no other. That is the key to hand to a partner or to put into a docs build.
+
+A key for every private variant of the workspace is made on the Workspace page.
+
+- A key for one variant goes when the variant does. It never comes to read more than it was made for.
+- Renaming a variant's slug makes a new variant, so a key for the old one goes with it.
+- A deploy keeps a variant's keys for as long as the file keeps the variant's slug.
+
+## Deploy API keys
+
+`openapi-proxy deploy` reads one from the environment variable `OPENAPI_PROXY_API_KEY`:
+
+```sh
+OPENAPI_PROXY_API_KEY=oap_... npx @pipe0/openapi-proxy deploy
+```
+
+- It deploys to any project of its workspace, and creates one for a slug that is free.
+- It cannot read a private variant, not even of a project it deploys.
+- Give each pipeline its own, named after where it is used. Revoking one then stops one pipeline.
+
+In CI, store it as a secret. See [In your repository](/docs/in-your-repository#from-ci).

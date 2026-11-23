@@ -1,3 +1,4 @@
+import { CLI_PACKAGE, WAYS } from "@openapi-proxy/core";
 import { GUARDS, PLAN_LIMITS, PLAN_NAMES, PLAN_PRICES, type PlanLimits } from "../../shared/plans";
 import { Problem } from "./problem";
 import { GITHUB_URL } from "./site";
@@ -26,7 +27,7 @@ const POINTS: Array<{ title: string; body: string; href?: string }> = [
   },
   {
     title: "A document for each SDK and partner",
-    body: "Every selection gets its own URL, as JSON and YAML. Your docs read one, your SDK generator another, a partner a third. Changing who sees what takes a click, not a deploy.",
+    body: "Every selection gets its own URL, as JSON and YAML. Your docs read one, your SDK generator another, a partner a third. Who sees what is changed in the app, or in a file you review like code.",
     href: "/blog/one-openapi-document-per-audience",
   },
   {
@@ -36,7 +37,7 @@ const POINTS: Array<{ title: string; body: string; href?: string }> = [
   },
   {
     title: "OpenAPI 3.0 for the tools that need it",
-    body: "Serve a variant as 3.0 or 3.1, whatever your framework generates. Where 3.0 cannot say something, you are told exactly what was left out.",
+    body: "Serve a variant as 3.0 or 3.1, whichever of the two your framework generates. Where 3.0 cannot say something, you are told exactly what was left out.",
     href: "/blog/convert-openapi-3-1-to-3-0",
   },
   {
@@ -45,14 +46,14 @@ const POINTS: Array<{ title: string; body: string; href?: string }> = [
     href: "/blog/know-when-your-openapi-document-changes",
   },
   {
-    title: "Current when it is read",
-    body: "A copy older than the check interval is never handed out on trust, and a failing API never turns into an error for your readers. No pipeline step, nothing to regenerate.",
-    href: "/docs/keeping-in-sync",
+    title: "Current by itself",
+    body: "The service keeps reading your document's URL and serves the newest one it has. A failing API never turns into an error for your readers: they get the last good copy.",
+    href: "/docs/following-a-url",
   },
   {
-    title: "For scripts and agents too",
-    body: "Everything the app does is an HTTP API, and an MCP endpoint offers the same as tools. Ask an agent for a variant with only the billing endpoints and get the URL back.",
-    href: "/docs/api-and-mcp",
+    title: "In your repository, if you like",
+    body: "Keep what each audience gets in a file next to your code. One command serves your variants on localhost while you develop, another deploys them from CI.",
+    href: "/docs/in-your-repository",
   },
   {
     title: "Private sources stay private",
@@ -118,6 +119,12 @@ export function Landing() {
         </p>
         <UrlForm id="hero-url" className="mx-auto mt-9 max-w-xl" />
         <p className="mt-4 text-[13.5px] text-muted-foreground">
+          Or start in your repository:{" "}
+          <code className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[12.5px] text-foreground">
+            npx {CLI_PACKAGE} init {"<url or file>"}
+          </code>
+        </p>
+        <p className="mt-2 text-[13.5px] text-muted-foreground">
           Open source. Free to start here, or deploy it to your own Cloudflare account.{" "}
           <a
             href={GITHUB_URL}
@@ -152,6 +159,39 @@ export function Landing() {
       </section>
 
       <Problem />
+
+      <section className="mx-auto mt-28 max-w-5xl px-6 sm:mt-36">
+        <h2 className="font-display text-[30px] leading-[1.15] font-semibold tracking-[-0.03em] sm:text-[36px]">
+          Two ways to use it.
+        </h2>
+        <div className="mt-8 grid gap-x-12 gap-y-10 md:grid-cols-2">
+          {(
+            [
+              [WAYS.url, "/connect", "Connect a URL"],
+              [WAYS.repository, "/docs/in-your-repository", "Read the guide"],
+            ] as const
+          ).map(([way, href, label]) => (
+            <div key={way.title}>
+              <h3 className="font-display text-[19px] leading-7 font-semibold tracking-[-0.015em]">
+                {way.title}
+              </h3>
+              <p className="mt-2 text-[15px] leading-[1.65] text-pretty text-muted-foreground">
+                {way.when}
+              </p>
+              <a
+                href={href}
+                className="mt-2 inline-block text-[14px] underline decoration-border underline-offset-4 hover:decoration-foreground"
+              >
+                {label}
+              </a>
+            </div>
+          ))}
+        </div>
+        <p className="mt-8 max-w-2xl text-[15px] leading-[1.65] text-muted-foreground">
+          Both make the same project, at the same URLs. One that starts in the app can move into a
+          repository later.
+        </p>
+      </section>
 
       <section className="mx-auto mt-28 max-w-5xl px-6 sm:mt-36">
         <h2 className="sr-only">What people use it for</h2>

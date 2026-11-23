@@ -1,5 +1,7 @@
+import { CLI_PACKAGE, WAYS } from "@openapi-proxy/core";
 import { listPosts } from "./blog";
-import { docsPaths, source } from "./docs.server";
+import { docsPaths } from "./docs.server";
+import { docsInOrder, markdownPath } from "./docs-markdown.server";
 import { SITE_DESCRIPTION, SITE_NAME } from "./site";
 
 /**
@@ -49,7 +51,6 @@ export function robotsTxt(origin: string): Response {
     "Allow: /",
     "Disallow: /api/",
     "Disallow: /v/",
-    "Disallow: /mcp",
     "Disallow: /app",
     "Disallow: /p/",
     "Disallow: /connect",
@@ -82,29 +83,42 @@ export function rssXml(origin: string): Response {
 
 /**
  * llms.txt: what this is and where its pages are, as a language model wants
- * it (https://llmstxt.org). Posts are linked as their Markdown, which is the
- * same text without the page around it.
+ * it (https://llmstxt.org). Pages of the docs and posts are linked as their
+ * Markdown, which is the same text without the page around it. The guide an
+ * agent is most likely sent here for, setting a repository up, comes first.
  */
 export function llmsTxt(origin: string): Response {
   const at = (path: string) => new URL(path, origin).href;
   const posts = listPosts().filter((post) => !post.draft);
+  const first = ["/docs/in-your-repository", "/docs/configuration", "/docs/cli"];
+  const pages = docsInOrder();
+  const line = (page: (typeof pages)[number]) =>
+    `- [${page.data.title}](${at(markdownPath(page.url))}): ${page.data.description}`;
   const lines = [
     `# ${SITE_NAME}`,
     "",
     `> ${SITE_DESCRIPTION}`,
     "",
-    "openapi-proxy fetches the OpenAPI document a backend generates, keeps the operations each audience should see (a variant), and serves each variant at a URL of its own as JSON or YAML, in OpenAPI 3.0 or 3.1. A variant is public, or private and read with an API key. Several documents can be merged into one. It is open source and runs on Cloudflare Workers; a hosted version is at openapi-proxy.app.",
+    "openapi-proxy takes the OpenAPI document a backend generates, keeps the operations each audience should get (a variant), and serves each variant at a URL of its own as JSON or YAML, in OpenAPI 3.0 or 3.1. A variant is public, or private and read with a user API key. Several documents can be merged into one.",
+    "",
+    `There are two ways to use it. ${WAYS.url.title}: ${WAYS.url.when} ${WAYS.repository.title}: ${WAYS.repository.when} The file is openapi-proxy.yaml, and the command line tool is the npm package ${CLI_PACKAGE} (init, dev, validate, operations, deploy).`,
+    "",
+    "It is open source and runs on Cloudflare Workers. A hosted version is at openapi-proxy.app.",
+    "",
+    "## Setting up a repository",
+    "",
+    ...first.flatMap((url) => pages.filter((page) => page.url === url).map(line)),
+    `- [JSON Schema of the definition file](${at("/schema/definition.v1.json")}): every key, its type and what it means, for validating a file or completing it`,
+    "",
+    "## Documentation",
+    "",
+    ...pages.filter((page) => !first.includes(page.url)).map(line),
+    `- [All of the documentation in one file](${at("/llms-full.txt")})`,
     "",
     "## Product",
     "",
     `- [${SITE_NAME}](${at("/")}): what it does and how to start`,
     `- [Pricing](${at("/pricing")}): the free plan and Pro`,
-    "",
-    "## Documentation",
-    "",
-    ...source
-      .getPages()
-      .map((page) => `- [${page.data.title}](${at(page.url)}): ${page.data.description}`),
     "",
     "## Blog",
     "",

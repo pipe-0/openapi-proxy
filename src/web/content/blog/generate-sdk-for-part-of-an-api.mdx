@@ -66,7 +66,7 @@ openapi-generator-cli generate \
   -g typescript-fetch -o ./sdk
 ```
 
-A generator that needs 3.0 asks for it in the URL, whatever your API emits:
+A generator that needs 3.0 asks for it in the URL, whether your API emits 3.0 or 3.1:
 
 ```sh
 openapi-generator-cli generate \
@@ -79,7 +79,7 @@ And if the variant is private, the generator sends a key when it fetches:
 ```sh
 openapi-generator-cli generate \
   -i https://proxy.example.com/v/acme/partner.json \
-  --auth "Authorization:Bearer%20$OPENAPI_PROXY_API_KEY" \
+  --auth "Authorization:Bearer%20$KEY" \
   -g python -o ./sdk
 ```
 

@@ -34,7 +34,8 @@ variants:
       operations:
         - POST /billing/invoices/{id}/refund
 
-  # What the SDK is generated from: the same, for a generator that reads 3.0.
+  # What the SDK is generated from: the same tags with nothing left out, for a
+  # generator that reads 3.0.
   # Its URL is /v/bookshop/sdk/3.0.json.
   sdk:
     name: SDK

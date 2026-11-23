@@ -25,7 +25,7 @@ variants:
         - url: https://api.bookshop.example
           description: Production
 
-  # For a partner who lists the catalogue: read with an API key.
+  # For a partner who lists the catalogue: read with a user API key.
   partner:
     name: Catalogue partner
     icon: users

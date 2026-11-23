@@ -1,0 +1,79 @@
+---
+title: Several documents and audiences
+description: One API from the documents of several services, a variant for each audience and environment, and defaults that hold for all of them.
+---
+
+This is the way for you if the API your readers see is built from more than one service, or if several audiences should each get their own document: public docs, an SDK, a partner, your own tools.
+
+Everything here works in the app and in a definition file. The examples are the file, because it shows the whole at once. In the app the same things are under **Project settings** and in each variant's editor.
+
+## A complete example
+
+Two services merged into one API, and four audiences:
+
+<include lang="yaml" meta='title="openapi-proxy.yaml"'>../../../../examples/several-audiences/openapi-proxy.yaml</include>
+
+This file is the whole project. Try it from the repository's [`examples/several-audiences`](https://github.com/pipe-0/openapi-proxy/tree/main/examples/several-audiences) folder with `npx @pipe0/openapi-proxy dev`. To put a file like it online, give `project` a slug of your own (a slug belongs to one workspace) and run `npx @pipe0/openapi-proxy deploy`: [In your repository](/docs/in-your-repository) goes through both. Every key is described in [Configuration file](/docs/configuration).
+
+## Several documents
+
+A project is assembled from up to 10 documents, 5 MB together. Their operations are combined into one document, and variants select from the whole.
+
+- **Each document has a name.** It is shown next to its operations in the editor, and it names what has to be renamed in the merge.
+- **One is the main one.** Its title, description and servers describe the merged API, and it wins where two documents define the same operation.
+- **A path prefix** puts a document's paths where the service is mounted: `/invoices` becomes `/billing/invoices`.
+
+In the app: **Project settings**, then **Add document**. In a file: one entry per document under `sources`.
+
+What happens when two documents define the same operation or use the same schema name is fixed, and the project says what it did: see [Merging rules](/docs/merging).
+
+This is for independent documents. One API split across files with `$ref` is a different thing: bundle those into one file first.
+
+## A variant for each audience
+
+Give every audience a variant of its own. They share the project's documents and differ in three things:
+
+| | What it decides | Example |
+| --- | --- | --- |
+| `include` and `exclude` | Which operations it serves | The public docs leave out everything tagged `Admin` |
+| `visibility` | Who may read it | The partner's variant is private, read with a key made for it |
+| `overrides` | Title, description and servers at the top | The SDK variant is called "Bookshop SDK" |
+
+A reader that only takes OpenAPI 3.0 needs no variant of its own: every variant of a 3.0 or 3.1 document is served in both, and the URL says which. See [URLs, formats and versions](/docs/urls).
+
+## Defaults for the whole project
+
+What most variants have in common is said once, on the project, and a variant says only what is different.
+
+- **`visibility`** on the project holds for every variant that does not say its own. Without it, the workspace's default holds.
+- **`overrides`** on the project hold key by key: a variant that states only a title still gets the project's servers.
+
+A variant that says nothing follows these as they change. In the example above, `partner` and `internal` are private because the project says so, and every variant except `internal` lists the production server.
+
+## Environments
+
+An API usually runs in more than one place: production, a sandbox, staging. OpenAPI says where requests go in one list at the top of the document, `servers`. Documentation tools show it as a menu, and SDK generators use its first entry.
+
+**One variant, every server listed.** The least work, and what most tools expect: readers choose in their tool.
+
+```yaml
+overrides:
+  servers:
+    - url: https://api.example.com
+      description: Production
+    - url: https://sandbox.example.com
+      description: Sandbox
+```
+
+**One variant per environment.** When each environment has its own docs site or its own build: a variant for each, with that environment's server first or alone.
+
+**One project per environment.** When staging has operations that production does not have yet, it is a different document. Give it a project of its own.
+
+A document that is generated from your code often lists servers that are not for everyone, such as `http://localhost:8080`. A project or a variant that states its own servers serves only those.
+
+## Best practice
+
+- **Name documents after the service**, in lower case: `core`, `billing`. The name shows up in schema names when two documents clash (`BillingError`).
+- **Put the defaults on the project** and keep variants short. A variant with five lines is easy to review.
+- **Make the project private and the public variants public**, not the other way round. A new variant then starts closed.
+- **One variant per consumer, not per person.** Two partners who get the same operations can share a variant and have a key each.

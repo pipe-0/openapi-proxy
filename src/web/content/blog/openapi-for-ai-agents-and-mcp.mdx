@@ -52,7 +52,7 @@ Each of these is a different selection from the same API. And each should be dec
 In [openapi-proxy](/), each of those selections is a variant: you check the operations, and it is served at its own URL, as JSON or YAML, in OpenAPI 3.0 or 3.1. Point the generator at that URL.
 
 - **New operations stay out** until you select them, unless they carry a tag you chose to follow.
-- **The document can be private.** A variant can require an API key, and a key can be made for that one variant, so an agent's credentials open nothing else. See [Serving a variant](/docs/serving).
+- **The document can be private.** A variant can require a user API key, and a key can be made for that one variant, so an agent's credentials open nothing else. See [Private variants and keys](/docs/private-variants).
 - **You hear when the API moves.** When the source gains or loses operations, you get an email saying which, so the agent's surface is reviewed when it could change.
 
-The selection itself can be managed by an agent as well: everything the app does is available over an MCP endpoint, described in [API and MCP](/docs/api-and-mcp). The agent that reads your API and the one that curates what agents may read do not have to be the same.
+The selection itself can be kept by an agent as well: it is a definition file in your repository, which a coding agent writes and checks with the command line tool, described in [In your repository](/docs/in-your-repository). The agent that reads your API and the one that curates what agents may read do not have to be the same.

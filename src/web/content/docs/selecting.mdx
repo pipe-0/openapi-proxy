@@ -1,27 +1,59 @@
 ---
 title: Selecting operations
-description: How a variant decides which operations it serves, today and when your API grows.
+description: How a variant says which operations it serves, today and when your API grows.
 ---
 
-A variant is a selection of your document's operations. In the editor, a checked operation is served and an unchecked one is not. The document on the right is what will be served, and it updates as you check.
+A variant is a selection of the project's operations. It is said with two lists, `include` and `exclude`, in a definition file and in the app alike:
 
-Nothing reaches the variant's URL until you publish.
+> An operation is served when `include` is left out or names it, and `exclude` does not name it.
+
+Each list names **tags** and **operations**. An operation is its method and its path, `GET /books/{id}`, so your document needs no `operationId`s. A webhook is `POST webhook:<name>`.
 
 ## Operations your API adds later
 
-Your API will grow, and a selection has to say what happens then. Two controls decide it.
+Your API will grow, and a selection has to say what happens then. That follows from how it is written.
 
-- **A whole tag.** Check a tag and it shows **Serve operations added later**. With that checked, the variant serves everything in the tag, now and later. Uncheck it to serve only what the tag has today.
-- **Everything else.** Under the list, **Operations your API adds later are** Hidden or Served. Hidden is the default, so nothing reaches your public docs by accident. The line below names the tags that are the exception.
+| Selection | What it serves | An operation added later |
+| --- | --- | --- |
+| nothing | Everything | Served |
+| `exclude` only | Everything except what is named | Served, unless it has an excluded tag |
+| `include` with tags | Those tags | Served if it has one of the tags |
+| `include` with operations | Exactly those | Not served |
+| `include: {}` | Nothing | Not served |
+
+So a tag is a rule: it covers what carries the tag today and what gets it next month. An operation named by itself is only itself.
+
+For a public variant, write `include`. Nothing your backend adds then reaches the public by accident.
+
+## In the editor
+
+The app's editor, and the same editor that `openapi-proxy dev` serves, show a selection as checkboxes. A checked operation is served.
+
+- **Checking a whole tag** includes the tag. It shows **Serve operations added later**, checked. Uncheck that to serve only what the tag has today: the tag becomes a list of its operations.
+- **Unchecking one operation of an included tag** excludes that operation. The tag stays a rule.
+- **The switch under the list** says what happens to operations your API adds later. **Hidden**: the selection has an `include`, and only what it names is served. **Served**: it has none, and everything is served that is not excluded. The line below the switch names the tags that are the exception.
+
+The document on the right is what will be served. Nothing reaches the URL until you publish, or save into the file.
 
 ## What ends up in the document
 
-The variant keeps the operations you chose and exactly what they reference: schemas, parameters, responses, request bodies, headers, examples, links, callbacks and security schemes. A schema that only an unselected operation used is left out.
-
-Operations are told apart by method and path, so your document needs no `operationId`s. Webhooks are operations too and are selected the same way.
+The variant keeps the operations it serves and exactly what they reference: schemas, parameters, responses, request bodies, headers, examples, links, callbacks and security schemes. A schema that only an operation outside the selection used is left out.
 
 Descriptions, examples and names are served as your document has them.
 
-## One variant per audience
+## A name the documents do not have
 
-A project has as many variants as it has audiences: public docs, an SDK, a partner, an agent. Give each one an icon next to its name to tell them apart in the navigation. **Duplicate**, in a variant's menu, starts a new one from an existing selection.
+A selection can name a tag or an operation that is not in the documents: because the API that has it is not live yet, because it was renamed, or because of a typo. The variant serves the rest, and the name is reported, never refused:
+
+- `openapi-proxy validate` and `deploy` print it as a warning, with the line it is on.
+- The app shows "not found" on the variant, and the editor lists the operations.
+
+When the document has the name, it is served. So a file can be deployed before the API it describes is.
+
+## Finding the names
+
+```sh
+npx @pipe0/openapi-proxy operations
+```
+
+lists every operation with its tags, and the tags with how many operations each has. `--variant <slug>` says for each operation whether that variant serves it.

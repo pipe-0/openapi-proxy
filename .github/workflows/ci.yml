@@ -45,6 +45,14 @@ jobs:
           fi
       - run: pnpm test
       - run: pnpm build
+      # The docs show the files in examples/. Each is checked by the command
+      # line tool as it is built, the way a reader would run it.
+      - name: The examples are valid definitions
+        run: |
+          pnpm --filter @pipe0/openapi-proxy build
+          node packages/cli/dist/cli.js validate --config examples/from-a-url/openapi-proxy.yaml --source examples/from-a-url/openapi.json
+          node packages/cli/dist/cli.js validate --config examples/several-audiences/openapi-proxy.yaml
+          node packages/cli/dist/cli.js validate --config examples/in-your-repository/openapi-proxy.yaml
 
   e2e:
     name: End to end

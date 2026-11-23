@@ -76,9 +76,21 @@ On your own instance every workspace can use everything: 100 projects, and as ma
 
 - 10 documents in a project, 5 MB together.
 - 100 variants in a project, 50 people and 100 API keys in a workspace.
-- 300 API requests a minute for a workspace. Change the number in `wrangler.jsonc`, under `ratelimits`. Reading served documents is not counted.
+- 300 requests a minute from the app and from deploys, for a workspace. Change the number in `wrangler.jsonc`, under `ratelimits`. Reading served documents is not counted.
 
-The hourly check of documents that nobody read lately does as much as one Worker invocation may: a handful of projects an hour on Cloudflare's free plan, 40 on a paid one. A request for a variant always checks for itself.
+## The timer
+
+Followed sources are checked by a cron trigger that runs every five minutes (`triggers` in `wrangler.jsonc`). Each run takes the projects that are due, longest due first, and does as much as one Worker invocation may: a few projects on Cloudflare's free plan, up to 60 on a paid one. What a run does not reach is first in line at the next. A request for a variant never checks: it is answered from what is stored. See [Following a URL](/docs/following-a-url).
+
+## Deploying definition files to your instance
+
+A definition file is deployed to the hosted service unless it names another instance. For yours:
+
+```yaml
+instance: https://proxy.example.com
+```
+
+The app shows this line where it explains deploying from a repository, and "View as file" writes it into the file. The deploy API key comes from your instance's Workspace page. See [In your repository](/docs/in-your-repository).
 
 ## Selling plans
 

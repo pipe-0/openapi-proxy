@@ -50,7 +50,7 @@ const ROWS: Array<{ label: string; hint?: string; values: Record<Column, string>
     values: same(String(GUARDS.people)),
   },
   {
-    label: "OpenAPI 3.0 and 3.1 output, change emails, API and MCP",
+    label: "OpenAPI 3.0 and 3.1 output, change emails, definition files and the CLI",
     values: same("Included"),
   },
   {

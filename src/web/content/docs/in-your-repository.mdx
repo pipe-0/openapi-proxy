@@ -1,0 +1,183 @@
+---
+title: In your repository
+description: Keep the selection in a file next to your code, serve your variants on localhost while you develop, and deploy them from CI.
+---
+
+This is the way for you if what each audience gets should be reviewed like code, if your tools should read a variant from localhost while you develop, or if the documents should go out with your deploys.
+
+It is one file, `openapi-proxy.yaml`, and one command line tool. Nothing is installed globally:
+
+```sh
+npx @pipe0/openapi-proxy <command>
+```
+
+Or add it to the project. In the scripts of your `package.json` the command is then `openapi-proxy`, and in a shell `npx openapi-proxy`:
+
+```sh
+npm install --save-dev @pipe0/openapi-proxy
+```
+
+## 1. Write the file
+
+Point `init` at your OpenAPI document where your pipeline will find it: a file your build writes, or an address the pipeline can read. `init` writes that place into the file, and a deploy reads the document from there. If the document only comes from your dev server while you work, name the place the pipeline reads here and use `--source` in step 2. If that place does not exist on your machine yet, point `init` at the dev server: it reads the document there and leaves a comment in the file that says what to replace before you deploy.
+
+```sh
+npx @pipe0/openapi-proxy init ./openapi.json
+```
+
+```
+Wrote openapi-proxy.yaml for 8 operations.
+
+Next:
+  npx @pipe0/openapi-proxy dev          serve it on localhost and pick what it serves
+  npx @pipe0/openapi-proxy operations   list the operations and tags to pick from
+  npx @pipe0/openapi-proxy deploy       publish it
+```
+
+The file it writes has your document as its one source and a variant called `public` that serves nothing yet. The project's slug comes from the document's title. Change it if you like: it is the first part of every URL, and what the project is known by when you deploy.
+
+## 2. Serve it on localhost, and pick what it serves
+
+```sh
+npx @pipe0/openapi-proxy dev
+```
+
+```
+openapi-proxy is serving openapi-proxy.yaml
+
+  http://localhost:7745/v/bookshop/public.json
+
+  Edit the file in your browser: http://localhost:7745
+
+Also as .yaml. A 3.0 or 3.1 document is served as either, at /3.0.json and /3.1.json.
+The file and its sources are read on every request. Stop with Ctrl+C.
+```
+
+Two things are at that address.
+
+**Your variants**, at the paths the service has. Point your tools at them:
+
+```sh
+openapi-typescript http://localhost:7745/v/bookshop/public.json -o ./src/api.types.ts
+```
+
+**An editor for the file**, at the address itself. It is the editor of the app: check operations, see the document they produce, and save. A save changes the file where the selection changed and leaves the rest, comments included, as you wrote it. You can also edit the file by hand. [Configuration file](/docs/configuration) describes every key.
+
+The file and its sources are read again on every request, so a change to either shows with the next fetch.
+
+With the public operations picked, the file looks like this. It is the one the rest of this page checks and deploys:
+
+<include lang="yaml" meta='title="openapi-proxy.yaml"'>../../../../examples/in-your-repository/openapi-proxy.yaml</include>
+
+`visibility: public` says that anyone with the URL may read this variant. Left out, a variant is what its project and then your workspace say: see [Private variants and keys](/docs/private-variants).
+
+### Reading the document from your dev server
+
+The file names where the document is when you deploy. While you develop, it is often somewhere else: at your dev server. `--source` reads a source from another place, for this run only:
+
+```sh
+npx @pipe0/openapi-proxy dev --source http://localhost:8080/openapi.json
+```
+
+With several sources, say which one: `--source core=http://localhost:8080/openapi.json`. The same flag works for `validate` and `operations`. `deploy` has no such flag: it reads what the file says, so that what is deployed is what is in the repository.
+
+## 3. Check it
+
+```sh
+npx @pipe0/openapi-proxy validate
+```
+
+```
+ok openapi-proxy.yaml is a valid definition.
+  public: serves 5 of 8 operations
+```
+
+`validate` exits with 1 if the file is not a valid definition, and says which line. A tag or an operation that the document does not have is a warning, not an error: the file is often written before the API it describes is live.
+
+## 4. Deploy it
+
+A deploy needs a **deploy API key**. This is where a person is needed, twice: the owner of a workspace creates the key, and whoever runs the pipeline stores it there as a secret.
+
+To create the key, sign in at [openapi-proxy.app](https://openapi-proxy.app). Signing in gives you a workspace. Open **Workspace** and create a key under **Deploy API keys**, or use **New project**, then **From your repository**, which shows the same button next to these commands. The key is shown once.
+
+```sh
+OPENAPI_PROXY_API_KEY=oap_... npx @pipe0/openapi-proxy deploy --dry-run
+```
+
+`--dry-run` says what a deploy would do and changes nothing. Without it:
+
+```
+Created bookshop on https://openapi-proxy.app
+
+Sources
+  main  uploaded  6 kB  8 operations  read from /repo/openapi.json
+
+Variants
+  public  created  5 of 8 operations  public (set on the variant)  https://openapi-proxy.app/v/bookshop/public
+```
+
+What a deploy does:
+
+- It reads every source here, on the machine that runs it, and uploads the documents with the file. The project has its documents the moment the deploy is done.
+- The project with the file's slug becomes what the file says. It is created if it is not there. A variant the file no longer lists is deleted, and its URL answers `404`.
+- From then on the project is changed by deploying. In the app it can be read, and not edited. The app says so on the project, with one switch to edit it there again.
+- A tag or an operation the documents do not have is reported and stops nothing.
+
+### From CI
+
+Add the key as a secret of your pipeline named `OPENAPI_PROXY_API_KEY`. This workflow for GitHub Actions checks the file on every pull request and deploys it from `main`:
+
+<include lang="yaml" meta='title=".github/workflows/openapi-proxy.yml"'>../../../../examples/in-your-repository/.github/workflows/openapi-proxy.yml</include>
+
+On GitHub Actions and GitLab CI, a deploy also says which commit it ran for. The app shows it on the project.
+
+## Where the document comes from
+
+A source is a `file` or a `url`, and that decides what happens between deploys.
+
+**A file your build writes.** The deploy uploads exactly what this commit describes, and nothing changes until the next deploy. This is the default to reach for: the document, the selection and the code go out together.
+
+```yaml
+sources:
+  - file: ./openapi.json
+```
+
+**A URL, read at deploy.** The same, with the document fetched from an address by the machine that deploys. Nothing is checked afterwards.
+
+```yaml
+sources:
+  - url: https://api.example.com/openapi.json
+```
+
+**A URL the service follows.** With `follow: true` the service also keeps reading the address between deploys, as it does for a project made in the app. Use it when the API is released on its own schedule, not with this repository. After a deploy the service looks every few minutes for a quarter of an hour, so that an API which goes live a moment later is picked up quickly. See [Following a URL](/docs/following-a-url).
+
+```yaml
+sources:
+  - url: https://api.example.com/openapi.json
+    follow: true
+```
+
+## A project that is already in the app
+
+Its settings have **View as file**: the project as the `openapi-proxy.yaml` that would make it. Save that file in your repository. `deploy --dry-run` then says that nothing would change, and the first deploy makes the file what defines the project. The URLs, the variants and the keys that read them stay.
+
+## A self-hosted instance
+
+A file is deployed to `https://openapi-proxy.app` unless it names another instance:
+
+```yaml
+instance: https://proxy.example.com
+```
+
+## Best practice
+
+- **Let the build write the document, and deploy it with the code.** What is served then matches what is running.
+- **Run `validate` on pull requests.** A typo in a key is caught before it is merged.
+- **Give the pipeline its own key**, named after where it is used. It can be revoked without touching anyone else.
+- **Keep scripts in `package.json`**, so that nobody has to remember flags:
+
+<include lang="json" meta='title="package.json"'>../../../../examples/in-your-repository/package.json</include>
+
+## For an agent
+
+Everything on this page can be done by a coding agent, except creating the key and adding it to the pipeline as a secret. `npx @pipe0/openapi-proxy operations --json` lists the names to select from, and `validate` says whether the file it wrote is right.

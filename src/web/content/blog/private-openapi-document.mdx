@@ -35,7 +35,7 @@ That is the usual outcome. The private document becomes a file in a repository, 
 
 ```sh
 curl -fsS https://proxy.example.com/v/acme/internal.json \
-  -H "Authorization: Bearer $OPENAPI_PROXY_API_KEY" \
+  -H "Authorization: Bearer $KEY" \
   -o openapi.json
 ```
 
@@ -53,8 +53,8 @@ If you put a credential in front of a document, a few details decide whether it 
 
 ## In practice
 
-In [openapi-proxy](/), every variant is public or private, and a workspace can make private the default for new ones. A private variant is read with an API key sent as `Authorization: Bearer`.
+In [openapi-proxy](/), every variant is public or private, and a workspace or a project can make private the default. A private variant is read with a user API key sent as `Authorization: Bearer`.
 
 Next to a private variant's URL there is a button that creates a key for that variant alone. It is read-only and opens no other document, which makes it the key to hand to a partner or to store as a CI secret. A key can also read all of a workspace's private variants, for a pipeline that builds several.
 
-The source can be private as well. The proxy fetches your backend's full document with request headers you give it, stored encrypted and sent only to that document's own origin. So the whole chain can be closed: a private source, and private variants of it for each reader. The URLs and status codes are in [Serving a variant](/docs/serving).
+The source can be private as well. The proxy fetches your backend's full document with request headers you give it, stored encrypted and sent only to that document's own origin. So the whole chain can be closed: a private source, and private variants of it for each reader. The URLs and status codes are in [Private variants and keys](/docs/private-variants).

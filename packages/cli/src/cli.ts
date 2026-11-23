@@ -5,6 +5,7 @@ import { init } from "./commands/init.js";
 import { operations } from "./commands/operations.js";
 import { problemLine, validate } from "./commands/validate.js";
 import { ConfigError, DEFAULT_CONFIG, NoConfigError } from "./config.js";
+import { noConfig } from "./no-config.js";
 import { fail, note, print } from "./output.js";
 import { SourceError } from "./sources.js";
 
@@ -125,19 +126,6 @@ Example
   ${KEY_VARIABLE}=oap_... openapi-proxy deploy --dry-run
 `,
 };
-
-/** What to say when there is no definition file: where to start. */
-function noConfig(path: string): void {
-  fail(`There is no ${path} here.`);
-  note("");
-  note("A definition file says which OpenAPI documents a project is made of and");
-  note("which variants are served from them. To write a first one:");
-  note("");
-  note("  openapi-proxy init <url or file of your OpenAPI document>");
-  note("");
-  note("If your document is at a URL and you want variants without a file in a");
-  note("repository, connect the URL at https://openapi-proxy.app instead.");
-}
 
 async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;

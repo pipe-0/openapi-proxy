@@ -1,6 +1,6 @@
 # Examples
 
-Three definition files, one for each way openapi-proxy is used. Each folder runs as it is:
+Three definition files, one for each guide in the docs. Each folder runs on your machine:
 
 ```sh
 cd examples/several-audiences

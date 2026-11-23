@@ -6,7 +6,7 @@ date: 2026-11-22
 tldr: "OpenAPI 3.1 is not a superset of 3.0. It replaced the schema dialect with JSON Schema 2020-12, so a 3.0 tool can fail on a document that validates fine. Most of what 3.1 documents use has a 3.0 spelling, such as nullable for a null type and enum for const. A few keywords have none and are dropped, and a good conversion tells you which."
 faq:
   - q: "How do I convert OpenAPI 3.1 to 3.0?"
-    a: "Translate the schema keywords that differ: a type array with null becomes nullable, const becomes a one-value enum, a numeric exclusiveMinimum becomes minimum with a boolean, examples becomes example, and a $ref with other keywords beside it is wrapped in allOf. Tools such as @apiture/openapi-down-convert do this at build time. openapi-proxy serves any document as 3.0 at a URL ending in /3.0.json."
+    a: "Translate the schema keywords that differ: a type array with null becomes nullable, const becomes a one-value enum, a numeric exclusiveMinimum becomes minimum with a boolean, examples becomes example, and a $ref with other keywords beside it is wrapped in allOf. Tools such as @apiture/openapi-down-convert do this at build time. openapi-proxy serves a 3.1 document as 3.0 at a URL ending in /3.0.json."
   - q: "What is lost when converting from OpenAPI 3.1 to 3.0?"
     a: "Keywords with no 3.0 counterpart: patternProperties, prefixItems tuples, if, then and else, unevaluatedProperties and dependentSchemas. The 3.0 document then accepts more than the API does, so the conversion should report what it dropped."
   - q: "Is OpenAPI 3.1 backwards compatible with 3.0?"
@@ -65,8 +65,8 @@ A conversion at build time has the usual problem, though. It runs when someone r
 
 ## Converting at the edge
 
-In openapi-proxy, every variant is served in both versions, and the URL says which one a reader gets: `/v/acme/gateway/3.0.json` for the gateway, `/v/acme/docs.json` for the docs, both from the same source and both current. Your backend keeps generating whatever its framework generates.
+In openapi-proxy, every variant of a 3.0 or 3.1 document is served in both versions, and the URL says which one a reader gets: `/v/acme/gateway/3.0.json` for the gateway, `/v/acme/docs.json` for the docs, both from the same source and both current. Your backend keeps generating whatever its framework generates.
 
 The conversion is a list of small named steps, one per row of the table above, each a pure function. It only converts what the variant serves, and the editor tells you exactly what was left out of that variant and how often, before anything is published. Going the other way, from 3.0 to 3.1, loses nothing, which is also how a 3.0 service and a 3.1 service can be [merged](/blog/merge-multiple-openapi-documents) into one document.
 
-The engine is open source under the MIT license, in `packages/core` of the repository, so the same conversion can run in your own build too. The full table is in [OpenAPI versions](/docs/versions).
+The engine is open source under the MIT license, in `packages/core` of the repository, so the same conversion can run in your own build too. The full table is in [URLs, formats and versions](/docs/urls#openapi-versions).

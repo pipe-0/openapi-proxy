@@ -1,0 +1,137 @@
+---
+title: Following a URL
+description: How the service notices that your API changed, how often it looks, what is served meanwhile, and how you hear about it.
+---
+
+A source is kept in one of two ways.
+
+- **Followed.** The service keeps reading the source's URL and stores each new document. This is what a project made in the app does, and what `follow: true` says in a definition file.
+- **Uploaded.** The document arrives with a deploy and stays as it is until the next one. Nothing is checked in between.
+
+This page is about the first. For the second, see [In your repository](/docs/in-your-repository#where-the-document-comes-from).
+
+## How often the service looks
+
+A timer checks followed sources. How often depends on one thing: what a check costs your API.
+
+- **Every 5 minutes**, if your API can say that nothing changed without sending the document again: it sends an `ETag` or `Last-Modified` with the document.
+- **Once an hour**, if it cannot. Every check then makes your API send the whole document.
+
+There is nothing to configure. A project's documents say which of the two applies to each. A project with several followed documents is checked as often as its costliest one allows.
+
+- A source that fails is looked at again a few minutes later, and once an hour after that until it is back.
+- A project without a variant is not checked: nobody is served anything from it.
+- A request for a variant never causes a check. It is answered from what is stored, whatever your API is doing at that moment.
+
+## Right after your API is released
+
+Two things make the service look sooner than its timer would.
+
+**Check for updates now**, in the project's settings in the app, looks at once and says how many operations were added and removed. The email that follows names them.
+
+**A deploy of a definition file.** After `openapi-proxy deploy` to a project with a followed source, the service looks at every run of its timer for a quarter of an hour, or until the first new document arrives. An API that goes live a moment after the file was deployed is picked up within minutes, also where a check is costly.
+
+## What is served when your API changes
+
+| In your API | What is served | What you see |
+| --- | --- | --- |
+| A selected operation disappears | The rest. It is served again if it comes back. | "Not found" on the variant, and an email |
+| New operations appear | Hidden or served, as [the selection says](/docs/selecting) | An email |
+| An operation changes | The new version | An email, if a variant serves it |
+| The document cannot be fetched, or is not valid | The last good copy, with `X-Proxy-Source-Status: stale-error` | "Check failed" on the project, with the reason |
+
+A change counts per operation and includes what the operation references. A field added to a schema is reported for the operations that use that schema, and for no others.
+
+## Email
+
+Emails go to the address you signed in with. In each project's settings, under **Email about changes**, you choose how much you want for that project:
+
+- **Nothing.**
+- **What my variants serve**: new operations, and changes and removals that touch something a variant serves.
+- **Everything**: every operation that is added, changed or removed.
+
+The setting is yours alone. Your colleagues choose for themselves.
+
+A deploy that uploads a changed document is reported the same way, once. A change to the definition itself, such as a path prefix, is not news to anyone: whoever deployed it knows.
+
+## A URL that needs credentials
+
+A followed source can have request headers, typically `Authorization`, which the service sends with every fetch. They are set in the app, on the document, and are not part of a definition file.
+
+They are encrypted before they are stored and never shown again. They are sent to the document's own origin only, also when that origin redirects somewhere else, and they stay with the source for as long as its URL stays on that origin.
+
+## Sending an ETag
+
+An `ETag` is a label for one version of a response. Your API sends it with the document, the service stores it, and at the next check asks "do you still have this one?". If so, your API answers `304 Not Modified` with no body, and the check is over. A check that cheap is made every 5 minutes, not once an hour.
+
+What your API has to do:
+
+1. Send an `ETag` header with the OpenAPI document. Its value has to change whenever the document does. A hash of the document's bytes is the easy choice.
+2. When a request carries `If-None-Match` with the current value, answer `304` and no body.
+
+```http
+GET /openapi.json
+
+HTTP/1.1 200 OK
+ETag: "9f86d081884c7d65"
+Content-Type: application/json
+```
+
+```http
+GET /openapi.json
+If-None-Match: "9f86d081884c7d65"
+
+HTTP/1.1 304 Not Modified
+ETag: "9f86d081884c7d65"
+```
+
+Weak ETags (`W/"..."`) are fine. `Last-Modified` with `If-Modified-Since` works too, but a date is easier to get wrong than a hash.
+
+### Hono
+
+The built-in middleware hashes the response and answers `If-None-Match` for you.
+
+```ts
+import { etag } from "hono/etag";
+
+app.use("/openapi.json", etag());
+```
+
+### Express
+
+Express already does this for responses sent with `res.json` or `res.send`, unless your app turned it off with `app.set("etag", false)`.
+
+### FastAPI
+
+FastAPI serves its document without an ETag. A small middleware adds one:
+
+```py
+import hashlib
+from fastapi import Request, Response
+
+@app.middleware("http")
+async def openapi_etag(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path != "/openapi.json":
+        return response
+    body = b"".join([chunk async for chunk in response.body_iterator])
+    tag = '"' + hashlib.sha256(body).hexdigest()[:32] + '"'
+    if request.headers.get("if-none-match") == tag:
+        return Response(status_code=304, headers={"ETag": tag})
+    return Response(body, media_type="application/json", headers={"ETag": tag})
+```
+
+### Anything else
+
+Hash the document's bytes, send the hash as `ETag`, and compare it with `If-None-Match` before sending the body. If your framework builds the document on every request, build it once and keep it: it does not change until your next deploy.
+
+### Checking that it works
+
+```sh
+curl -sI https://api.example.com/openapi.json | grep -i etag
+curl -s -o /dev/null -w "%{http_code}\n" \
+  -H 'If-None-Match: "<the value from above>"' \
+  https://api.example.com/openapi.json
+```
+
+The second command should print `304`. The project's documents in the app also say which kind of check your API allows, after its next check.

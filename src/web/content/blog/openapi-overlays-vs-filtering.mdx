@@ -64,6 +64,6 @@ The two are not rivals. Deciding what an audience sees is a selection. Changing 
 
 [openapi-proxy](/) does the selection. You check the tags or operations an audience gets, and the result is served at a URL, pruned to what those operations reference. Checking a whole tag keeps it as a rule, so the selection follows the API where you want it to and nowhere else.
 
-For the edits people most often reach for an overlay to make, a variant has its own title, description and servers, which is how the same selection becomes a production and a sandbox document. See [Environments and servers](/docs/environments).
+For the edits people most often reach for an overlay to make, a variant has its own title, description and servers, which is how the same selection becomes a production and a sandbox document. See [A variant for each environment](/docs/several-documents#environments).
 
 It does not apply overlay files. If you rewrite descriptions and examples with one, run it in the build that produces your source document, and let the proxy select from the result. Either way, the test from [the post on internal endpoints](/blog/public-openapi-document-without-internal-endpoints) applies: fetch your public document and count the schemas no remaining operation references. That number should be zero.
