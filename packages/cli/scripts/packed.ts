@@ -1,9 +1,9 @@
 /**
- * The package as people get it: packed the way `npm publish` packs it,
- * installed into an empty folder outside this repository, and used there.
- * Nothing of the workspace is around it, so a file that is missing from the
- * package, or a dependency that was not bundled, fails here and not on
- * someone's machine.
+ * The package as people get it: packed the way a release packs it (`pnpm
+ * pack`, which is what Changesets runs), installed with npm into an empty
+ * folder outside this repository, and used there. Nothing of the workspace is
+ * around it, so a file that is missing from the package, or a dependency that
+ * was not bundled, fails here and not on someone's machine.
  *
  *   pnpm --filter @pipe0/openapi-proxy test:packed
  *
@@ -79,12 +79,12 @@ async function answering(url: string): Promise<void> {
 const work = mkdtempSync(join(tmpdir(), "openapi-proxy-packed-"));
 let server: ChildProcess | undefined;
 try {
-  // 1. Pack it. This runs the build, as a publish does.
+  // 1. Pack it. This runs the build, as a release does.
   const packed = join(work, "packed");
   mkdirSync(packed);
-  run("npm", ["pack", "--pack-destination", packed], root);
-  const tarball = readdirSync(packed).find((name) => name.endsWith(".tgz"));
-  assert(tarball, "npm pack wrote a tarball");
+  const tarball = `pipe0-openapi-proxy-${version}.tgz`;
+  run("pnpm", ["pack", "--out", join(packed, tarball)], root);
+  assert(readdirSync(packed).includes(tarball), "pnpm pack wrote a tarball");
   const files = run("tar", ["-tzf", join(packed, tarball)], work)
     .trim()
     .split("\n");

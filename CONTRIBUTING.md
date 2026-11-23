@@ -90,7 +90,7 @@ pnpm test:e2e      # needs `pnpm exec playwright install chromium` once
 - **Worker tests exercise real behaviour.** They call the Worker's `fetch` handler, wait for everything it scheduled with `waitUntil`, and stub only the outside world: the source servers, Google's token endpoint and the email provider. Sign-in runs through better-auth for real. See `test/harness.ts`.
 - **Promises are tests.** "No request for a variant makes the service fetch anything", "a change is emailed once, whoever notices it", "someone removed from a workspace loses it with their next request": each is a test, named after what it holds (`test/check.test.ts`, `test/notifications.test.ts`, `test/workspace.test.ts`).
 - **Localhost and the service serve the same bytes.** A browser journey deploys an example with the built command line tool, then fetches every variant in every format and version from `openapi-proxy dev` and from the app, and compares.
-- **The package is tested as it is installed.** `pnpm --filter @pipe0/openapi-proxy test:packed` packs it, installs the tarball into an empty folder outside the repository, and runs `init`, `validate` and `dev` there. CI runs it a second time with the oldest Node the package says it supports.
+- **The package is tested as it is installed.** `pnpm --filter @pipe0/openapi-proxy test:packed` packs it the way a release does, installs the tarball into an empty folder outside the repository, and runs `init`, `validate` and `dev` there. CI runs it a second time with the oldest Node the package says it supports.
 - **The end-to-end suite is hermetic.** It starts a fixture server that plays "your backend", a fresh local database and its own secrets, so it needs no network, ignores your `.env`, and gives the same result every time.
 
 ## Working on the interface
@@ -133,14 +133,19 @@ If a deploy goes wrong after its migration ran, D1 keeps every minute of the las
 
 ## Releasing the command line tool
 
-`@pipe0/openapi-proxy` is published from a tag, by [`publish.yml`](.github/workflows/publish.yml):
+`@pipe0/openapi-proxy` is versioned and published with [Changesets](https://changesets.dev), by [`release.yml`](.github/workflows/release.yml). Nobody edits its version by hand.
 
-1. Change `version` in `packages/cli/package.json` and merge that.
-2. Tag that commit `cli-v<version>` and push the tag. The workflow checks that tag and version agree, runs the tests and the packed-artifact test, and publishes.
+1. **A change that users of the tool will notice comes with a changeset.** `pnpm changeset` asks what changed. Without the questions: `pnpm changeset --patch @pipe0/openapi-proxy -m "What changed, for someone who uses the tool"`. It writes a small file into `.changeset/`; commit it with the change. `--patch` is for a fix, `--minor` for something new and, before 1.0, for a change that breaks something.
+2. **A push to `main` with changesets opens the pull request "Version Packages"**, or updates it. It turns the changesets into the next version and into `packages/cli/CHANGELOG.md`.
+3. **Merging that pull request publishes.** The workflow runs the tests of the engine and the tool and the packed-artifact test, packs the tool, publishes it to npm, tags the commit `@pipe0/openapi-proxy@<version>` and writes a GitHub release.
 
-No npm token is stored anywhere: npm trusts the workflow itself (trusted publishing, set up in the package's settings on npmjs.com). A package has to exist before it can trust a workflow, so the very first version is published by hand: `npm login`, then `npm publish --access public` in `packages/cli`, in a shell that has pnpm (`mise x -- npm publish --access public`), because packing builds the tool first. The workflow only publishes a tagged commit that is on `main`. Publish after that commit is deployed, not before: the package's links, the schema address in the files it writes and `deploy` itself need a service that knows definitions.
+The tool bundles the engine and the editor. A change in `packages/core` or `packages/editor` that the tool's users notice needs a changeset too, named for `@pipe0/openapi-proxy`: nothing works that out for you. A change to the app or the service alone needs none.
 
-The app and the tool are released separately. A push to `main` deploys the service and publishes nothing; a tag publishes the tool and deploys nothing. What a tool of one version may send to a service of another is the definition format, which has a version of its own (`version: 1` in the file).
+No npm token is stored anywhere. npm trusts the workflow by its file name (trusted publishing, in the package's settings on npmjs.com), so the file has to stay `.github/workflows/release.yml`. Only `@pipe0/openapi-proxy` is published: every other package in the workspace says `"private": true`, and a new one has to say so as well, or the workflow tries to publish it.
+
+Pull requests opened by a workflow do not start other workflows, so CI does not run on "Version Packages". That pull request only changes the version and the changelog, and the release workflow tests the tool before it publishes.
+
+The app and the tool are released separately. A push to `main` deploys the service; the tool is published when its version changes. What a tool of one version may send to a service of another is the definition format, which has a version of its own (`version: 1` in the file).
 
 ## Changing the engine's output
 

@@ -8,7 +8,7 @@
     "client:generate": "openapi-typescript http://localhost:7745/v/bookshop/public.json -o ./src/api.types.ts"
   },
   "devDependencies": {
-    "@pipe0/openapi-proxy": "^0.1.0",
+    "@pipe0/openapi-proxy": "latest",
     "openapi-typescript": "^7.10.0"
   }
 }

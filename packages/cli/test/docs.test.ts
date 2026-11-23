@@ -213,20 +213,6 @@ describe("the output the docs show", () => {
     expect(deployed).toContain(`uploaded  ${Math.round(bytes / 1000)} kB  8 operations`);
     expect(deployed).toContain("public  created  5 of 8 operations  public (set on the variant)");
   });
-
-  it("uses an example that asks for a version of the tool the repository has", () => {
-    const { version } = JSON.parse(
-      readFileSync(join(ROOT, "packages/cli/package.json"), "utf8"),
-    ) as { version: string };
-    const example = JSON.parse(
-      readFileSync(join(EXAMPLES, "in-your-repository/package.json"), "utf8"),
-    ) as { devDependencies: Record<string, string> };
-    const [major, minor] = version.split(".");
-    // Before 1.0 a caret holds the minor version, so the example moves with each of those.
-    expect(example.devDependencies["@pipe0/openapi-proxy"]).toBe(
-      major === "0" ? `^0.${minor}.0` : `^${major}.0.0`,
-    );
-  });
 });
 
 describe("the reference of the command line tool", () => {
