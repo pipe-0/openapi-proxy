@@ -1,6 +1,6 @@
 {
   "name": "@pipe0/openapi-proxy",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Filter an OpenAPI document into one for each audience, from a config file in your repo: a local dev server for the filtered documents, and deploy from CI.",
   "license": "MIT",
   "type": "module",
