@@ -3,6 +3,7 @@ import { GUARDS, PLAN_LIMITS, PLAN_NAMES, PLAN_PRICES, type PlanLimits } from ".
 import { Problem } from "./problem";
 import { GITHUB_URL } from "./site";
 import { UrlForm } from "./url-form";
+import { Walkthrough } from "./walkthrough";
 
 function planLines(limits: PlanLimits): string[] {
   return [
@@ -135,28 +136,7 @@ export function Landing() {
         </p>
       </section>
 
-      <section className="mx-auto max-w-6xl px-4 sm:px-6" aria-label="The variant editor">
-        <div className="overflow-hidden rounded-xl bg-card shadow-float ring-1 ring-border">
-          <img
-            src="/site/editor-light.png"
-            alt="The variant editor. Every operation of the document on the left with a checkbox, the document being served on the right, the variant's URL above both."
-            width={1440}
-            height={900}
-            loading="lazy"
-            decoding="async"
-            className="block h-auto w-full dark:hidden"
-          />
-          <img
-            src="/site/editor-dark.png"
-            alt=""
-            width={1440}
-            height={900}
-            loading="lazy"
-            decoding="async"
-            className="hidden h-auto w-full dark:block"
-          />
-        </div>
-      </section>
+      <Walkthrough />
 
       <Problem />
 

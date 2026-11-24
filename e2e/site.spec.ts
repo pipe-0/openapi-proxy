@@ -56,10 +56,15 @@ test("the landing page is rendered by the server and runs clean", async ({ page,
     const policy = response.headers()["content-security-policy"] ?? "";
     expect(policy).toMatch(/script-src 'self' 'nonce-[0-9a-f]{32}';/);
     expect(policy).toContain("frame-ancestors 'none'");
+    expect(policy).toContain("frame-src https://www.youtube-nocookie.com");
     expect(html).toContain(`nonce="${/'nonce-([0-9a-f]{32})'/.exec(policy)?.[1]}"`);
   }
 
   const problems = problemsOf(page);
+  // The walkthrough plays in YouTube's player. Here a stand-in answers for it: the journeys reach no one else.
+  await page.route("https://www.youtube-nocookie.com/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<!doctype html><title>player</title>" }),
+  );
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(
@@ -84,8 +89,14 @@ test("the landing page is rendered by the server and runs clean", async ({ page,
     "href",
     "/pricing",
   );
-  // Let lazy images and hydration settle before judging the console.
-  await page.getByRole("img", { name: /variant editor/ }).scrollIntoViewIfNeeded();
+  // The walkthrough is the player itself, right under the hero.
+  const player = page.locator('iframe[title="openapi-proxy walkthrough"]');
+  await expect(player).toHaveAttribute(
+    "src",
+    "https://www.youtube-nocookie.com/embed/vecJ1G2AAv0?rel=0",
+  );
+  // Let lazy frames and hydration settle before judging the console.
+  await player.scrollIntoViewIfNeeded();
   await page.waitForLoadState("networkidle");
   expect(problems).toEqual([]);
 
@@ -93,6 +104,8 @@ test("the landing page is rendered by the server and runs clean", async ({ page,
   await shot(page, "site-01-landing-desktop", { fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await shot(page, "site-02-landing-phone", { fullPage: true });
+
+  expect(problems).toEqual([]);
 });
 
 test("the hero carries a pasted URL through sign-in and connects it", async ({ page }) => {

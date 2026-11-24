@@ -21,6 +21,8 @@ function securityHeaders(nonce: string | undefined): Record<string, string> {
       `script-src 'self' 'nonce-${nonce}'`,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: https://*.googleusercontent.com",
+      // The walkthrough on the landing page, once someone plays it.
+      "frame-src https://www.youtube-nocookie.com",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
