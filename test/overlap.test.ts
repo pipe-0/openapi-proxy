@@ -96,6 +96,10 @@ async function merged() {
   return { cookie, definition, path: "/v/test/everything" };
 }
 
+/** The variants a plan counts: every one but the original each project has. */
+const COUNTED = "SELECT count(*) AS n FROM variants WHERE slug <> 'original'";
+const ORIGINALS = "SELECT count(*) AS n FROM variants WHERE slug = 'original'";
+
 describe("two applies to one project that overlap", () => {
   it("are two versions: the later one is what is served, under its own ETag", async () => {
     const { cookie, project, variant } = await publish();
@@ -200,7 +204,7 @@ describe("a save that comes too late", () => {
     );
     expect(both.map((response) => response.status)).toEqual([200, 200]);
     // They ran one after the other, and the second is what the project is now.
-    const count = await sql("SELECT count(*) AS n FROM variants");
+    const count = await sql(COUNTED);
     expect(count.results[0]).toEqual({ n: 15 });
     const one = await apply(
       cookie,
@@ -209,7 +213,9 @@ describe("a save that comes too late", () => {
       FREE,
     );
     expect(one.status).toBe(402);
-    expect((await sql("SELECT count(*) AS n FROM variants")).results[0]).toEqual({ n: 15 });
+    expect((await sql(COUNTED)).results[0]).toEqual({ n: 15 });
+    // The original is there besides, and costs nothing.
+    expect((await sql(ORIGINALS)).results[0]).toEqual({ n: 1 });
   });
 });
 
@@ -367,7 +373,7 @@ describe("a limit, asked for many times at once", () => {
       ),
     );
     expect(grown.map((response) => response.status).sort()).toEqual([200, 200, 402]);
-    const stored = await sql("SELECT count(*) AS n FROM variants");
+    const stored = await sql(COUNTED);
     expect(stored.results[0]).toEqual({ n: 12 });
     // The one that was refused is as it was.
     const after = (await (
@@ -388,7 +394,8 @@ describe("a limit, asked for many times at once", () => {
     );
     expect(created.map((response) => response.status).sort()).toEqual([201, 201, 402]);
     expect((await sql("SELECT count(*) AS n FROM projects")).results[0]).toEqual({ n: 2 });
-    expect((await sql("SELECT count(*) AS n FROM variants")).results[0]).toEqual({ n: 12 });
+    expect((await sql(COUNTED)).results[0]).toEqual({ n: 12 });
+    expect((await sql(ORIGINALS)).results[0]).toEqual({ n: 2 });
     expect((await sql("SELECT count(*) AS n FROM sources")).results[0]).toEqual({ n: 2 });
   });
 

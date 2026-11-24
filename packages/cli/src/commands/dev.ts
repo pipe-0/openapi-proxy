@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
-import { isLoopback } from "@openapi-proxy/core";
+import { isLoopback, servedSlugs } from "@openapi-proxy/core";
 import { loadConfig } from "../config.js";
 import { bold, dim, note, print, warn } from "../output.js";
 import { createServer } from "../server.js";
@@ -59,11 +59,11 @@ export async function dev(options: {
     isLoopback(options.host) || options.host === "127.0.0.1" ? "localhost" : options.host;
   const origin = `http://${shown}:${options.port}`;
   const { definition } = config;
-  const slugs = Object.keys(definition.variants);
+  const slugs = servedSlugs(definition);
   print(`${bold("openapi-proxy")} is serving ${options.config}`);
   print();
   for (const slug of slugs) print(`  ${origin}/v/${definition.project}/${slug}.json`);
-  if (slugs.length === 0) print(dim("  The file has no variants yet."));
+  if (slugs.length === 1) print(dim("  The file has no variants of its own yet."));
   print();
   if (editor) {
     print(`  Edit the file in your browser: ${bold(origin)}`);

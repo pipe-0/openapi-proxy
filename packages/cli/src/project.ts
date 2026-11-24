@@ -7,12 +7,15 @@ import {
   MergeError,
   type OperationEntry,
   type OperationIndex,
+  ORIGINAL_VARIANT,
   type ProjectNote,
+  renderOriginalText,
   renderVariantText,
   resolveSelection,
   type Selection,
   type SpecFormat,
   SpecParseError,
+  servedSlugs,
   type TargetVersion,
   type UnmatchedNames,
   unmatchedNames,
@@ -92,7 +95,9 @@ export function render(
 ): string {
   const { selection, overrides } = effectiveVariant(project.config.definition, slug);
   try {
-    return renderVariantText(project.sources, { selection, overrides, version, format });
+    return slug === ORIGINAL_VARIANT
+      ? renderOriginalText(project.sources, { version, format })
+      : renderVariantText(project.sources, { selection, overrides, version, format });
   } catch (error) {
     return refusal(project, error);
   }
@@ -108,7 +113,7 @@ export function summarize(
   project: Project,
   index: OperationIndex,
 ): Array<{ slug: string; served: number; total: number; unmatched: UnmatchedNames }> {
-  return Object.keys(project.config.definition.variants).map((slug) => {
+  return servedSlugs(project.config.definition).map((slug) => {
     const { selection } = effectiveVariant(project.config.definition, slug);
     return {
       slug,

@@ -273,7 +273,8 @@ function report(
 
   print();
   print("Variants");
-  if (result.variants.length === 0) print(dim("  The file has no variants yet."));
+  // The original is always there; the variants are the ones the file makes from it.
+  if (result.variants.length === 1) print(dim("  The file has no variants of its own yet."));
   for (const line of table(
     result.variants.map((variant) => {
       if (variant.action === "deleted") {

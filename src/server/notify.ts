@@ -1,4 +1,4 @@
-import type { OperationEntry } from "@openapi-proxy/core";
+import { type OperationEntry, ORIGINAL_VARIANT } from "@openapi-proxy/core";
 import { and, eq, isNull, ne, or, sql } from "drizzle-orm";
 import type { Db } from "./db/client";
 import {
@@ -179,7 +179,8 @@ export async function notifyOfChanges(
         selection: variants.selection,
       })
       .from(variants)
-      .where(eq(variants.projectId, project.id)),
+      // The original serves everything, so it says nothing about what a decision touched.
+      .where(and(eq(variants.projectId, project.id), ne(variants.slug, ORIGINAL_VARIANT))),
   ]);
 
   const servedNow = projectVariants.map((variant) => ({
@@ -211,7 +212,7 @@ export async function notifyOfChanges(
       workspaceName: workspace?.name ?? "your team",
       report,
       projectUrl: base ? `${base}/p/${project.slug}` : undefined,
-      settingsUrl: base ? `${base}/workspace` : undefined,
+      settingsUrl: base ? `${base}/p/${project.slug}/settings` : undefined,
     });
     if (email && (await sendEmail(env, email))) sent += 1;
   }

@@ -1,8 +1,9 @@
-import type {
-  ProjectDefinition,
-  Selection,
-  SourceDefinition,
-  VariantDefinition,
+import {
+  ORIGINAL_VARIANT,
+  type ProjectDefinition,
+  type Selection,
+  type SourceDefinition,
+  type VariantDefinition,
 } from "@openapi-proxy/core";
 import type { ProjectRow, SourceRow, VariantRow } from "./db/schema";
 
@@ -73,17 +74,20 @@ export function definitionFromRows(
       ...(source.pathPrefix !== null ? { pathPrefix: source.pathPrefix } : {}),
     })),
     variants: Object.fromEntries(
-      byPosition(variants).map((variant): [string, VariantDefinition] => [
-        variant.slug,
-        {
-          ...(variant.name !== null ? { name: variant.name } : {}),
-          ...(variant.icon !== null ? { icon: variant.icon } : {}),
-          ...(variant.visibility !== null ? { visibility: variant.visibility } : {}),
-          ...(variant.selection.include ? { include: variant.selection.include } : {}),
-          ...(variant.selection.exclude ? { exclude: variant.selection.exclude } : {}),
-          ...(variant.overrides !== null ? { overrides: variant.overrides } : {}),
-        },
-      ]),
+      byPosition(variants)
+        // Every project has the original. The definition names it only to say who may read it.
+        .filter((variant) => variant.slug !== ORIGINAL_VARIANT || variant.visibility !== null)
+        .map((variant): [string, VariantDefinition] => [
+          variant.slug,
+          {
+            ...(variant.name !== null ? { name: variant.name } : {}),
+            ...(variant.icon !== null ? { icon: variant.icon } : {}),
+            ...(variant.visibility !== null ? { visibility: variant.visibility } : {}),
+            ...(variant.selection.include ? { include: variant.selection.include } : {}),
+            ...(variant.selection.exclude ? { exclude: variant.selection.exclude } : {}),
+            ...(variant.overrides !== null ? { overrides: variant.overrides } : {}),
+          },
+        ]),
     ),
   };
 }

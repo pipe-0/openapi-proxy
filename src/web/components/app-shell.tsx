@@ -18,6 +18,7 @@ import { Link, Outlet, useNavigate, useParams } from "@tanstack/react-router";
 import {
   CheckIcon,
   ChevronsUpDownIcon,
+  FileTextIcon,
   MenuIcon,
   PlusIcon,
   SearchIcon,
@@ -178,6 +179,28 @@ function SidebarBody({
       {project && (
         <>
           <div className="mt-3 flex flex-col gap-0.5 px-2">
+            {/* What the project is made of, as it is: where it opens. */}
+            <Link
+              to="/p/$project"
+              params={{ project: projectSlug(project) }}
+              activeOptions={{ exact: true }}
+              activeProps={{ className: navItemActive }}
+              className={navItem}
+              onClick={onNavigate}
+            >
+              <FileTextIcon
+                className={cn(
+                  "size-4 text-muted-foreground group-hover/nav:text-foreground",
+                  onActive,
+                )}
+              />
+              <span className="flex-1">Original</span>
+              {check?.lastStatus === "error" && (
+                <StatusChip tone="bad" className={chipOnActive}>
+                  {checkStatus(check).label}
+                </StatusChip>
+              )}
+            </Link>
             <Link
               to="/p/$project/settings"
               params={{ project: projectSlug(project) }}
@@ -191,12 +214,7 @@ function SidebarBody({
                   onActive,
                 )}
               />
-              <span className="flex-1">Project settings</span>
-              {check?.lastStatus === "error" && (
-                <StatusChip tone="bad" className={chipOnActive}>
-                  {checkStatus(check).label}
-                </StatusChip>
-              )}
+              <span className="flex-1">Settings</span>
             </Link>
           </div>
 

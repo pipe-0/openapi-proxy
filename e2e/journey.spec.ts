@@ -33,9 +33,21 @@ test("from a URL to a served variant", async ({ page, request }) => {
   await shot(page, "02-connect");
   await page.getByRole("button", { name: "Connect" }).click();
 
-  // ---- Editor: a new variant of the freshly created project ----
-  await expect(page).toHaveURL(/\/p\/pipe0\/new$/, { timeout: 30_000 });
+  // ---- What came in: the original, its URL and every operation in it ----
+  await expect(page).toHaveURL(/\/p\/pipe0$/, { timeout: 30_000 });
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Original");
   await expect(page.getByRole("button", { name: "Switch project" })).toContainText("pipe0");
+  await expect(page.getByTestId("variant-url")).toHaveText(/\/v\/pipe0\/original\.json$/);
+  await expect(page.getByText("Not in a variant").first()).toBeVisible();
+  await shot(page, "02-original");
+  // The document as it came in, byte for byte.
+  const original = await request.get("/v/pipe0/original.json");
+  expect(original.status()).toBe(200);
+  expect(await original.text()).toBe(await (await request.get(fixtureUrl("/openapi.json"))).text());
+
+  // ---- Editor: a new variant of the freshly created project ----
+  await page.getByRole("main").getByRole("button", { name: "New variant" }).click();
+  await expect(page).toHaveURL(/\/p\/pipe0\/new$/);
   await expect(page.getByTestId("served-operations")).toHaveText("0");
 
   // A whole tag is one click, and covers what is added to it later; single operations are pinned.
@@ -115,19 +127,20 @@ test("from a URL to a served variant", async ({ page, request }) => {
   await expect(page.getByText("Unpublished changes")).toBeHidden();
   expect((await request.get("/v/pipe0/public-docs.json")).headers().etag).not.toBe(etag);
 
-  // ---- It is in the navigation, on every page of the project ----
-  await page.getByRole("link", { name: "Project settings" }).click();
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Project settings");
+  // ---- It is in the navigation, on every page of the project, and serves what the original lists ----
+  await page.getByRole("link", { name: "Original", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Original");
+  await expect(page.getByText("Public docs").first()).toBeVisible();
   await expect(
     page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: /Public docs/ }),
   ).toBeVisible();
 });
 
 test("a project's documents, its name and its URL prefix", async ({ page, request }) => {
-  // A project opens on its documents.
+  // A project opens on its original, which lists its documents.
   await signIn(page);
-  await expect(page).toHaveURL(/\/p\/pipe0\/settings$/);
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Project settings");
+  await expect(page).toHaveURL(/\/p\/pipe0$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Original");
   await expect(page.getByText("We check this document for updates every hour.")).toBeVisible();
   await shot(page, "06-source");
 
@@ -138,6 +151,8 @@ test("a project's documents, its name and its URL prefix", async ({ page, reques
 
   await expect(page.getByText(/Each check downloads the whole document/)).toBeVisible();
   await page.keyboard.press("Escape");
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Settings");
 
   // Until it has a name, a project goes by its slug. The slug is its address, and stays.
   await expect(page.getByRole("button", { name: "Switch project" })).toContainText("pipe0");
@@ -168,7 +183,9 @@ test("a document that needs credentials", async ({ page, request }) => {
   await shot(page, "07-credentials");
   await page.getByLabel("Value for Authorization").fill(`Bearer ${FIXTURE_TOKEN}`);
   await page.getByLabel("Value for Authorization").press("Enter");
-  await expect(page).toHaveURL(/\/p\/partners-api\/new$/, { timeout: 30_000 });
+  await expect(page).toHaveURL(/\/p\/partners-api$/, { timeout: 30_000 });
+  await page.getByRole("main").getByRole("button", { name: "New variant" }).click();
+  await expect(page).toHaveURL(/\/p\/partners-api\/new$/);
 
   // Serve everything, take one tag out, and let later additions through.
   await page.getByLabel("Serve all operations", { exact: true }).click();
@@ -187,7 +204,7 @@ test("a document that needs credentials", async ({ page, request }) => {
   expect(await served.text()).not.toContain("/v1/secrets");
 
   // The secret is stored, shown as stored, and never sent back to the browser.
-  await page.getByRole("link", { name: "Project settings" }).click();
+  await page.getByRole("link", { name: "Original", exact: true }).click();
   await page.getByRole("table").getByRole("button").first().click();
   await expect(page.getByLabel("Header name")).toHaveValue("Authorization");
   await expect(page.getByLabel("Value for Authorization")).toHaveValue("");
@@ -197,7 +214,7 @@ test("a document that needs credentials", async ({ page, request }) => {
 
 test("keyboard: the command menu reaches everything", async ({ page }) => {
   await signIn(page);
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Project settings");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Original");
   await page.keyboard.press("ControlOrMeta+k");
   await page.getByPlaceholder("Search variants, projects and actions").fill("public");
   await shot(page, "08-command-menu");
@@ -207,8 +224,9 @@ test("keyboard: the command menu reaches everything", async ({ page }) => {
 
 test("an expired session returns you to where you were", async ({ page, context }) => {
   await signIn(page);
-  await page.getByRole("link", { name: "Project settings" }).click();
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Project settings");
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByRole("link", { name: "Original", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Original");
   const url = page.url();
 
   await context.clearCookies();
@@ -231,7 +249,7 @@ test("leaving with unpublished changes asks first; deleting takes the URL down",
   await page.getByLabel("GET /v1/pipes/check/{run_id}", { exact: true }).click();
   await expect(page.getByText("Unpublished changes")).toBeVisible();
 
-  await page.getByRole("link", { name: "Project settings" }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(page.getByRole("alertdialog")).toContainText("Leave without publishing?");
   await page.getByRole("button", { name: "Stay" }).click();
   await page.getByRole("button", { name: "Discard", exact: true }).click();
@@ -240,7 +258,7 @@ test("leaving with unpublished changes asks first; deleting takes the URL down",
   await page.getByRole("button", { name: "More actions" }).click();
   await page.getByRole("menuitem", { name: "Delete variant" }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Delete variant" }).click();
-  await expect(page).toHaveURL(/\/p\/pipe0\/settings$/);
+  await expect(page).toHaveURL(/\/p\/pipe0$/);
   expect((await request.get("/v/pipe0/public-docs.json")).status()).toBe(404);
 });
 
@@ -249,7 +267,7 @@ test("merging a second document into a project, and serving a variant as OpenAPI
   request,
 }) => {
   await signIn(page);
-  await page.getByRole("link", { name: "Project settings" }).click();
+  await page.getByRole("link", { name: "Original", exact: true }).click();
   await page.getByRole("button", { name: "Add document" }).click();
   await page.getByLabel("Document URL").fill(fixtureUrl("/billing/openapi.json"));
   // With several documents each has a name. The one that was there takes its document's title.

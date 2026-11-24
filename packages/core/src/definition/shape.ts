@@ -13,7 +13,15 @@ export type Shape =
   | { kind: "choice"; doc: string; values: readonly string[] }
   | { kind: "exactly"; doc: string; value: number }
   | { kind: "list"; doc: string; of: Shape; max?: number }
-  | { kind: "map"; doc: string; of: Shape; key: { pattern: RegExp; hint: string }; max?: number }
+  | {
+      kind: "map";
+      doc: string;
+      of: Shape;
+      key: { pattern: RegExp; hint: string };
+      max?: number;
+      /** Keys that are always there, each with a shape of its own instead of `of`. */
+      fixed?: Record<string, Shape>;
+    }
   | {
       kind: "object";
       doc: string;
@@ -76,7 +84,9 @@ export function check(shape: Shape, value: unknown, path: string, problems: Prob
     case "map": {
       if (!isJsonObject(value)) return wrong("must be a set of named entries.");
       const keys = Object.keys(value);
-      if (shape.max !== undefined && keys.length > shape.max) {
+      // The fixed keys are there anyway, and take no place of their own.
+      const counted = keys.filter((key) => !(shape.fixed && Object.hasOwn(shape.fixed, key)));
+      if (shape.max !== undefined && counted.length > shape.max) {
         return wrong(`must have at most ${shape.max} entries.`);
       }
       const out: JsonObject = {};
@@ -85,7 +95,9 @@ export function check(shape: Shape, value: unknown, path: string, problems: Prob
           problems.push({ path: at(path, key), message: shape.key.hint });
           continue;
         }
-        out[key] = check(shape.of, value[key], at(path, key), problems);
+        // Own keys only: a variant may be called "constructor".
+        const fixed = shape.fixed && Object.hasOwn(shape.fixed, key) ? shape.fixed[key] : undefined;
+        out[key] = check(fixed ?? shape.of, value[key], at(path, key), problems);
       }
       return out;
     }
@@ -145,8 +157,17 @@ export function schemaOf(shape: Shape): JsonObject {
         type: "object",
         description,
         propertyNames: { pattern: shape.key.pattern.source },
+        ...(shape.fixed
+          ? {
+              properties: Object.fromEntries(
+                Object.entries(shape.fixed).map(([key, field]) => [key, schemaOf(field)]),
+              ),
+            }
+          : {}),
         additionalProperties: schemaOf(shape.of),
-        ...(shape.max !== undefined ? { maxProperties: shape.max } : {}),
+        ...(shape.max !== undefined
+          ? { maxProperties: shape.max + Object.keys(shape.fixed ?? {}).length }
+          : {}),
       };
     case "object":
       return {
@@ -168,7 +189,13 @@ export function keysOf(shape: Shape, path = ""): string[] {
     case "list":
       return keysOf(shape.of, `${path}[]`);
     case "map":
-      return keysOf(shape.of, at(path, "<slug>"));
+      return [
+        ...Object.entries(shape.fixed ?? {}).flatMap(([key, field]) => {
+          const here = at(path, key);
+          return [here, ...keysOf(field, here)];
+        }),
+        ...keysOf(shape.of, at(path, "<slug>")),
+      ];
     case "object":
       return Object.entries(shape.fields).flatMap(([key, field]) => {
         const here = at(path, key);

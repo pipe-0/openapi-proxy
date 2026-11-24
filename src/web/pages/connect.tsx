@@ -14,7 +14,7 @@ type Way = keyof typeof WAYS;
  * A project starts in one of two ways, and this screen is where that is
  * chosen: from a URL, here in the app, or from a definition file in a
  * repository. Both are said in the same words wherever they are offered.
- * Connecting a URL leads straight into the project's first variant.
+ * Connecting a URL leads to the project's original: what came in, before any variant is made.
  */
 export function ConnectPage() {
   useTitle("New project");
@@ -57,7 +57,7 @@ export function ConnectPage() {
           <ConnectForm
             initialUrl={url ?? ""}
             urlPrefix={me.data?.urlPrefix ?? `${window.location.origin}/v/`}
-            onConnected={(project) => navigate({ to: "/p/$project/new", params: { project } })}
+            onConnected={(project) => navigate({ to: "/p/$project", params: { project } })}
           />
           <p className="mt-6 text-[12.5px] text-faint">
             JSON or YAML. OpenAPI 3.0, 3.1 and 3.2. Up to 5 MB.

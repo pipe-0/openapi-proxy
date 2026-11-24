@@ -105,6 +105,7 @@ describe("what the local server answers the editor", () => {
     expect(response.status).toBe(200);
     const result = (await response.json()) as ApplyResult;
     expect(result.variants.map(({ slug, action }) => [slug, action])).toEqual([
+      ["original", "unchanged"],
       ["docs", "unchanged"],
       ["sdk", "unchanged"],
       ["internal", "unchanged"],

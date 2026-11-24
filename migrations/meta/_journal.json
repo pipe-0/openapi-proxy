@@ -15,6 +15,13 @@
       "when": 1795443360863,
       "tag": "0001_definitions",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1795522016962,
+      "tag": "0002_original_variant",
+      "breakpoints": true
     }
   ]
 }

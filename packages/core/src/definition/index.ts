@@ -18,6 +18,7 @@ export {
   effectiveVariant,
   effectiveVisibility,
   mergeOrder,
+  servedSlugs,
   sourceLabel,
   UNNAMED_SOURCE,
 } from "./effective.js";
@@ -32,6 +33,7 @@ export {
   DEFINITION_SHAPE,
   DEFINITION_VERSIONS,
   isVisibility,
+  ORIGINAL_VARIANT,
   SELECTION_SHAPE,
   VISIBILITIES,
 } from "./format.js";

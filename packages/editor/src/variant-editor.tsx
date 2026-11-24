@@ -2,6 +2,7 @@ import {
   type DocumentOverrides,
   isValidSlug,
   normalizeSelection,
+  ORIGINAL_VARIANT,
   type ProjectDefinition,
   type Selection,
   type SpecFormat,
@@ -10,20 +11,18 @@ import {
   type VariantIconName,
   type Visibility,
 } from "@openapi-proxy/core";
-import { ExternalLinkIcon, MoreHorizontalIcon } from "lucide-react";
+import { MoreHorizontalIcon } from "lucide-react";
 import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { CopyButton } from "./components/copy-button";
-import { DocsLink } from "./components/docs-link";
 import { MethodChip } from "./components/method-chip";
 import { OperationPath } from "./components/operation-path";
 import { OperationPicker, type PickerView } from "./components/operation-picker";
 import { OverridesSheet, overrideCount } from "./components/overrides-sheet";
 import { Field, Notice } from "./components/page";
 import { ResultPane } from "./components/result-pane";
-import { Segmented } from "./components/segmented";
 import { SLUG_HELP, SlugInput, type SlugStatus } from "./components/slug-input";
 import { StatusChip } from "./components/status-chip";
+import { UrlBar } from "./components/url-bar";
 import { VariantIconPicker } from "./components/variant-icon";
 import { type InheritedVisibility, VisibilityMenu } from "./components/visibility";
 import { type ProjectDoc, representation } from "./lib/document";
@@ -35,7 +34,7 @@ import {
   variantEntry,
   withVariant,
 } from "./lib/project";
-import { bareUrl, cn, MOD_KEY } from "./lib/utils";
+import { bareUrl, MOD_KEY } from "./lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -65,7 +64,6 @@ import {
 } from "./ui/dropdown-menu";
 import { Kbd } from "./ui/kbd";
 import { Skeleton } from "./ui/skeleton";
-import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 /** A new variant: nothing served yet, and what the API adds later stays hidden. */
 const EMPTY: Selection = { include: {} };
@@ -651,122 +649,15 @@ export function VariantEditor({
   );
 }
 
-/** The variant's address: the reason the screen exists, always in view. */
-function UrlBar({
-  url,
-  suffix,
-  format,
-  onFormatChange,
-  celebrate,
-  stated,
-  inherited,
-  onVisibilityChange,
-  busy,
-  withKeys,
-  privateAction,
-}: {
-  url: string;
-  /** What follows the URL for the representation on screen: `.json`, or `/3.0.json`. */
-  suffix: string;
-  format: SpecFormat;
-  onFormatChange: (format: SpecFormat) => void;
-  celebrate: boolean;
-  stated: Visibility | undefined;
-  inherited: InheritedVisibility;
-  onVisibilityChange: (next: Visibility | undefined) => void;
-  busy: boolean;
-  /** Whether a private variant is read with a key here. On a laptop it is not: the machine is its owner's. */
-  withKeys: boolean;
-  /** Where a key for this variant is made, where there are keys. */
-  privateAction: React.ReactNode;
-}) {
-  const address = `${url}${suffix}`;
-  const { origin, pathname } = new URL(url);
-  const isPrivate = (stated ?? inherited.value) === "private";
-
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <div
-          className={cn(
-            "flex h-8 max-w-xl min-w-0 flex-1 items-center rounded-lg border bg-subtle px-2.5",
-            celebrate && "animate-arrive",
-          )}
-        >
-          <code
-            className="truncate font-sans text-[13px]"
-            title={address}
-            data-testid="variant-url"
-          >
-            <span className="text-faint">{origin}</span>
-            {pathname}
-            <span className="text-faint">{suffix}</span>
-          </code>
-        </div>
-        {/* On wide screens the format switch lives with the preview it controls. */}
-        <Segmented
-          aria-label="Format"
-          className="lg:hidden"
-          value={format}
-          onValueChange={onFormatChange}
-          options={[
-            { value: "json", label: "JSON" },
-            { value: "yaml", label: "YAML" },
-          ]}
-        />
-        <CopyButton value={address} label="Copy URL" what="URL copied" autoFocus={celebrate} />
-        <VisibilityMenu
-          stated={stated}
-          inherited={inherited}
-          onChange={onVisibilityChange}
-          disabled={busy}
-        />
-        {/* A browser sends no key, so there is nothing to open a private one with. */}
-        {(!isPrivate || !withKeys) && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="outline"
-                  size="icon"
-                  aria-label="Open in a new tab"
-                  nativeButton={false}
-                  render={<a href={address} target="_blank" rel="noreferrer" />}
-                />
-              }
-            >
-              <ExternalLinkIcon />
-            </TooltipTrigger>
-            <TooltipContent>Open in a new tab</TooltipContent>
-          </Tooltip>
-        )}
-      </div>
-      {isPrivate && (
-        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] leading-[18px] text-muted-foreground">
-          {withKeys ? (
-            <span>
-              Readers send a user API key as{" "}
-              <span className="font-medium text-foreground">Authorization: Bearer</span>.
-            </span>
-          ) : (
-            <span>
-              Once deployed, readers send a user API key. On this machine it is served without one.
-            </span>
-          )}
-          {privateAction}
-          <DocsLink slug="private-variants">How private variants work</DocsLink>
-        </p>
-      )}
-    </div>
-  );
-}
-
 /** Whether a slug can be a new variant's in this project. Everything it takes to know is on screen. */
 function slugStatusIn(project: Project, slug: string, current?: string): SlugStatus {
   if (slug === "") return "idle";
   if (!isValidSlug(slug)) return "invalid";
   if (slug === current) return "available";
-  return Object.hasOwn(project.definition.variants, slug) ? "taken" : "available";
+  // Every project has its original: that slug is never free.
+  return slug === ORIGINAL_VARIANT || Object.hasOwn(project.definition.variants, slug)
+    ? "taken"
+    : "available";
 }
 
 function ChangeUrlDialog({

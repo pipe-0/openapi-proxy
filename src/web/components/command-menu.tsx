@@ -97,6 +97,15 @@ export function CommandMenu({
           {project && (
             <CommandItem
               onSelect={run(() =>
+                navigate({ to: "/p/$project", params: { project: projectSlug(project) } }),
+              )}
+            >
+              <FileTextIcon /> Original of {projectName(project)}
+            </CommandItem>
+          )}
+          {project && (
+            <CommandItem
+              onSelect={run(() =>
                 navigate({ to: "/p/$project/settings", params: { project: projectSlug(project) } }),
               )}
             >

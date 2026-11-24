@@ -1,7 +1,7 @@
 import { CopyButton } from "@editor/components/copy-button";
 import { DocsLink } from "@editor/components/docs-link";
 import { Section } from "@editor/components/page";
-import { projectName, projectSlug, variantsOf } from "@editor/lib/project";
+import { originalOf, projectName, projectSlug, variantsOf } from "@editor/lib/project";
 import { formatRelativeTime } from "@editor/lib/utils";
 import {
   AlertDialog,
@@ -48,9 +48,12 @@ function useVariantNames(): Map<string, { scope: KeyVariant; label: string }> {
   const projects = useQuery(queries.projects);
   return new Map(
     (projects.data ?? []).flatMap((project) =>
-      variantsOf(project).map((variant) => {
+      [originalOf(project), ...variantsOf(project)].flatMap((variant) => {
+        if (!variant) return [];
         const scope = { project: projectSlug(project), variant: variant.slug };
-        return [scopeKey(scope), { scope, label: `${projectName(project)} / ${variant.name}` }];
+        return [
+          [scopeKey(scope), { scope, label: `${projectName(project)} / ${variant.name}` }] as const,
+        ];
       }),
     ),
   );

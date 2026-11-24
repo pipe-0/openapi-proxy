@@ -15,6 +15,8 @@ GET /v/<project>/<variant>/3.1.yaml     OpenAPI 3.1, as YAML
 
 The URL picks the representation: the format by its extension, the OpenAPI version by a path segment. `openapi-proxy dev` serves the same paths on localhost.
 
+Every project also serves its documents as they are, at `/v/<project>/original`, in the same formats and versions. Who may read it is set like for any variant: see [original](/docs/configuration#original).
+
 JSON keeps the formatting of your document: a minified source is served minified, an indented one indented.
 
 ## Response headers

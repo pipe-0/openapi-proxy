@@ -77,11 +77,30 @@ const SAMPLES: Record<string, unknown> = {
       nothing: { include: {} },
       "all-but": { exclude: { tags: ["internal"] } },
       partners: { visibility: "private", include: { operations: ["GET /pets"] } },
+      // Written last; stored, like served, first.
+      original: { visibility: "public" },
     },
   },
 };
 
 describe("a definition and the rows it is stored in", () => {
+  it("leave out an original that says nothing, though every project has its row", () => {
+    const definition = stored(SAMPLES["one followed source and a variant of everything"]);
+    const rows = [
+      { ...variantColumns("original", {}), position: 0 },
+      { ...variantColumns("public", {}), position: 1 },
+    ];
+    expect(
+      Object.keys(
+        definitionFromRows(
+          { slug: "one", name: null, visibility: null, overrides: null },
+          [{ ...sourceColumns({ url: SPEC_URL, follow: true }, false), position: 0 }],
+          rows,
+        ).variants,
+      ),
+    ).toEqual(Object.keys(definition.variants));
+  });
+
   for (const [what, input] of Object.entries(SAMPLES)) {
     it(`say the same thing: ${what}`, () => {
       const definition = stored(input);
@@ -124,12 +143,16 @@ describe("a definition and the rows it is stored in", () => {
       "unchanged",
       "unchanged",
     ]);
-    expect(again.variants.map((variant) => variant.action)).toEqual([
-      "unchanged",
-      "unchanged",
-      "unchanged",
-      "unchanged",
+    expect(again.variants.map((variant) => variant.slug)).toEqual([
+      "original",
+      "public",
+      "nothing",
+      "all-but",
+      "partners",
     ]);
+    expect(new Set(again.variants.map((variant) => variant.action))).toEqual(
+      new Set(["unchanged"]),
+    );
     expect((await getProject(cookie, "everything")).definition).toEqual(definition);
   });
 });

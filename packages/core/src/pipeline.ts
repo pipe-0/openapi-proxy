@@ -148,6 +148,8 @@ export function assembleTexts(parts: SourceText[]): {
   minified: boolean;
   /** With one source served as it is: its own text, which is the document. */
   single: string | undefined;
+  /** What the main source is written in. */
+  format: SpecFormat;
   /** For each operation, the name of the source it came from. */
   origins: Map<string, string>;
   /** What merging did. */
@@ -168,6 +170,7 @@ export function assembleTexts(parts: SourceText[]): {
     doc,
     minified: first.spec.minified,
     single: parsed.length === 1 && !first.part.pathPrefix ? first.part.text : undefined,
+    format: first.spec.format,
     origins,
     notes,
     converted,
@@ -195,5 +198,28 @@ export function renderVariantText(
     const { doc, minified } = assembleTexts(parts);
     const built = buildVariant(doc, options);
     return serialize(built.doc, options.format, { minified });
+  });
+}
+
+/**
+ * What a reader of a project's original is sent: its documents as they are,
+ * nothing selected away and nothing said differently at the top. One source
+ * asked for in its own version and format is its own text, byte for byte.
+ * Otherwise the assembled document is converted if asked, then written out.
+ */
+export function renderOriginalText(
+  parts: SourceText[],
+  options: { version?: TargetVersion | null | undefined; format: SpecFormat },
+): string {
+  return withBudget(() => {
+    const { doc, minified, single, format } = assembleTexts(parts);
+    if (!options.version && single !== undefined && format === options.format) return single;
+    // A version there is no conversion to is served as the document is, as a variant is.
+    const out =
+      options.version && availableVersions(doc).includes(options.version)
+        ? convertDocument(doc, options.version).doc
+        : doc;
+    if (out !== doc) measure(out, OUTPUT_LIMITS);
+    return serialize(out, options.format, { minified });
   });
 }

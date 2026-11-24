@@ -85,7 +85,10 @@ describe("a deploy API key", () => {
       created: true,
       project: { slug: "test", managedBy: "file" },
       sources: [{ document: "uploaded", follow: false }],
-      variants: [{ slug: "public", action: "created", url: "https://proxy.test/v/test/public" }],
+      variants: [
+        { slug: "original", action: "created", url: "https://proxy.test/v/test/original" },
+        { slug: "public", action: "created", url: "https://proxy.test/v/test/public" },
+      ],
     });
     expect((await call("/v/test/public.json")).status).toBe(200);
 
@@ -330,6 +333,7 @@ describe("a project that is deployed from a file", () => {
     expect(
       result.variants.map(({ slug, action, keysRemoved }) => [slug, action, keysRemoved]),
     ).toEqual([
+      ["original", "unchanged", undefined],
       ["public", "changed", undefined],
       ["internal", "deleted", 1],
     ]);
@@ -419,7 +423,11 @@ describe("a project that is deployed from a file", () => {
       deploy(key, after.definition, { documents: { main: document(next) } }),
     );
     expect(same.sources).toMatchObject([{ action: "unchanged", document: "kept" }]);
-    expect(same.variants.map((variant) => variant.action)).toEqual(["unchanged", "unchanged"]);
+    expect(same.variants.map((variant) => variant.action)).toEqual([
+      "unchanged",
+      "unchanged",
+      "unchanged",
+    ]);
     expect(same.operations).toMatchObject({ added: [], removed: [], changed: [] });
   });
 
@@ -681,7 +689,7 @@ describe("a private variant, and the user API keys that read it", () => {
     const reads = async () =>
       Object.fromEntries(
         await Promise.all(
-          ["plain", "open", "closed"].map(
+          ["original", "plain", "open", "closed"].map(
             async (slug) => [slug, (await callAsProgram(`/v/test/${slug}.json`)).status] as const,
           ),
         ),
@@ -691,20 +699,22 @@ describe("a private variant, and the user API keys that read it", () => {
     const etag = (await callAsProgram("/v/test/plain.json")).headers.get("etag");
 
     expect(await visibility()).toEqual({
+      original: "public (workspace)",
       plain: "public (workspace)",
       open: "public (variant)",
       closed: "private (variant)",
     });
-    expect(await reads()).toEqual({ plain: 200, open: 200, closed: 401 });
+    expect(await reads()).toEqual({ original: 200, plain: 200, open: 200, closed: 401 });
 
     // The workspace's default changes: every variant that says nothing follows, at once.
     expect((await setDefault("private")).status).toBe(200);
     expect(await visibility()).toEqual({
+      original: "private (workspace)",
       plain: "private (workspace)",
       open: "public (variant)",
       closed: "private (variant)",
     });
-    expect(await reads()).toEqual({ plain: 401, open: 200, closed: 401 });
+    expect(await reads()).toEqual({ original: 401, plain: 401, open: 200, closed: 401 });
     // Nothing was applied for that, and nothing about the document changed.
     expect((await getProject(ada)).state.revision).toBe(project.state.revision);
     const { key } = await createReadKey(ada);
@@ -713,11 +723,12 @@ describe("a private variant, and the user API keys that read it", () => {
     // The project says what its variants are: that is closer than the workspace.
     await applied(edit(ada, "test", (d) => ({ ...d, visibility: "public" })));
     expect(await visibility()).toEqual({
+      original: "public (project)",
       plain: "public (project)",
       open: "public (variant)",
       closed: "private (variant)",
     });
-    expect(await reads()).toEqual({ plain: 200, open: 200, closed: 401 });
+    expect(await reads()).toEqual({ original: 200, plain: 200, open: 200, closed: 401 });
     expect((await callAsProgram("/v/test/plain.json")).headers.get("etag")).toBe(etag);
 
     expect((await setDefault("hidden")).status).toBe(400);

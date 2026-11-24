@@ -18,10 +18,12 @@ test("a project says what its variants are, unless they say otherwise", async ({
     has: page.getByRole("heading", { name: "Defaults for variants" }),
   });
   const who = defaults.getByRole("button", { name: "Who can read it" });
-  // Nothing said yet: the workspace's default holds, and one variant follows it.
+  // Nothing said yet: the workspace's default holds, and one variant follows it, besides the original.
   await expect(who).toHaveText(/Public\s*by default/);
   await expect(
-    defaults.getByText("1 variant follows this, and changes with it at once."),
+    defaults.getByText(
+      "2 variants follow this, the original among them, and change with it at once.",
+    ),
   ).toBeVisible();
   const follower = "/v/pipe0/billing-staging.json";
   const explicit = "/v/pipe0/billing-for-the-gateway.json";
@@ -33,6 +35,8 @@ test("a project says what its variants are, unless they say otherwise", async ({
   await expect(who).toHaveText(/^Private$/);
   await expect.poll(async () => (await request.get(follower)).status()).toBe(401);
   expect((await request.get(explicit)).status()).toBe(200);
+  // The original says nothing either, so it follows too.
+  expect((await request.get("/v/pipe0/original.json")).status()).toBe(401);
 
   // What readers see at the top of every variant, in place of what the document says.
   await defaults.getByRole("button", { name: /Title and servers/ }).click();
@@ -76,7 +80,7 @@ test("a project says what its variants are, unless they say otherwise", async ({
   // Back to saying nothing: opening variants to everyone is asked about first.
   await page.goto("/p/pipe0/settings");
   page.once("dialog", (dialog) => {
-    expect(dialog.message()).toMatch(/^Make 1 variant public\?/);
+    expect(dialog.message()).toMatch(/^Make 2 variants public\?/);
     void dialog.accept();
   });
   await who.click();

@@ -58,6 +58,7 @@ Serves the variants of the file on this machine, at the paths the service has, a
 ```
 openapi-proxy is serving openapi-proxy.yaml
 
+  http://localhost:7745/v/bookshop/original.json
   http://localhost:7745/v/bookshop/public.json
 
   Edit the file in your browser: http://localhost:7745
@@ -111,6 +112,7 @@ openapi-proxy validate
 
 ```
 ok openapi-proxy.yaml is a valid definition.
+  original: serves 8 of 8 operations
   public: serves 5 of 8 operations
 ```
 
@@ -160,7 +162,8 @@ Sources
   main  uploaded  6 kB  8 operations  read from /repo/openapi.json
 
 Variants
-  public  created  5 of 8 operations  public (set on the variant)  https://openapi-proxy.app/v/bookshop/public
+  original  created  8 of 8 operations  public (from the workspace)  https://openapi-proxy.app/v/bookshop/original
+  public    created  5 of 8 operations  public (set on the variant)  https://openapi-proxy.app/v/bookshop/public
 ```
 
 Reads the sources the file names, here, and sends them with the file to the service. The project with the file's slug becomes what the file says: it is created if it is not there, variants the file does not list are deleted, and from then on it is changed by deploying, not in the app.

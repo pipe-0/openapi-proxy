@@ -3,6 +3,8 @@ import {
   type DocumentOverrides,
   DocumentTooComplexError,
   MergeError,
+  ORIGINAL_VARIANT,
+  renderOriginalText,
   renderVariantText,
   type SpecFormat,
   SpecParseError,
@@ -121,6 +123,7 @@ export async function renderVariant(
       .where(eq(sources.projectId, target.projectId)),
     db
       .select({
+        slug: variants.slug,
         selection: variants.selection,
         overrides: variants.overrides,
         servedHash: variants.servedHash,
@@ -155,14 +158,20 @@ export async function renderVariant(
 
   try {
     const texts = await Promise.all(rows.map((row) => unpack(row.body)));
-    const body = renderVariantText(
-      rows.map((row, i) => ({
-        name: labelOf(row),
-        pathPrefix: row.pathPrefix,
-        text: texts[i] ?? "",
-      })),
-      { selection: variant.selection, version: target.version, overrides, format },
-    );
+    const parts = rows.map((row, i) => ({
+      name: labelOf(row),
+      pathPrefix: row.pathPrefix,
+      text: texts[i] ?? "",
+    }));
+    const body =
+      variant.slug === ORIGINAL_VARIANT
+        ? renderOriginalText(parts, { version: target.version, format })
+        : renderVariantText(parts, {
+            selection: variant.selection,
+            version: target.version,
+            overrides,
+            format,
+          });
     // Compressed before it is answered with, not after: a document that does
     // not fit in a row could never be stored, and would be rendered again for
     // every request.

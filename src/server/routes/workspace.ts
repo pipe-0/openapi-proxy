@@ -1,3 +1,4 @@
+import { ORIGINAL_VARIANT } from "@openapi-proxy/core";
 import { and, count, eq, gt, lte, max, ne, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { isVisibility, type Visibility } from "../../shared/access";
@@ -161,7 +162,8 @@ async function usageOf(db: Db, organizationId: string) {
       .select({ n: count() })
       .from(variants)
       .innerJoin(projects, eq(projects.id, variants.projectId))
-      .where(eq(projects.organizationId, organizationId)),
+      // Every project has its original; a plan counts the variants made from it.
+      .where(and(eq(projects.organizationId, organizationId), ne(variants.slug, ORIGINAL_VARIANT))),
   ]);
   return {
     projects: projectCount[0]?.n ?? 0,

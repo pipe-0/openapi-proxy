@@ -5,6 +5,7 @@ import {
   isValidSlug,
   type ProjectView,
   resolveSelection,
+  servedSlugs,
   unmatchedNames,
   type VariantState,
   type Visibility,
@@ -115,21 +116,24 @@ function viewOf(
         lastError: source.lastError,
       })),
       variants: Object.fromEntries(
-        Object.keys(definition.variants).map((slug): [string, VariantState] => {
-          const row = bySlug.get(slug) as VariantRow;
+        servedSlugs(definition).flatMap((slug): Array<[string, VariantState]> => {
+          const row = bySlug.get(slug);
+          if (!row) return [];
           const { selection } = effectiveVariant(definition, slug);
           return [
-            slug,
-            {
-              id: row.id,
-              url: `${prefix}${project.slug}/${slug}`,
-              visibility: effectiveVisibility(definition, slug, workspaceDefault),
-              servedOperations: resolveSelection(index, selection).size,
-              totalOperations: index.totalOperations,
-              notFound: unmatchedNames(index, selection),
-              createdAt: row.createdAt,
-              updatedAt: row.updatedAt,
-            },
+            [
+              slug,
+              {
+                id: row.id,
+                url: `${prefix}${project.slug}/${slug}`,
+                visibility: effectiveVisibility(definition, slug, workspaceDefault),
+                servedOperations: resolveSelection(index, selection).size,
+                totalOperations: index.totalOperations,
+                notFound: unmatchedNames(index, selection),
+                createdAt: row.createdAt,
+                updatedAt: row.updatedAt,
+              },
+            ],
           ];
         }),
       ),

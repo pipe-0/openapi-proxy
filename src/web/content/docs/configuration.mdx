@@ -38,6 +38,8 @@ sources:
     pathPrefix: /billing
 
 variants:
+  original:
+    visibility: private
   public:
     name: Public docs
     icon: globe
@@ -69,7 +71,7 @@ variants:
 | `visibility` | | `public` or `private`: who may read this project's variants unless a variant says otherwise. Left out, the workspace's default holds. |
 | `overrides` | | `title`, `description` and `servers` for every variant, in place of what the main document says. See [overrides](#overrides). |
 | `sources` | required | The project's OpenAPI documents. See [sources](#sources). |
-| `variants` | | The documents served from the project, by slug. See [variants](#variants). |
+| `variants` | | The documents served from the project, by slug. Every project also serves `original`, its documents as they are. See [variants](#variants). |
 
 ## sources
 
@@ -102,6 +104,20 @@ A map from a variant's slug to what it serves. The slug is the second part of th
 | `overrides` | | `title`, `description` and `servers` for this variant. A key it leaves out is taken from the project's `overrides`, and then from the document. |
 
 Renaming a variant's slug makes a new variant: the old URL answers `404`, and a user API key that was for the old one alone is removed.
+
+### original
+
+Every project has the variant `original`: its documents as they are, at `/v/<project>/original`. Nothing is selected away and nothing at the top is replaced, not even by the project's `overrides`. With several documents it is their merge. It is there whether the file names it or not, and it does not count toward a plan's variants.
+
+The file names it only to say who may read it. `visibility` is the one key it takes:
+
+```yaml
+variants:
+  original:
+    visibility: public
+```
+
+Left out, it is what the project says, and then what the workspace says, as for any variant. `original` cannot be the slug of a variant of your own.
 
 ### include and exclude
 

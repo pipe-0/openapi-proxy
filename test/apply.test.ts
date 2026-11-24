@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   applied,
   apply,
+  bearer,
   call,
+  callAsProgram,
   callsTo,
   createProject,
+  createReadKey,
   definitionOf,
   document,
   getProject,
@@ -31,6 +34,15 @@ describe("applying a definition", () => {
         { name: "main", action: "added", document: "fetched", follow: true, operations: 3 },
       ],
       variants: [
+        // Every project serves its documents as they are, first.
+        {
+          slug: "original",
+          action: "created",
+          url: "https://proxy.test/v/test/original",
+          visibility: { value: "public", from: "workspace" },
+          servedOperations: 3,
+          totalOperations: 3,
+        },
         {
           slug: "public",
           action: "created",
@@ -47,12 +59,54 @@ describe("applying a definition", () => {
     expect(served.status).toBe(200);
     const body = (await served.json()) as { paths: Record<string, unknown> };
     expect(Object.keys(body.paths)).toEqual(["/pets"]);
+    // The original is the document as it was fetched, byte for byte.
+    const original = await call("/v/test/original.json");
+    expect(original.status).toBe(200);
+    expect(await original.text()).toBe(JSON.stringify(SPEC));
 
     const project = await getProject(cookie);
     expect(project.definition).toEqual(
       definitionOf({ variants: { public: { include: { tags: ["pets"] } } } }),
     );
     expect(project.state).toMatchObject({ revision: 1, managedBy: "app" });
+  });
+
+  it("serves the original to whoever the definition says, and lets it say nothing else", async () => {
+    const cookie = await login();
+    serveSpec();
+    // The project is private, so its original is too, until the definition says otherwise.
+    await applied(apply(cookie, definitionOf({ visibility: "private", variants: { docs: {} } })));
+    expect((await callAsProgram("/v/test/original.json")).status).toBe(401);
+    const { key } = await createReadKey(cookie, { project: "test", variant: "original" });
+    expect((await callAsProgram("/v/test/original.json", { headers: bearer(key) })).status).toBe(
+      200,
+    );
+    // A key for the original reads the original only.
+    expect((await callAsProgram("/v/test/docs.json", { headers: bearer(key) })).status).toBe(403);
+
+    const open = definitionOf({
+      visibility: "private",
+      variants: { docs: {}, original: { visibility: "public" } },
+    });
+    const result = await applied(apply(cookie, open));
+    expect(result.variants[0]).toMatchObject({
+      slug: "original",
+      action: "changed",
+      visibility: { value: "public", from: "variant" },
+    });
+    expect((await callAsProgram("/v/test/original.json")).status).toBe(200);
+    expect((await callAsProgram("/v/test/original/3.0.yaml")).status).toBe(200);
+    expect((await getProject(cookie)).definition.variants).toEqual({
+      original: { visibility: "public" },
+      docs: {},
+    });
+
+    const refused = await apply(
+      cookie,
+      definitionOf({ variants: { original: { include: { tags: ["pets"] } } } }),
+    );
+    expect(refused.status).toBe(400);
+    expect(await refused.json()).toMatchObject({ code: "invalid-definition" });
   });
 
   it("takes an uploaded document for a source that is not followed", async () => {
@@ -104,6 +158,7 @@ describe("applying a definition", () => {
       ),
     );
     expect(result.variants.map(({ slug, action }) => [slug, action])).toEqual([
+      ["original", "unchanged"],
       ["public", "changed"],
       ["partners", "created"],
       ["internal", "deleted"],
@@ -139,6 +194,7 @@ describe("applying a definition", () => {
       ),
     );
     expect(result.variants).toMatchObject([
+      { slug: "original", servedOperations: 3, notFound: { include: { tags: [] } } },
       {
         slug: "public",
         servedOperations: 1,
@@ -160,7 +216,7 @@ describe("applying a definition", () => {
     const later = await applied(
       apply(cookie, project.definition, { documents: { main: document(shipped) } }),
     );
-    expect(later.variants[0]).toMatchObject({
+    expect(later.variants[1]).toMatchObject({
       action: "unchanged",
       servedOperations: 3,
       notFound: { include: { tags: [], operations: [] } },
@@ -177,7 +233,10 @@ describe("applying a definition", () => {
       ),
     );
     expect(result.warnings).toMatchObject([{ path: "variants.empty.include" }]);
-    expect(result.variants).toMatchObject([{ slug: "empty", servedOperations: 0 }]);
+    expect(result.variants).toMatchObject([
+      { slug: "original", servedOperations: 3 },
+      { slug: "empty", servedOperations: 0 },
+    ]);
     const served = await call("/v/test/empty.json");
     expect(served.status).toBe(200);
     expect(((await served.json()) as { paths?: object }).paths ?? {}).toEqual({});
@@ -233,6 +292,7 @@ describe("applying a definition", () => {
     expect((await call("/v/test/constructor.json")).status).toBe(200);
     const result = await applied(apply(cookie, { ...definition, variants: { public: {} } }));
     expect(result.variants.map(({ slug, action }) => [slug, action])).toEqual([
+      ["original", "unchanged"],
       ["public", "unchanged"],
       ["constructor", "deleted"],
     ]);

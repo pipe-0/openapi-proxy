@@ -140,9 +140,25 @@
     },
     "variants": {
       "type": "object",
-      "description": "The documents served from the project, by slug: the second part of the public URL.",
+      "description": "The documents served from the project, by slug: the second part of the public URL. Every project also has the variant original, its documents as they are.",
       "propertyNames": {
         "pattern": "^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$"
+      },
+      "properties": {
+        "original": {
+          "type": "object",
+          "description": "The project's documents as they are, served at /v/<project>/original. Every project has it, whether the file names it or not. It serves every operation and states no title, description or servers, so only who may read it can be set.",
+          "properties": {
+            "visibility": {
+              "enum": [
+                "public",
+                "private"
+              ],
+              "description": "Who may read the original: public (anyone with the URL) or private (an API key that reads it). Left out, it is the project's, then the workspace's default."
+            }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": {
         "type": "object",
@@ -290,7 +306,7 @@
         },
         "additionalProperties": false
       },
-      "maxProperties": 100
+      "maxProperties": 101
     }
   },
   "required": [

@@ -1,6 +1,11 @@
 import type { DocumentOverrides } from "../transforms/override.js";
 import type { Selection } from "../types.js";
-import type { ProjectDefinition, SourceDefinition, Visibility } from "./format.js";
+import {
+  ORIGINAL_VARIANT,
+  type ProjectDefinition,
+  type SourceDefinition,
+  type Visibility,
+} from "./format.js";
 
 /**
  * What a variant comes to once everything it leaves unsaid is filled in from
@@ -13,6 +18,8 @@ export function effectiveOverrides(
   definition: ProjectDefinition,
   slug: string,
 ): DocumentOverrides | null {
+  // The original is the documents as they are: the project's defaults are for the variants made from it.
+  if (slug === ORIGINAL_VARIANT) return null;
   const merged = { ...definition.overrides, ...definition.variants[slug]?.overrides };
   return Object.keys(merged).length > 0 ? merged : null;
 }
@@ -30,6 +37,17 @@ export function effectiveVariant(
     },
     overrides: effectiveOverrides(definition, slug),
   };
+}
+
+/**
+ * The slugs of every variant a project serves, in their order: the original
+ * first, whether the definition names it or not, then the definition's own.
+ */
+export function servedSlugs(definition: ProjectDefinition): string[] {
+  return [
+    ORIGINAL_VARIANT,
+    ...Object.keys(definition.variants).filter((slug) => slug !== ORIGINAL_VARIANT),
+  ];
 }
 
 export interface EffectiveVisibility {

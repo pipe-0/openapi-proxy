@@ -17,6 +17,7 @@ import {
   noSuchVersion,
   readDefinition,
   readRepresentation,
+  servedSlugs,
   versionFor,
   warningsOf,
 } from "@openapi-proxy/core";
@@ -142,14 +143,13 @@ export function createServer(options: ServerOptions): Hono {
     const loaded = await loadProject(options.config, options.sources);
     const { definition } = loaded.config;
     const path = `/v/${project}/${asked.slug}`;
-    if (definition.project !== project || !Object.hasOwn(definition.variants, asked.slug)) {
-      const known = Object.keys(definition.variants).map(
-        (slug) => `/v/${definition.project}/${slug}`,
-      );
+    const slugs = servedSlugs(definition);
+    if (definition.project !== project || !slugs.includes(asked.slug)) {
+      const known = slugs.map((slug) => `/v/${definition.project}/${slug}`);
       return c.json(
         {
           code: "not-found",
-          error: `No variant is published at ${path}. ${known.length > 0 ? `This file has ${known.join(", ")}.` : "This file has no variants yet."}`,
+          error: `No variant is published at ${path}. This file has ${known.join(", ")}.`,
         },
         404,
       );

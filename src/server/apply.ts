@@ -8,10 +8,12 @@ import {
   effectiveVariant,
   effectiveVisibility,
   mergeOrder,
+  ORIGINAL_VARIANT,
   readDefinition,
   resolveSelection,
   type SourceDefinition,
   type SourceReport,
+  servedSlugs,
   sourceLabel,
   unmatchedNames,
   type VariantReport,
@@ -477,7 +479,10 @@ export async function applyDefinition(ctx: ApplyContext, input: ApplyInput): Pro
     // ---- Variants: updated in place by slug, so their ids, keys and stored output stay.
     const index = asIndex(assembled.opIndex);
     const rowBySlug = new Map(variantRows.map((row) => [row.slug, row]));
-    const slugs = Object.keys(definition.variants);
+    // Every variant the project serves: the original, which every project has, and the definition's own.
+    const slugs = servedSlugs(definition);
+    // What counts against a plan: every variant but the original.
+    const counted = slugs.length - 1;
     const plannedVariants = await Promise.all(
       slugs.map(async (slug, position) => {
         const columns = variantColumns(slug, definition.variants[slug] ?? {});
@@ -515,9 +520,7 @@ export async function applyDefinition(ctx: ApplyContext, input: ApplyInput): Pro
         };
       }),
     );
-    const removedVariants = variantRows.filter(
-      (row) => !Object.hasOwn(definition.variants, row.slug),
-    );
+    const removedVariants = variantRows.filter((row) => !slugs.includes(row.slug));
     const removedKeys =
       removedVariants.length > 0
         ? await db
@@ -534,8 +537,9 @@ export async function applyDefinition(ctx: ApplyContext, input: ApplyInput): Pro
       inner join ${projects} on ${projects.id} = ${variants.projectId}
       where ${projects.organizationId} = ${ctx.organizationId}
         and ${projects.slug} <> ${input.slug}
+        and ${variants.slug} <> ${ORIGINAL_VARIANT}
     )`;
-    const growing = slugs.length > variantRows.length;
+    const growing = counted > variantRows.filter((row) => row.slug !== ORIGINAL_VARIANT).length;
     if (!existing) {
       const [owned] = await db
         .select({ n: count() })
@@ -550,8 +554,14 @@ export async function applyDefinition(ctx: ApplyContext, input: ApplyInput): Pro
         .select({ n: count() })
         .from(variants)
         .innerJoin(projects, eq(projects.id, variants.projectId))
-        .where(and(eq(projects.organizationId, ctx.organizationId), ne(projects.slug, input.slug)));
-      if ((others?.n ?? 0) + slugs.length > limits.variants) {
+        .where(
+          and(
+            eq(projects.organizationId, ctx.organizationId),
+            ne(projects.slug, input.slug),
+            ne(variants.slug, ORIGINAL_VARIANT),
+          ),
+        );
+      if ((others?.n ?? 0) + counted > limits.variants) {
         throw planLimit(plan, `The ${PLAN_NAMES[plan]} plan includes ${limits.variants} variants.`);
       }
     }
@@ -763,7 +773,7 @@ export async function applyDefinition(ctx: ApplyContext, input: ApplyInput): Pro
       );
       const fits =
         growing && Number.isFinite(limits.variants)
-          ? sql`${elsewhere} + ${slugs.length} <= ${limits.variants}`
+          ? sql`${elsewhere} + ${counted} <= ${limits.variants}`
           : undefined;
       const statements: BatchItem<"sqlite">[] = [];
       if (removedSources.length > 0) {
@@ -847,7 +857,7 @@ export async function applyDefinition(ctx: ApplyContext, input: ApplyInput): Pro
           ? [
               db
                 .delete(projects)
-                .where(and(here, sql`${elsewhere} + ${slugs.length} > ${limits.variants}`)),
+                .where(and(here, sql`${elsewhere} + ${counted} > ${limits.variants}`)),
             ]
           : []),
         // And a slug that is held for another workspace is not this one's to take.

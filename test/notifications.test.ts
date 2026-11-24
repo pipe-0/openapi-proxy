@@ -126,6 +126,10 @@ describe("the email about it", () => {
     // Nobody served POST /internal/flush, so its removal is not news at this setting.
     expect(email?.text).not.toContain("/internal/flush");
     expect(email?.text).toContain("https://proxy.test/p/test");
+    // The setting is on the project's settings page, not the workspace's.
+    expect(email?.text).toContain(
+      "Choose what you are emailed about: https://proxy.test/p/test/settings",
+    );
     expect(email?.text).not.toMatch(/—/);
   });
 

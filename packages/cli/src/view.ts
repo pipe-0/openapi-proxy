@@ -4,9 +4,11 @@ import {
   effectiveVariant,
   effectiveVisibility,
   indexOperations,
+  ORIGINAL_VARIANT,
   type ProjectDefinition,
   type ProjectView,
   parseSpec,
+  servedSlugs,
   sourceLabel,
   unmatchedNames,
   versionFamily,
@@ -67,7 +69,7 @@ export function viewOf(project: Project, origin: string): ProjectView {
         };
       }),
       variants: Object.fromEntries(
-        Object.keys(definition.variants).map((slug) => {
+        servedSlugs(definition).map((slug) => {
           const { selection } = effectiveVariant(definition, slug);
           return [
             slug,
@@ -121,7 +123,8 @@ export function resultOf(
     variants: [
       ...Object.entries(state.variants).map(([slug, variant]) => ({
         slug,
-        action: !Object.hasOwn(before.variants, slug)
+        // The original is always there, named in the file or not.
+        action: !(Object.hasOwn(before.variants, slug) || slug === ORIGINAL_VARIANT)
           ? ("created" as const)
           : same(before.variants[slug], definition.variants[slug])
             ? ("unchanged" as const)
@@ -133,7 +136,7 @@ export function resultOf(
         notFound: variant.notFound,
       })),
       ...Object.keys(before.variants)
-        .filter((slug) => !Object.hasOwn(definition.variants, slug))
+        .filter((slug) => slug !== ORIGINAL_VARIANT && !Object.hasOwn(definition.variants, slug))
         .map((slug) => ({
           slug,
           action: "deleted" as const,

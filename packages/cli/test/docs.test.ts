@@ -81,7 +81,7 @@ describe("the configuration reference", () => {
   const describedIn = (parent: string): string => {
     if (parent === "") return "The project";
     if (parent === "sources[]") return "sources";
-    if (parent === "variants.<slug>") return "variants";
+    if (["variants", "variants.<slug>", "variants.original"].includes(parent)) return "variants";
     if (/\.(include|exclude)$/.test(parent)) return "include and exclude";
     return "overrides";
   };
@@ -114,7 +114,14 @@ describe("the configuration reference", () => {
         for (const item of value) walk(item, `${path}[]`);
       } else if (value !== null && typeof value === "object") {
         for (const [key, inner] of Object.entries(value)) {
-          const here = path === "variants" ? "variants.<slug>" : path ? `${path}.${key}` : key;
+          const here =
+            path === "variants"
+              ? key === "original"
+                ? "variants.original"
+                : "variants.<slug>"
+              : path
+                ? `${path}.${key}`
+                : key;
           used.add(here);
           walk(inner, here);
         }
@@ -211,7 +218,11 @@ describe("the output the docs show", () => {
     const bytes = statSync(join(EXAMPLES, "in-your-repository/openapi.json")).size;
     const deployed = blocks.find((block) => block.startsWith("Created bookshop"));
     expect(deployed).toContain(`uploaded  ${Math.round(bytes / 1000)} kB  8 operations`);
-    expect(deployed).toContain("public  created  5 of 8 operations  public (set on the variant)");
+    // The columns are as wide as their widest cell.
+    expect(deployed).toMatch(
+      / original +created +8 of 8 operations +public \(from the workspace\)/,
+    );
+    expect(deployed).toMatch(/ public +created +5 of 8 operations +public \(set on the variant\)/);
   });
 });
 

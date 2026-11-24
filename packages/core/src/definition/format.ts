@@ -50,6 +50,14 @@ export interface SourceDefinition {
   pathPrefix?: string;
 }
 
+/**
+ * The variant every project has: its documents as they are, at
+ * `/v/<project>/original`. It selects nothing and states no title,
+ * description or servers, so the only thing a definition says about it is who
+ * may read it. A definition mentions it only to say that.
+ */
+export const ORIGINAL_VARIANT = "original";
+
 /** One audience's document: a selection of the project's operations, and how it is presented. */
 export interface VariantDefinition {
   name?: string;
@@ -221,9 +229,20 @@ export const DEFINITION_SHAPE: Shape = {
     },
     variants: {
       kind: "map",
-      doc: "The documents served from the project, by slug: the second part of the public URL.",
+      doc: "The documents served from the project, by slug: the second part of the public URL. Every project also has the variant original, its documents as they are.",
       max: DEFINITION_LIMITS.variants,
       key: { pattern: SLUG_PATTERN, hint: `is not a slug: it ${SLUG_HINT}` },
+      fixed: {
+        [ORIGINAL_VARIANT]: {
+          kind: "object",
+          doc: "The project's documents as they are, served at /v/<project>/original. Every project has it, whether the file names it or not. It serves every operation and states no title, description or servers, so only who may read it can be set.",
+          fields: {
+            visibility: visibility(
+              "Who may read the original: public (anyone with the URL) or private (an API key that reads it). Left out, it is the project's, then the workspace's default.",
+            ),
+          },
+        },
+      },
       of: {
         kind: "object",
         doc: "One audience's document.",

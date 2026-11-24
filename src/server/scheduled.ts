@@ -1,7 +1,7 @@
-import { and, asc, eq, exists, lte, sql } from "drizzle-orm";
+import { and, asc, eq, lte } from "drizzle-orm";
 import { checkProject } from "./check";
 import { createDb, type Db } from "./db/client";
-import { type ProjectRow, projects, variants } from "./db/schema";
+import { type ProjectRow, projects } from "./db/schema";
 import type { Env } from "./env";
 import { TICK_MS } from "./schedule";
 import { isPlatformLimit } from "./upstream";
@@ -43,9 +43,7 @@ export async function claimDue(
  * checks sources unasked. A request for a variant never does: it reads what
  * is stored.
  *
- * Each project says when it is due (`nextCheckAt`, see schedule.ts). Only
- * projects with at least one variant are checked: a source nobody serves
- * anything from has no reader to be current for.
+ * Each project says when it is due (`nextCheckAt`, see schedule.ts).
  *
  * Projects are taken longest due first. A run does as much as the platform
  * lets one invocation do (far less on Cloudflare's free plan than on a paid
@@ -62,14 +60,7 @@ export async function scheduled(
   const due = await db
     .select({ id: projects.id, nextCheckAt: projects.nextCheckAt })
     .from(projects)
-    .where(
-      and(
-        lte(projects.nextCheckAt, now),
-        exists(
-          db.select({ one: sql`1` }).from(variants).where(eq(variants.projectId, projects.id)),
-        ),
-      ),
-    )
+    .where(lte(projects.nextCheckAt, now))
     .orderBy(asc(projects.nextCheckAt))
     .limit(MAX_PROJECTS_PER_RUN);
 

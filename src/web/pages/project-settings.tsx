@@ -30,7 +30,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Documents } from "@/components/documents";
 import { ManagedByFile } from "@/components/managed-by-file";
 import { ProjectNotifications } from "@/components/project-notifications";
 import { ViewAsFile } from "@/components/view-as-file";
@@ -42,7 +41,7 @@ import { useProjectDoc } from "@/lib/use-project-doc";
 export function ProjectSettingsPage() {
   const { project: slug } = useParams({ from: "/_client/_app/p/$project/settings" });
   const { project, isPending } = useProject(slug);
-  useTitle(project ? `Project settings · ${projectName(project)}` : undefined);
+  useTitle(project ? `Settings · ${projectName(project)}` : undefined);
 
   if (isPending) {
     return (
@@ -96,12 +95,10 @@ function Settings({ project }: { project: Project }) {
 
   return (
     <Page>
-      <PageHeader title="Project settings" />
+      <PageHeader title="Settings" />
       <div>
         <div className="flex flex-col gap-14">
           {!can.edit && <ManagedByFile project={project} />}
-
-          <Documents project={project} />
 
           <Defaults project={project} />
 
@@ -244,6 +241,7 @@ function Defaults({ project }: { project: Project }) {
   const following = Object.values(project.state.variants).filter(
     (variant) => variant.visibility.from !== "variant",
   ).length;
+  const originalFollows = project.state.variants.original?.visibility.from !== "variant";
   const save = useMutation({
     mutationFn: (change: Parameters<typeof apply.mutateAsync>[0]) => apply.mutateAsync(change),
     onError: (error) => toast.error(errorMessage(error)),
@@ -284,11 +282,9 @@ function Defaults({ project }: { project: Project }) {
       <Field
         label="Who can read them"
         hint={
-          Object.keys(project.state.variants).length === 0
-            ? "The project has no variants yet. New ones follow this."
-            : following === 0
-              ? "Every variant says for itself at the moment."
-              : `${plural(following, "variant")} ${following === 1 ? "follows" : "follow"} this, and ${following === 1 ? "changes" : "change"} with it at once.`
+          following === 0
+            ? "Every variant says for itself at the moment."
+            : `${plural(following, "variant")} ${following === 1 ? "follows" : "follow"} this${originalFollows ? `, the original ${following === 1 ? "alone" : "among them"}` : ""}, and ${following === 1 ? "changes" : "change"} with it at once.`
         }
       >
         <div>
@@ -302,7 +298,7 @@ function Defaults({ project }: { project: Project }) {
       </Field>
       <Field
         label="Title, description and servers"
-        hint="What readers see at the top of every variant, in place of what the document says."
+        hint="What readers see at the top of every variant but the original, in place of what the document says."
       >
         <div>
           <Button variant="outline" onClick={() => setPresenting(true)}>

@@ -229,7 +229,8 @@ describe("merging several documents into one project", () => {
       ["billing", "removed"],
     ]);
     // The name that is no longer there is reported, and stops nothing.
-    expect(removed.variants[0]?.notFound.include.operations).toEqual(["GET /invoices"]);
+    // After the original, which names nothing.
+    expect(removed.variants[1]?.notFound.include.operations).toEqual(["GET /invoices"]);
     const after = await getProject(cookie);
     expect(after.state.sources).toHaveLength(1);
     expect(after.state.notes).toEqual([]);

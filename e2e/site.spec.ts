@@ -110,8 +110,8 @@ test("the hero carries a pasted URL through sign-in and connects it", async ({ p
   await expect(page.getByLabel("OpenAPI document URL")).toHaveValue(url);
   await page.getByLabel("Project URL slug").fill("from-the-hero");
   await page.getByRole("button", { name: "Connect" }).click();
-  await expect(page).toHaveURL(/\/p\/from-the-hero\/new$/, { timeout: 30_000 });
-  await expect(page.getByLabel("Variant name")).toBeVisible();
+  await expect(page).toHaveURL(/\/p\/from-the-hero$/, { timeout: 30_000 });
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Original");
 });
 
 test("someone who is signed in gets the app at /, not the landing page", async ({ page }) => {
@@ -314,7 +314,7 @@ test("the docs are ordered by what someone wants to do, and the app points into 
     ({ state }) =>
       state.check !== null && state.sources.length === 1 && state.sources[0]?.validator === null,
   );
-  await page.goto(`/p/${project?.definition.project}/settings`);
+  await page.goto(`/p/${project?.definition.project}`);
   await page.getByRole("table").getByRole("button").first().click();
   await expect(page.getByText(/Each check downloads the whole document/)).toBeVisible();
   await expect(page.getByRole("link", { name: "How to send one" })).toHaveAttribute(

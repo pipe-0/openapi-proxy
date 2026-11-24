@@ -44,10 +44,12 @@ export {
   isVisibility,
   keysOf,
   mergeOrder,
+  ORIGINAL_VARIANT,
   readDefinition,
   readSelection,
   SCHEMA_URL,
   SELECTION_SHAPE,
+  servedSlugs,
   sourceLabel,
   UNNAMED_SOURCE,
   VARIANT_ICONS,
@@ -94,6 +96,7 @@ export {
   assembleTexts,
   buildVariant,
   documentText,
+  renderOriginalText,
   renderVariantText,
 } from "./pipeline.js";
 // Selections

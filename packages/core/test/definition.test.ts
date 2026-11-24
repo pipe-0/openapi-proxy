@@ -12,10 +12,12 @@ import {
   effectiveVisibility,
   keysOf,
   mergeOrder,
+  ORIGINAL_VARIANT,
   type Problem,
   type ProjectDefinition,
   readDefinition,
   readSelection,
+  servedSlugs,
   sourceLabel,
   warningsOf,
 } from "../src/index.js";
@@ -288,6 +290,88 @@ describe("what a variant comes to", () => {
     });
     expect(mergeOrder(reordered).map(sourceLabel)).toEqual(["core", "billing", "search"]);
     expect(sourceLabel({})).toBe("main");
+  });
+});
+
+describe("the original", () => {
+  it("is served by every project, first, whether the definition names it or not", () => {
+    expect(servedSlugs(read(EXAMPLE))).toEqual([ORIGINAL_VARIANT, "public", "partner"]);
+    expect(Object.keys(read(EXAMPLE).variants)).toEqual(["public", "partner"]);
+  });
+
+  it("is named only to say who may read it, and is then stored first", () => {
+    const definition = read(
+      withChange((draft) => {
+        (draft.variants as Record<string, unknown>).original = { visibility: "public" };
+      }),
+    );
+    expect(Object.keys(definition.variants)).toEqual([ORIGINAL_VARIANT, "public", "partner"]);
+    expect(definition.variants.original).toEqual({ visibility: "public" });
+    expect(servedSlugs(definition)).toEqual([ORIGINAL_VARIANT, "public", "partner"]);
+    // Named with nothing to say, it is left out, like any other key that says nothing.
+    const silent = read(
+      withChange((draft) => {
+        (draft.variants as Record<string, unknown>).original = {};
+      }),
+    );
+    expect(Object.keys(silent.variants)).toEqual(["public", "partner"]);
+  });
+
+  it("refuses anything but visibility: it is the documents as they are", () => {
+    const problems = problemsOf(
+      withChange((draft) => {
+        (draft.variants as Record<string, unknown>).original = {
+          include: { tags: ["Pipes"] },
+          overrides: { title: "Everything" },
+        };
+      }),
+    );
+    expect(problems.map((problem) => problem.path)).toEqual([
+      "variants.original.include",
+      "variants.original.overrides",
+    ]);
+    expect(problems[0]?.allowed).toEqual(["visibility"]);
+  });
+
+  it("serves everything with nothing said differently, and is read by whoever the layers say", () => {
+    const definition = read(EXAMPLE);
+    expect(effectiveVariant(definition, ORIGINAL_VARIANT)).toEqual({
+      selection: {},
+      overrides: null,
+    });
+    // The project's private applies to it as to any variant.
+    expect(effectiveVisibility(definition, ORIGINAL_VARIANT, "public")).toEqual({
+      value: "private",
+      from: "project",
+    });
+    const stated = read(
+      withChange((draft) => {
+        (draft.variants as Record<string, unknown>).original = { visibility: "public" };
+      }),
+    );
+    expect(effectiveVisibility(stated, ORIGINAL_VARIANT, "private")).toEqual({
+      value: "public",
+      from: "variant",
+    });
+  });
+
+  it("takes none of the hundred places for variants of your own", () => {
+    const hundred = Object.fromEntries(Array.from({ length: 100 }, (_, n) => [`v-${n}`, {}]));
+    expect(problemsOf({ ...EXAMPLE, variants: hundred })).toEqual([]);
+    expect(
+      problemsOf({ ...EXAMPLE, variants: { ...hundred, original: { visibility: "private" } } }),
+    ).toEqual([]);
+    expect(problemsOf({ ...EXAMPLE, variants: { ...hundred, "v-100": {} } })).toHaveLength(1);
+  });
+
+  it("is in the schema with its one key", () => {
+    const schema = definitionSchema() as {
+      properties: { variants: { properties: Record<string, { properties: object }> } };
+    };
+    expect(Object.keys(schema.properties.variants.properties.original?.properties ?? {})).toEqual([
+      "visibility",
+    ]);
+    expect(keysOf(DEFINITION_SHAPE)).toContain("variants.original.visibility");
   });
 });
 

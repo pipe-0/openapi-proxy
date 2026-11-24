@@ -200,19 +200,20 @@ describe("a run of the timer", () => {
     expect(sent[0]?.text).toContain("https://proxy.example.com/p/test");
   });
 
-  it("leaves alone what is not due and what nobody serves anything from", async () => {
+  it("leaves alone what is not due, and keeps a project without variants of its own current", async () => {
     const { cookie } = await publish();
     const before = callsTo("GET", SPEC_URL);
     await runTimer(); // checked a moment ago
     expect(callsTo("GET", SPEC_URL)).toBe(before);
 
-    const other = "https://api.example.com/unused.json";
+    // It still serves its original, which has readers to be current for.
+    const other = "https://api.example.com/original-only.json";
     serveSpec(SPEC, {}, other);
-    await createProject(cookie, { project: "unused", sources: [{ url: other, follow: true }] });
+    await createProject(cookie, { project: "bare", sources: [{ url: other, follow: true }] });
     await due();
-    const unusedBefore = callsTo("GET", other);
+    const bareBefore = callsTo("GET", other);
     await runTimer();
-    expect(callsTo("GET", other)).toBe(unusedBefore);
+    expect(callsTo("GET", other)).toBe(bareBefore + 1);
     expect(callsTo("GET", SPEC_URL)).toBe(before + 1);
   });
 

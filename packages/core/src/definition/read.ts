@@ -6,6 +6,7 @@ import {
   DEFINITION_LIMITS,
   DEFINITION_SHAPE,
   DEFINITION_VERSIONS,
+  ORIGINAL_VARIANT,
   type ProjectDefinition,
   SELECTION_SHAPE,
   type SourceDefinition,
@@ -253,8 +254,29 @@ export function readDefinition(input: unknown): ReadDefinition {
   }
 
   if (problems.length > 0) return { problems };
-  const { version, project, sources, variants } = definition;
-  return { definition: { version, project, ...ordered, sources, variants } };
+  const { version, project, sources } = definition;
+  return {
+    definition: {
+      version,
+      project,
+      ...ordered,
+      sources,
+      variants: inStoredOrder(definition.variants),
+    },
+  };
+}
+
+/**
+ * The variants as they are stored: the original first, and only when it says
+ * something, since every project has it anyway.
+ */
+function inStoredOrder(
+  variants: Record<string, VariantDefinition>,
+): Record<string, VariantDefinition> {
+  const { [ORIGINAL_VARIANT]: original, ...rest } = variants;
+  return original && Object.keys(original).length > 0
+    ? { [ORIGINAL_VARIANT]: original, ...rest }
+    : rest;
 }
 
 export type ReadSelection = { selection: Selection } | { problems: Problem[] };

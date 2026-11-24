@@ -246,8 +246,8 @@ test("in the app it is read, not edited, until someone says otherwise", async ({
   request,
 }) => {
   await signIn(page);
-  await page.goto("/p/bookshop/settings");
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Project settings");
+  await page.goto("/p/bookshop");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Original");
 
   // What defines it, and who deployed it last.
   await expect(page.getByText("This project is deployed from a file.")).toBeVisible();
@@ -273,8 +273,8 @@ test("in the app it is read, not edited, until someone says otherwise", async ({
   await page.getByLabel("DELETE /admin/cache", { exact: true }).click({ force: true });
   await expect(page.getByTestId("served-operations")).toHaveText("5");
   // So there is nothing to lose by leaving, and nothing asks.
-  await page.getByRole("link", { name: "Project settings" }).click();
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Project settings");
+  await page.getByRole("link", { name: "Original", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Original");
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
   await page
     .getByRole("navigation", { name: "Main" })

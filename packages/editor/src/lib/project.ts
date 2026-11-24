@@ -1,5 +1,6 @@
 import {
   mergeOrder,
+  ORIGINAL_VARIANT,
   type ProjectDefinition,
   type ProjectView,
   type Selection,
@@ -33,9 +34,13 @@ export const selectionOf = (variant: VariantDefinition): Selection => ({
   ...(variant.exclude ? { exclude: variant.exclude } : {}),
 });
 
-/** A project's variants, in the order of the definition. */
+/**
+ * A project's variants, in the order of the definition: the ones made from
+ * its documents. The original, which every project has, is `originalOf`.
+ */
 export function variantsOf(project: Project): VariantView[] {
   return Object.entries(project.definition.variants).flatMap(([slug, definition]) => {
+    if (slug === ORIGINAL_VARIANT) return [];
     const state = project.state.variants[slug];
     return state
       ? [
@@ -49,6 +54,14 @@ export function variantsOf(project: Project): VariantView[] {
         ]
       : [];
   });
+}
+
+/** The project's documents as they are, which every project serves. Undefined until the service has it. */
+export function originalOf(project: Project): VariantView | undefined {
+  const state = project.state.variants[ORIGINAL_VARIANT];
+  if (!state) return undefined;
+  const definition = project.definition.variants[ORIGINAL_VARIANT] ?? {};
+  return { slug: ORIGINAL_VARIANT, name: "Original", definition, selection: {}, state };
 }
 
 /** One source of a project: its entry in the definition, and what the service knows about it. */

@@ -87,6 +87,7 @@ export async function validate(options: { config: string; sources: string[] }): 
       `  ${variant.slug}: serves ${variant.served} of ${plural(variant.total, "operation")}${missing > 0 ? `, ${plural(missing, "name")} not found` : ""}`,
     );
   }
-  if (variants.length === 0) print("  It has no variants yet.");
+  // The original is always there; the variants are the ones the file makes from it.
+  if (variants.length === 1) print("  It has no variants of its own yet.");
   return 0;
 }

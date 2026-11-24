@@ -185,18 +185,28 @@ describe("serving a variant", () => {
       servers: [{ url: "https://api.example.com" }],
     });
 
+    // The original is the document as it is: the project's defaults are for the variants.
+    expect((await doc("original")).info.title).toBe(sourceTitle);
+    expect(await doc("original")).not.toHaveProperty("servers");
+
     // A change to the project's title changes what `plain` serves, and its ETag.
     // `titled` never served that title: its ETag stays, and nothing is rendered again.
     const etags = {
       plain: await etagOf("/v/test/plain.json"),
       titled: await etagOf("/v/test/titled.json"),
+      original: await etagOf("/v/test/original.json"),
     };
     const result = await applied(
       edit(cookie, "test", (d) => ({ ...d, overrides: { ...d.overrides, title: "Pets, v2" } })),
     );
-    expect(result.variants.map((variant) => variant.action)).toEqual(["unchanged", "unchanged"]);
+    expect(result.variants.map((variant) => variant.action)).toEqual([
+      "unchanged",
+      "unchanged",
+      "unchanged",
+    ]);
     expect(await etagOf("/v/test/plain.json")).not.toBe(etags.plain);
     expect(await etagOf("/v/test/titled.json")).toBe(etags.titled);
+    expect(await etagOf("/v/test/original.json")).toBe(etags.original);
     expect((await doc("plain")).info.title).toBe("Pets, v2");
 
     // Without them, the document speaks for itself again.
@@ -216,7 +226,10 @@ describe("serving a variant", () => {
         include: { tags: ["pets"] },
       }),
     );
-    expect(result.variants).toMatchObject([{ slug: "public", action: "changed" }]);
+    expect(result.variants).toMatchObject([
+      { slug: "original", action: "unchanged" },
+      { slug: "public", action: "changed" },
+    ]);
     expect((await getProject(cookie)).definition.variants.public).toMatchObject({
       name: "Public API",
       icon: "book",
